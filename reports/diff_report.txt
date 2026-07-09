@@ -1,0 +1,8 @@
+A: poc_winshuttle_export_full_with_meta.csv
+B: exported_winshuttle.csv
+lines A: 48
+lines B: 48
+
+Only in A (sample up to 50):
+
+Only in B (sample up to 50):
