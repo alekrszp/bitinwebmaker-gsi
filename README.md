@@ -47,6 +47,18 @@ C:/Python314/python.exe scripts/compare_report.py poc_winshuttle_export_full_wit
 C:/Python314/python.exe scripts/verify_poc.py
 ```
 
+## Release manual
+
+A release `v0.1.0` foi criada manualmente no GitHub usando `docs/RELEASE_v0.1.0.md` como corpo da release.
+
+O processo de release não é automatizado no repositório, portanto a publicação deve ser feita pelo GitHub web interface.
+
+Release URL:
+
+- https://github.com/alekrszp/bitinwebmaker-gsi/releases/tag/v0.1.0
+
+Veja também `CHANGELOG.md` para a nota de release.
+
 ## Arquivos principais
 
 - `Novo_template_BITin_V2 TESTE.xlsm`

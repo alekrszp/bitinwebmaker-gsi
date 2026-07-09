@@ -117,6 +117,16 @@ C:/Python314/python.exe scripts/verify_poc.py
 - `scripts/compare_report.py`
 - `scripts/export_from_itemsheet.py`
 
+## Nota de release
+
+A release `v0.1.0` foi criada manualmente no GitHub usando o conteúdo de `docs/RELEASE_v0.1.0.md`.
+
+Release URL:
+
+- https://github.com/alekrszp/bitinwebmaker-gsi/releases/tag/v0.1.0
+
+O repositório não contém automação de publicação de releases; a publicação é feita via interface GitHub.
+
 ## Próximos passos recomendados
 
 1. Catalogar o conteúdo de `artifacts/vba/` em `docs/vba_catalog.md` com detalhes de cada rotina.
