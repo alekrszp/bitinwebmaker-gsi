@@ -2,6 +2,61 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v0.3.0] - 2026-07-10
+
+### Added
+- **Autenticação unificada no backend** (`backend/auth/`: `models.py`, `security.py`,
+  `schemas.py`, `deps.py`, `routes.py`): `Usuario`/`Setor` no mesmo Postgres do resto do
+  backend, hash de senha `pbkdf2_sha256`, JWT emitido e validado localmente (sem serviço
+  externo, sem segredo compartilhado entre processos). RBAC simples de 3 níveis
+  (`0` usuário, `1` gestor, `99` admin). Primeiro usuário registrado (`POST /auth/register`)
+  vira admin automaticamente (bootstrap); promoções depois só via
+  `PATCH /users/{id}/permission`, restrito a admin.
+- **Endpoints `/users` e `/sectors`** (`backend/api/users.py`, `backend/api/sectors.py`):
+  perfil próprio, listagem/busca (gestor+), promoção de permissão (admin), setores (listagem
+  pública, criação restrita a admin).
+- **Reforço de dono nos rascunhos**: só quem criou o rascunho (ou um admin) pode editar
+  (`POST /bitins/draft` com `mongo_id`) ou excluir (`DELETE /bitins/{mongo_id}`) — qualquer
+  outro usuário autenticado recebe `403`. Edição por admin não reatribui `criado_por`.
+- **`criado_por`** (Postgres `bitins` e Mongo `bitin_contents`): passa a ser preenchido de
+  verdade com o e-mail do usuário autenticado (coluna já existia nullable desde antes).
+- **Validação estrutural de `ordem_cliente[]`** (`bitin_model.validate_ordem_cliente`):
+  `codigo` obrigatório por entrada, itens de `acrescentar_no_pedido[]`/`retira_do_pedido[]`
+  exigem `codigo_material`+`quantidade`, entrada sem nenhum item é sinalizada
+  (`ordem_cliente_sem_itens`). O schema já suportava essa forma aninhada; só o conteúdo não
+  era validado ainda.
+- **Todos os endpoints de `/bitins` agora exigem autenticação** (`Authorization: Bearer
+  <token>`) — sem token válido, `401`.
+- 13 testes novos de robustez em `tests/test_backend_bitins.py` (filtros de listagem,
+  paginação, entrada degenerada em `/enviar`, lista técnica inválida via API) e um arquivo
+  novo `tests/test_backend_auth.py` (registro/bootstrap-admin/login/RBAC/promoção/setores).
+
+### Fixed (achados corrigindo o `GPT_Engineering_authAPI`, usado só como referência)
+- **Escalonamento de privilégio**: no serviço de referência, `POST /auth/register` aceitava
+  `permission_level` direto do corpo da requisição — qualquer um podia se registrar como
+  admin. Aqui, `UserCreate` nem tem esse campo; o nível é sempre decidido no servidor.
+- **CORS inválido**: `allow_origins=["*"]` + `allow_credentials=True` (combinação insegura) —
+  trocado por lista explícita de origens.
+- Rotas `/bitins` próprias do serviço de referência (numeração e persistência
+  redundantes/incompatíveis com este sistema) não foram trazidas.
+
+### Changed
+- Reorganização de pastas: scripts/saídas do PoC leve original movidos para
+  `scripts/legacy_poc/` e `scripts/legacy_poc/output/`; arquivos de exemplo/dados reais
+  (`.xlsm`, `.pdf`, `exported_winshuttle.csv`) movidos para `examples/`.
+- `backend/models_sql.py`: coluna `criado_por` (String, nullable) adicionada em `BitinSQL`.
+- `backend/config.py`: `SECRET_KEY`/`ALGORITHM`/`ACCESS_TOKEN_EXPIRE_MINUTES` substituem as
+  variáveis do design anterior de serviço de auth separado (abandonado antes de ser
+  publicado); `VERSION` atualizado para `0.3.0`.
+
+### Notes
+- 147 testes automatizados no total (era 114 na v0.2.0).
+- Decisão de arquitetura registrada e depois revisada no mesmo dia: cogitamos rodar a
+  autenticação como serviço separado (JWT validado por segredo compartilhado entre dois
+  `.env`), mas optamos por unificar no mesmo processo/banco — evita sincronizar segredo entre
+  dois arquivos `.env` e resolve RBAC/reforço de dono sem exigir chamada de rede por
+  requisição. Ver `docs/BACKEND.md`, seção "Autenticação", para o histórico completo da decisão.
+
 ## [v0.2.0] - 2026-07-10
 
 ### Added

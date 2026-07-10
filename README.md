@@ -71,13 +71,14 @@ automatizados rodam sem bancos reais (SQLite + mongomock-motor).
 
 ## Release manual
 
-A release `v0.1.0` foi criada manualmente no GitHub usando `docs/RELEASE_v0.1.0.md` como corpo da release.
+Releases são criadas manualmente no GitHub, usando `docs/RELEASE_vX.Y.Z.md` como corpo de
+cada release. O processo não é automatizado — a publicação é feita pelo GitHub web interface.
 
-O processo de release não é automatizado no repositório, portanto a publicação deve ser feita pelo GitHub web interface.
+- v0.3.0 — autenticação, reforço de dono, validação de `ordem_cliente[]`: `docs/RELEASE_v0.3.0.md` — <https://github.com/alekrszp/bitinwebmaker-gsi/releases/tag/v0.3.0>
+- v0.2.0 — modelo de BITin, regras de negócio, ciclo de vida, backend: `docs/RELEASE_v0.2.0.md` — <https://github.com/alekrszp/bitinwebmaker-gsi/releases/tag/v0.2.0>
+- v0.1.0 — PoC inicial: `docs/RELEASE_v0.1.0.md` — <https://github.com/alekrszp/bitinwebmaker-gsi/releases/tag/v0.1.0>
 
-Release URL: <https://github.com/alekrszp/bitinwebmaker-gsi/releases/tag/v0.1.0>
-
-Veja também `docs/CHANGELOG.md` para as notas de release.
+Veja também `docs/CHANGELOG.md` para as notas de release completas.
 
 ## Arquivos principais
 
@@ -97,6 +98,9 @@ Veja também `docs/CHANGELOG.md` para as notas de release.
 **Config (`config/`)**: `vba_mapping.json`, `bitin_document_mapping.json`, `lista_tecnica_mapping.json`
 
 **Backend (`backend/`)**: API FastAPI (ver seção acima e `docs/BACKEND.md`)
+- `api/bitins.py`, `api/users.py`, `api/sectors.py` — endpoints
+- `auth/` — autenticação unificada (models, hash/JWT, dependências de permissão, rotas de
+  registro/login)
 
 **Documentação (`docs/`)**: `BITIN_MODEL.md`, `VBA_EXPORT_MAPPING.md`, `VBA_MIGRATION_GUIDE.md`, `BACKEND.md`
 
