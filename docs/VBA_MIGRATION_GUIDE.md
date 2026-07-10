@@ -47,13 +47,11 @@ Estas rotinas são o núcleo do fluxo Winshuttle e foram portadas primeiro, em `
 
 ### P1 — Integrações e eventos
 
-Rotinas que suportam a experiência e integração, mas não são necessárias para entregar o PoC de exportação principal.
-
-- `Módulo4.bas` — `Preencher_Bitin`
-- `Módulo10.bas` — `DWG_SAT`
-- `Módulo12.bas` — `EMAIL`, `Worksheet_Change`
-- `Módulo13.bas` — `DWG_SAT_N_DESENHO`
-- `Plan2.cls` — `Worksheet_Change`
+- `Módulo4.bas` — `Preencher_Bitin` ✅ **portado** em `scripts/bitin_document.py` (Alt/Esp/checklist/diffs), validado contra BITin real.
+- `Módulo10.bas` — `DWG_SAT` ✅ **portado** (mesmo arquivo, como sugestão opcional — ver `docs/BITIN_MODEL.md` "Alt/Esp declarados pelo engenheiro").
+- `Módulo13.bas` — `DWG_SAT_N_DESENHO` ✅ **portado** (idem).
+- `Módulo12.bas` — `EMAIL`, `Worksheet_Change` — não portado (notificação por e-mail, fora do fluxo de dados).
+- `Plan2.cls` — `Worksheet_Change` — não portado (coloração visual cosmética no Excel, sem efeito no dado).
 
 ### P2 — Helpers e formatação
 
@@ -102,14 +100,24 @@ Existe um projeto irmão, `GPT_Engineering_BITIN`, que foi uma primeira tentativ
 
 ## Próximo passo recomendado
 
-Com o P0 portado e o padrão "atual vs. Novo" entendido, o próximo passo **não é** portar P1/P2 do VBA — é construir o backend da interface web de criação de BITin (engenheiro → Central), usando `scripts/vba_port_export.py`/`config/vba_mapping.json` como base:
+**Atualizado em 2026-07-10 — os 4 itens abaixo (registrados em 2026-07-09) estão concluídos:**
 
-1. Modelo de dados do BITin (cabeçalho + itens), cobrindo tanto os campos do template formal (`ANEXO A` do POP: Solicitante, Data, Produto, Motivo, BITex, e por código: Alt/Est/Esp/LP/Pre/OC/OF) quanto os campos técnicos campo-a-campo (as colunas `"... Novo"`).
-2. Validação desse modelo (formato do número do BITin `YXXXX/AA`, campos obrigatórios, valores válidos para Alt/Est/Esp/LP/Pre/OC/OF).
-3. Geração de um `.xlsm` a partir do modelo, compatível com o que a Central usa hoje, para o engenheiro enviar.
-4. Só depois: interface web de fato (formulário para o engenheiro), fora do escopo Python puro.
+1. ✅ Modelo de dados do BITin — `scripts/bitin_model.py`, `docs/BITIN_MODEL.md`.
+2. ✅ Validação (formato do número, campos obrigatórios, enum de Alt/Est/Esp/LP/Pre/OC/OF) —
+   `scripts/bitin_business_rules.py`, erros estruturados em `scripts/bitin_errors.py`.
+3. ✅ Geração do `.xlsm` real da aba `Plan2` — `bitin_model.write_plan2_xlsx`.
+4. 🔶 Interface web — **backend pronto** (`backend/`, FastAPI + Postgres + MongoDB, ver
+   `docs/BACKEND.md`), sem autenticação ainda; frontend (formulário pro engenheiro) ainda não
+   construído — esse é o próximo passo real agora.
 
-Os módulos P1 (`Módulo4.Preencher_Bitin`, `Módulo10.DWG_SAT`, `Módulo12.EMAIL`/`Worksheet_Change`, `Módulo13.DWG_SAT_N_DESENHO`, `Plan2.cls.Worksheet_Change`) ficam registrados como trabalho futuro, não como próximo passo — retomar só se o novo fluxo web precisar replicar algum desses comportamentos (ex.: `Plan2.cls.Worksheet_Change` colore linhas e preenche a coluna 2 conforme o tipo de alteração 1-7, hoje só cosmético no Excel).
+Também concluído desde então: lista técnica/CS02 (`scripts/lista_tecnica_export.py`),
+documento do BITin/checklist (`scripts/bitin_document.py`, P1 do VBA), ciclo de vida
+rascunho/enviado (`scripts/bitin_lifecycle.py`), parser de colar do SAP
+(`scripts/sap_paste_parser.py`). Ver `CHANGELOG.md` (v0.2.0) para o resumo completo.
+
+Módulos ainda não portados (`Módulo12.EMAIL`/`Worksheet_Change`, `Plan2.cls.Worksheet_Change`,
+P2 inteiro) seguem registrados como trabalho futuro — só retomar se o frontend precisar
+replicar algum desses comportamentos.
 
 ## Arquivos de referência
 
@@ -117,9 +125,12 @@ Os módulos P1 (`Módulo4.Preencher_Bitin`, `Módulo10.DWG_SAT`, `Módulo12.EMAI
 - `artifacts/vba/Módulo2.bas`
 - `artifacts/vba/Módulo11.bas`
 - `artifacts/vba/Plan1.cls`, `Plan2.cls` — codenames reais das abas `ZBPP009` / `ZBPP009 + ALTERACAO`
-- `scripts/vba_port_export.py` — port fiel do P0 (novo)
-- `config/vba_mapping.json` — mapeamento declarativo usado pelo port (novo)
-- `tests/test_vba_port_export.py` — testes do port fiel (novo)
+- `scripts/vba_port_export.py` — port fiel do P0
+- `scripts/bitin_document.py` — port do P1 (`Módulo4`+`Módulo10`+`Módulo13`)
+- `scripts/bitin_model.py`, `bitin_business_rules.py`, `bitin_lifecycle.py`, `bitin_view.py` — modelo/regras/ciclo de vida do BITin
+- `backend/` — API (FastAPI + Postgres + MongoDB), ver `docs/BACKEND.md`
+- `config/vba_mapping.json` — mapeamento declarativo usado pelo port
+- `tests/` — suíte completa (114 testes)
 - `scripts/poc_export.py`
 - `scripts/robust_export.py`
 - `scripts/verify_poc.py`

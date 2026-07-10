@@ -71,7 +71,7 @@ O processo de release não é automatizado no repositório, portanto a publicaç
 
 Release URL: <https://github.com/alekrszp/bitinwebmaker-gsi/releases/tag/v0.1.0>
 
-Veja também `CHANGELOG.md` para as notas de release.
+Veja também `docs/CHANGELOG.md` para as notas de release.
 
 ## Arquivos principais
 
@@ -94,7 +94,7 @@ Veja também `CHANGELOG.md` para as notas de release.
 
 **Documentação (`docs/`)**: `BITIN_MODEL.md`, `VBA_EXPORT_MAPPING.md`, `VBA_MIGRATION_GUIDE.md`, `BACKEND.md`
 
-**Arquivos originais**: `Novo_template_BITin_V2 TESTE.xlsm`, `exported_winshuttle.csv`, `context.md`, `POP_ENG_7 3 7_002.pdf`
+**Arquivos originais**: `Novo_template_BITin_V2 TESTE.xlsm`, `exported_winshuttle.csv`, `docs/context.md`, `POP_ENG_7 3 7_002.pdf`
 
 ## Dependências
 

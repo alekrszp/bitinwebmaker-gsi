@@ -1,5 +1,12 @@
 # VBA Catalog — Novo_template_BITin_V2 TESTE.xlsm
 
+> **Atualizado em 2026-07-10**: P0 (`Módulo1`, `Módulo2`, `Módulo11`) e boa parte de P1
+> (`Módulo4`, `Módulo10`, `Módulo13`) já foram portados para Python — ver
+> `docs/VBA_EXPORT_MAPPING.md` (mapeamento detalhado + quirks), `docs/BITIN_MODEL.md`
+> (modelo de dados/regras) e `scripts/vba_port_export.py`, `scripts/bitin_document.py`.
+> Este catálogo continua válido como inventário original das rotinas VBA; a versão
+> machine-readable está em `docs/vba_catalog.json`.
+
 Resumo dos módulos VBA extraídos (prioridade P0 = export/Winshuttle crítico, P1 = integrações/notifications/DWG, P2 = helpers/formatos):
 
 - `Módulo1.bas` — Procedures: `PREENCHER` — Priority: P0
@@ -59,9 +66,14 @@ Resumo dos módulos VBA extraídos (prioridade P0 = export/Winshuttle crítico, 
 
 - Outros módulos de `Plan*.cls` e `Planilha*.cls` contêm atributos de planilhas e algumas funções utilitárias; prioridade geralmente P2.
 
-Observações e próximos passos recomendados:
-- P0 (prioridade imediata): portar `Módulo2.Winshuttle`, `Módulo1.PREENCHER` e `Módulo11.clear_winshuttle` para código server-side (Python) que gere os sheets `Formulário Winshuttle` e `dados teste winshuttle` em CSV/XLSX idênticos ao template.
-- P1: reimplementar rotinas de apresentação/validação e notificações (`Módulo4`, `Módulo10/13`, `Módulo12`) como helpers separados e endpoints para preview e notificação.
-- P2: macros de UI/format e utilitários (`Módulo3,5-9,14-20`) podem ser substituídos por funcionalidades no editor web ou por scripts de pós-processamento.
-
-Posso: 1) gerar um PoC Python que implementa `Winshuttle`/export (gera CSV idêntico), ou 2) criar `docs/vba_catalog.json` com detalhes por função para estimativa de esforço. Qual prefere? (responda: `poc-export` ou `json-catalog`)
+Observações e status (atualizado 2026-07-10):
+- **P0 — concluído**: `Módulo1.PREENCHER`, `Módulo2.Winshuttle` e `Módulo11.clear_winshuttle`
+  portados em `scripts/vba_port_export.py` (subcomandos `sync`/`export`), orientado por
+  `config/vba_mapping.json`. Validado contra BITins reais — ver `docs/VBA_EXPORT_MAPPING.md`.
+- **P1 — parcialmente concluído**: `Módulo4.Preencher_Bitin` + `Módulo10.DWG_SAT` +
+  `Módulo13.DWG_SAT_N_DESENHO` portados em `scripts/bitin_document.py` (Alt/Esp/checklist).
+  `Módulo12` (e-mail/notificações) e `Plan2.cls.Worksheet_Change` (coloração visual) ainda não
+  portados — não são necessários pro fluxo de dados, só cosméticos/notificação no Excel.
+- **P2**: macros de UI/formato e utilitários (`Módulo3,5-9,14-20`) seguem não portados — não
+  fazem parte do fluxo de dados do BITin, ficam substituídos naturalmente pela interface web
+  quando ela existir.

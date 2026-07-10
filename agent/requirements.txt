@@ -1,5 +1,0 @@
-pyyaml>=6.0
-openpyxl>=3.0.0
-oletools>=0.61
-pandas>=1.0
-

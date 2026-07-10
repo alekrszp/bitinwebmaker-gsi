@@ -1,5 +1,11 @@
 # Handoff Técnico e Documentação do PoC
 
+> **Documento histórico (estado da release `v0.1.0`, 2026-07-09)**. Preservado como registro
+> do PoC original. O estado atual do projeto (modelo de dados do BITin, port fiel completo,
+> regras de negócio, backend/API) está em `docs/BITIN_MODEL.md`, `docs/VBA_EXPORT_MAPPING.md`,
+> `docs/VBA_MIGRATION_GUIDE.md` e `docs/BACKEND.md` — comece por lá. A seção "Próximos passos
+> recomendados" abaixo já foi concluída (ver `CHANGELOG.md`, v0.2.0).
+
 ## Sumário
 
 - [Objetivo](#objetivo)
