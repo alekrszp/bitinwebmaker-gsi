@@ -129,14 +129,14 @@ class RealWorkbookTest(unittest.TestCase):
 
     def test_plan1_sheet_has_no_data_rows_today(self) -> None:
         config = vpe.load_config(CONFIG_PATH)
-        workbook = ROOT / "Novo_template_BITin_V2 TESTE.xlsm"
+        workbook = ROOT / "examples" / "Novo_template_BITin_V2 TESTE.xlsm"
         df = vpe.read_sheet(workbook, config["sheet_codenames"]["Plan1"])
         rows = vpe.read_plan1_rows(df, config)
         self.assertEqual(rows, [])
 
     def test_plan2_sheet_has_no_data_rows_today(self) -> None:
         config = vpe.load_config(CONFIG_PATH)
-        workbook = ROOT / "Novo_template_BITin_V2 TESTE.xlsm"
+        workbook = ROOT / "examples" / "Novo_template_BITin_V2 TESTE.xlsm"
         df = vpe.read_sheet(workbook, config["sheet_codenames"]["Plan2"])
         rows = vpe.read_plan2_rows(df, config)
         self.assertEqual(rows, [])

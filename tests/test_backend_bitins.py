@@ -221,6 +221,87 @@ class BitinApiTest(unittest.TestCase):
         self.assertEqual(len(body["checklist"]), 22)
         self.assertEqual(body["materiais"][0]["codigo_material"], "CT30-7103")
 
+    def test_enviar_bitin_completamente_vazio_nao_quebra(self) -> None:
+        """Entrada degenerada (content={}) não pode derrubar a API com 500 -- deve
+        devolver erros estruturados normalmente, como qualquer outro rascunho inválido."""
+        create_resp = self.client.post("/api/v1/bitins/draft", json={"content": {}})
+        mongo_id = create_resp.json()["mongo_id"]
+
+        enviar_resp = self.client.post(f"/api/v1/bitins/{mongo_id}/enviar")
+        self.assertEqual(enviar_resp.status_code, 200, enviar_resp.text)
+        body = enviar_resp.json()
+        self.assertFalse(body["ok"])
+        self.assertTrue(len(body["errors"]) >= 1)
+        self.assertIsNone(body["bitin"])
+
+    def test_listar_com_filtro_status(self) -> None:
+        rascunho_resp = self.client.post("/api/v1/bitins/draft", json={"content": make_bitin_content()})
+        enviado_resp = self.client.post("/api/v1/bitins/draft", json={"content": make_bitin_content()})
+        self.client.post(f"/api/v1/bitins/{enviado_resp.json()['mongo_id']}/enviar")
+
+        resp = self.client.get("/api/v1/bitins", params={"status": "rascunho"})
+        self.assertEqual(resp.status_code, 200)
+        mongo_ids = [b["mongo_id"] for b in resp.json()]
+        self.assertIn(rascunho_resp.json()["mongo_id"], mongo_ids)
+        self.assertNotIn(enviado_resp.json()["mongo_id"], mongo_ids)
+
+    def test_listar_com_filtro_termo(self) -> None:
+        self.client.post(
+            "/api/v1/bitins/draft", json={"content": make_bitin_content(solicitante="Fulano Especial")}
+        )
+        self.client.post("/api/v1/bitins/draft", json={"content": make_bitin_content(solicitante="Outro")})
+
+        resp = self.client.get("/api/v1/bitins", params={"termo": "especial"})
+        self.assertEqual(resp.status_code, 200)
+        body = resp.json()
+        self.assertEqual(len(body), 1)
+        self.assertEqual(body[0]["content"]["solicitante"], "Fulano Especial")
+
+    def test_listar_com_paginacao(self) -> None:
+        for _ in range(5):
+            self.client.post("/api/v1/bitins/draft", json={"content": make_bitin_content()})
+
+        resp = self.client.get("/api/v1/bitins", params={"limit": 2, "skip": 0})
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(len(resp.json()), 2)
+
+        resp_all = self.client.get("/api/v1/bitins", params={"limit": 100, "skip": 0})
+        self.assertEqual(len(resp_all.json()), 5)
+
+    def test_criar_draft_sem_content_retorna_422(self) -> None:
+        resp = self.client.post("/api/v1/bitins/draft", json={})
+        self.assertEqual(resp.status_code, 422)
+
+    def test_resumo_com_lista_tecnica(self) -> None:
+        conteudo = make_bitin_content()
+        conteudo["materiais"][0]["alteracoes"]["lista_tecnica"] = [
+            {"operacao": "alterar", "codigo_filho": "COMP-1", "quantidade_de": "1", "quantidade_para": "2"}
+        ]
+        create_resp = self.client.post("/api/v1/bitins/draft", json={"content": conteudo})
+        mongo_id = create_resp.json()["mongo_id"]
+
+        resumo_resp = self.client.get(f"/api/v1/bitins/{mongo_id}/resumo")
+        self.assertEqual(resumo_resp.status_code, 200, resumo_resp.text)
+        lista_tecnica = resumo_resp.json()["materiais"][0]["lista_tecnica"]
+        self.assertEqual(lista_tecnica[0]["codigo_filho"], "COMP-1")
+
+    def test_enviar_com_lista_tecnica_invalida_falha(self) -> None:
+        conteudo = make_bitin_content()
+        conteudo["materiais"][0]["alteracoes"]["lista_tecnica"] = [
+            {"operacao": "alterar", "quantidade_para": "2"}  # falta codigo_filho
+        ]
+        create_resp = self.client.post("/api/v1/bitins/draft", json={"content": conteudo})
+        mongo_id = create_resp.json()["mongo_id"]
+
+        enviar_resp = self.client.post(f"/api/v1/bitins/{mongo_id}/enviar")
+        self.assertEqual(enviar_resp.status_code, 200, enviar_resp.text)
+        body = enviar_resp.json()
+        self.assertFalse(body["ok"])
+        self.assertTrue(any(
+            e["code"] == "required_field_missing" and "codigo_filho" in e["field"]
+            for e in body["errors"]
+        ))
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -14,7 +14,7 @@ Este documento descreve o mapeamento exato de campos usados pelas rotinas VBA cr
 | `Plan2` | `ZBPP009 + ALTERACAO` |
 | `Plan3` | `Formulário Winshuttle` |
 
-Importante: a aba **`dados teste winshuttle`** (codename `Planilha3`), usada pelo PoC leve em `scripts/winshuttle_export.py`, **não é** `Plan1`. É uma amostra sintética independente, com apenas 24 colunas e já contendo pares valor/flag pré-preenchidos manualmente — não passa pela transformação real `Módulo1`→`Módulo2`. O PoC leve e o port fiel descrito abaixo são fluxos separados.
+Importante: a aba **`dados teste winshuttle`** (codename `Planilha3`), usada pelo PoC leve em `scripts/legacy_poc/winshuttle_export.py`, **não é** `Plan1`. É uma amostra sintética independente, com apenas 24 colunas e já contendo pares valor/flag pré-preenchidos manualmente — não passa pela transformação real `Módulo1`→`Módulo2`. O PoC leve e o port fiel descrito abaixo são fluxos separados.
 
 No momento da escrita, `ZBPP009` (Plan1 real) tem apenas 1 linha (cabeçalho, sem dados de material), então não há hoje um gabarito real de ponta a ponta — a validação do port fiel é feita com dados sintéticos construídos a partir da leitura literal do código VBA (ver `tests/test_vba_port_export.py`).
 
@@ -248,7 +248,7 @@ Essa sequência está implementada em `scripts/vba_port_export.py` (ver seção 
 
 ## 8. Port fiel: `scripts/vba_port_export.py` + `config/vba_mapping.json`
 
-Diferente do PoC leve (`scripts/winshuttle_export.py`, que opera sobre a aba sintética `dados teste winshuttle`), este port:
+Diferente do PoC leve (`scripts/legacy_poc/winshuttle_export.py`, que opera sobre a aba sintética `dados teste winshuttle`), este port:
 
 - Oferece **duas operações separadas**, refletindo que `Módulo1` e `Módulo2` rodam em momentos diferentes na vida real (ver seção 6): `sync` (recalcula as colunas de valor atual de `Plan2` a partir de `Plan1`/`ZBPP009`) e `export` (lê `Plan2` como está no arquivo — incluindo as colunas `"... Novo"` já preenchidas pelo engenheiro — e gera `Plan3`).
 - Aplica o mapeamento `Plan1`→`Plan2` e `Plan2`→`Plan3` de forma **declarativa**, orientado por `config/vba_mapping.json` — a maioria das regras (cópia direta, par valor/flag, par valor/flag condicionado a `N/A`) é dado, não código. As duas exceções verdadeiramente especiais (coluna 106 e a coluna 65 compartilhada — os quirks da seção 3) ficam isoladas e comentadas na engine (`scripts/vba_port_export.py`).
@@ -260,10 +260,10 @@ Uso:
 
 ```powershell
 # sync: atualiza as colunas de valor atual de Plan2 a partir de Plan1/ZBPP009
-.venv/Scripts/python.exe scripts/vba_port_export.py sync "Novo_template_BITin_V2 TESTE.xlsm" --out-xlsx plan2_sync.xlsx
+.venv/Scripts/python.exe scripts/vba_port_export.py sync "examples/Novo_template_BITin_V2 TESTE.xlsm" --out-xlsx plan2_sync.xlsx
 
 # export: lê Plan2 (com as colunas "... Novo" já preenchidas) e gera o export Winshuttle
-.venv/Scripts/python.exe scripts/vba_port_export.py export "Novo_template_BITin_V2 TESTE.xlsm" --out plan3_export.csv --audit-report reports/vba_port_audit.txt
+.venv/Scripts/python.exe scripts/vba_port_export.py export "examples/Novo_template_BITin_V2 TESTE.xlsm" --out plan3_export.csv --audit-report reports/vba_port_audit.txt
 ```
 
 ---

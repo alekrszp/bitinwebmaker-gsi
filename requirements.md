@@ -22,9 +22,9 @@ Declarar com precisão o que está incompleto, frágil ou não testado — sem i
 maturidade de uma solução.
 
 
-2. Perfil de trabalho de Alessandro
+2. Perfil de trabalho
 
-AspectoExpectativaIdioma e estiloPortuguês (BR), informal. Mensagens frequentemente fragmentadas em 2-3 envios consecutivos (às vezes com [Request interrupted by user] no meio) — tratar como continuação do mesmo raciocínio, não como pedidos isolados.Escopo ambíguoPerguntar antes de assumir. Depois que a direção estiver definida, executar com autonomia — sem reconfirmar a cada micro-decisão.ValidaçãoPriorizar validação contra dados reais (ex.: bitin teste.xlsm, bitin teste 2.xlsm) acima de suposições. Toda conclusão não validada deve ser explicitamente marcada como suposição, não como fato.Correções de domínioAlessandro já corrigiu entendimentos errados de processo de negócio (quem preenche as colunas "Novo", localização de Centro/Tipo Material, código específico vs. regra geral). Receber correções sem postura defensiva e recalibrar imediatamente.Regras de negócioPreferir regras gerais e robustas a regras acopladas a códigos específicos (ex.: engenheiro declara Alt explicitamente, em vez de Claude tentar derivar de código SAP — fonte vasta e instável demais para confiar).Liberdade operacionalPreservar a flexibilidade do usuário final (engenheiro), incluindo colar dados do SAP e editar sem travas. Validação pesada deve ocorrer apenas no portão correto (ex.: envio final), nunca bloqueando edição livre.Sequência de trabalhoDocumentação antes de implementação/execução de mudança de código.
+AspectoExpectativaIdioma e estiloPortuguês (BR), informal. Mensagens frequentemente fragmentadas em 2-3 envios consecutivos (às vezes com [Request interrupted by user] no meio) — tratar como continuação do mesmo raciocínio, não como pedidos isolados.Escopo ambíguoPerguntar antes de assumir. Depois que a direção estiver definida, executar com autonomia — sem reconfirmar a cada micro-decisão.ValidaçãoPriorizar validação contra dados reais (ex.: bitin teste.xlsm, bitin teste 2.xlsm) acima de suposições. Toda conclusão não validada deve ser explicitamente marcada como suposição, não como fato.Correções de domínio já corrigido entendimentos errados de processo de negócio (quem preenche as colunas "Novo", localização de Centro/Tipo Material, código específico vs. regra geral). Receber correções sem postura defensiva e recalibrar imediatamente.Regras de negócioPreferir regras gerais e robustas a regras acopladas a códigos específicos (ex.: engenheiro declara Alt explicitamente, em vez de Claude tentar derivar de código SAP — fonte vasta e instável demais para confiar).Liberdade operacionalPreservar a flexibilidade do usuário final (engenheiro), incluindo colar dados do SAP e editar sem travas. Validação pesada deve ocorrer apenas no portão correto (ex.: envio final), nunca bloqueando edição livre.Sequência de trabalhoDocumentação antes de implementação/execução de mudança de código.
 
 3. Documentação e releases
 
@@ -45,11 +45,11 @@ organização de código) não exigem release, só documentação.
 
 **Proatividade em commit/release (registrado em 2026-07-10)**: quando eu (Claude) perceber
 que o conjunto de mudanças acumuladas já justifica um commit e/ou um novo release (pelo
-critério acima), não devo esperar ser perguntado — devo **avisar o Alessandro e já fazer**:
+critério acima), não devo esperar ser perguntado — devo **avisar o e já fazer**:
 atualizar a documentação relevante, revisar os `.md` afetados, preparar o commit (e as notas
 de release, se for o caso), e avisar o que foi feito. Isso não dispensa pedir confirmação
 antes de `push`/publicar um release de fato no GitHub — só significa que a preparação
-(docs + commit local) não precisa esperar o Alessandro pedir explicitamente.
+(docs + commit local) não precisa esperar pedir explicitamente.
 
 
 4. Contexto do projeto

@@ -20,10 +20,10 @@ fluxo hoje feito em Excel/VBA (`Novo_template_BITin_V2 TESTE.xlsm`) para Python 
 
    ```powershell
    # sync: atualiza os valores atuais de Plan2 a partir de Plan1/ZBPP009
-   .venv/Scripts/python.exe scripts/vba_port_export.py sync "Novo_template_BITin_V2 TESTE.xlsm" --out-xlsx plan2_sync.xlsx
+   .venv/Scripts/python.exe scripts/vba_port_export.py sync "examples/Novo_template_BITin_V2 TESTE.xlsm" --out-xlsx plan2_sync.xlsx
 
    # export: lê Plan2 (com as colunas "Novo" já preenchidas pelo engenheiro) e gera o export Winshuttle
-   .venv/Scripts/python.exe scripts/vba_port_export.py export "Novo_template_BITin_V2 TESTE.xlsm" --out plan3_export.csv --audit-report reports/vba_port_audit.txt
+   .venv/Scripts/python.exe scripts/vba_port_export.py export "examples/Novo_template_BITin_V2 TESTE.xlsm" --out plan3_export.csv --audit-report reports/vba_port_audit.txt
    ```
 
    Veja `docs/VBA_EXPORT_MAPPING.md` para o mapeamento completo de colunas e o padrão "atual
@@ -94,7 +94,9 @@ Veja também `docs/CHANGELOG.md` para as notas de release.
 
 **Documentação (`docs/`)**: `BITIN_MODEL.md`, `VBA_EXPORT_MAPPING.md`, `VBA_MIGRATION_GUIDE.md`, `BACKEND.md`
 
-**Arquivos originais**: `Novo_template_BITin_V2 TESTE.xlsm`, `exported_winshuttle.csv`, `docs/context.md`, `POP_ENG_7 3 7_002.pdf`
+**Arquivos de exemplo/dados reais (`examples/`)**: `Novo_template_BITin_V2 TESTE.xlsm` (template original), `exported_winshuttle.csv` (referência), `bitin teste.xlsm`, `bitin teste 2.xlsm` (BITins reais usados para validar o motor), `POP_ENG_7 3 7_002.pdf`
+
+**PoC legado (`scripts/legacy_poc/`)**: scripts e saídas do PoC leve original (v0.1.0), superados pelo motor atual — mantidos como histórico documentado, não usar para trabalho novo.
 
 ## Dependências
 

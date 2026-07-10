@@ -7,7 +7,7 @@ Este documento descreve o estado atual da migração das rotinas VBA do workbook
 ## Estado atual
 
 - A release `v0.1.0` foi publicada manualmente no GitHub.
-- O repositório contém um PoC leve (`scripts/winshuttle_export.py`) que valida contra `exported_winshuttle.csv` — porém esse PoC opera sobre a aba sintética `dados teste winshuttle`, não sobre o fluxo real `Plan1`→`Plan2`→`Plan3`. Ver `docs/VBA_EXPORT_MAPPING.md` seção "Nomes reais das abas".
+- O repositório contém um PoC leve (`scripts/legacy_poc/winshuttle_export.py`) que valida contra `exported_winshuttle.csv` — porém esse PoC opera sobre a aba sintética `dados teste winshuttle`, não sobre o fluxo real `Plan1`→`Plan2`→`Plan3`. Ver `docs/VBA_EXPORT_MAPPING.md` seção "Nomes reais das abas".
 - **P0 concluído em 2026-07-09**: o port fiel do fluxo real (`Módulo1`+`Módulo2`+`Módulo11`) está implementado em `scripts/vba_port_export.py` (subcomandos `sync` e `export`), orientado por `config/vba_mapping.json`, com testes em `tests/test_vba_port_export.py`. Detalhes completos do mapeamento estão em `docs/VBA_EXPORT_MAPPING.md`.
 - A lógica de exportação já foi parcialmente documentada em `docs/vba_catalog.md` e `docs/vba_catalog.json`.
 - Os módulos VBA extraídos estão em `artifacts/vba/`.
