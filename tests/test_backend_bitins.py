@@ -4,7 +4,6 @@ no lugar do Postgres e mongomock-motor no lugar do MongoDB (não há nenhum dos 
 reais disponíveis neste ambiente -- ver docs/BACKEND.md)."""
 
 import sys
-import time
 import unittest
 from pathlib import Path
 
@@ -13,24 +12,19 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from fastapi.testclient import TestClient  # noqa: E402
-from jose import jwt  # noqa: E402
 from mongomock_motor import AsyncMongoMockClient  # noqa: E402
 from sqlalchemy import create_engine  # noqa: E402
 from sqlalchemy.orm import sessionmaker  # noqa: E402
 from sqlalchemy.pool import StaticPool  # noqa: E402
 
-from backend.config import settings  # noqa: E402
+from backend.auth.models import Usuario  # noqa: E402
+from backend.auth.security import create_access_token, get_password_hash  # noqa: E402
 from backend.db.mongodb import get_mongo_db  # noqa: E402
 from backend.db.session import Base, get_db  # noqa: E402
 from backend.main import app  # noqa: E402
 from backend.models_sql import BitinSQL  # noqa: E402
 
-
-def make_token(user_id: int = 1) -> str:
-    """Simula o token que o serviço de auth separado (GPT_Engineering_authAPI) emitiria --
-    mesma SECRET_KEY/ALGORITHM compartilhada, mesmo formato de payload ({sub, exp})."""
-    payload = {"sub": str(user_id), "exp": int(time.time()) + 3600}
-    return jwt.encode(payload, settings.AUTH_SECRET_KEY, algorithm=settings.AUTH_ALGORITHM)
+DEFAULT_USER_ID = 1
 
 
 def make_bitin_content(**overrides) -> dict:
@@ -83,11 +77,32 @@ class BitinApiTest(unittest.TestCase):
         app.dependency_overrides[get_db] = override_get_db
         app.dependency_overrides[get_mongo_db] = override_get_mongo_db
         self.client = TestClient(app)  # sem "with": não dispara o lifespan (Mongo real)
-        self.client.headers.update({"Authorization": f"Bearer {make_token()}"})
+
+        self.default_user = self._create_user(DEFAULT_USER_ID)
+        self.client.headers.update({"Authorization": f"Bearer {self._token_for(self.default_user)}"})
 
     def tearDown(self) -> None:
         app.dependency_overrides.clear()
         self.engine.dispose()
+
+    def _create_user(self, user_id: int, email: str | None = None, permission_level: int = 0) -> Usuario:
+        db = self.SessionLocal()
+        user = Usuario(
+            id=user_id,
+            email=email or f"user{user_id}@example.com",
+            nome=f"Usuário {user_id}",
+            hashed_password=get_password_hash("senha123"),
+            permission_level=permission_level,
+        )
+        db.add(user)
+        db.commit()
+        db.refresh(user)
+        db.expunge(user)
+        db.close()
+        return user
+
+    def _token_for(self, user: Usuario) -> str:
+        return create_access_token(user.id)
 
     def test_criar_rascunho(self) -> None:
         resp = self.client.post("/api/v1/bitins/draft", json={"content": make_bitin_content()})
@@ -326,42 +341,55 @@ class BitinApiTest(unittest.TestCase):
         self.assertEqual(resp.status_code, 401)
 
     def test_draft_registra_criado_por_na_criacao(self) -> None:
-        resp = self.client.post(
-            "/api/v1/bitins/draft", json={"content": make_bitin_content()},
-            headers={"Authorization": f"Bearer {make_token(user_id=42)}"},
-        )
-        self.assertEqual(resp.json()["criado_por"], "42")
+        resp = self.client.post("/api/v1/bitins/draft", json={"content": make_bitin_content()})
+        self.assertEqual(resp.json()["criado_por"], self.default_user.email)
 
-    def test_draft_nao_muda_criado_por_ao_atualizar_com_outro_usuario(self) -> None:
-        create_resp = self.client.post(
-            "/api/v1/bitins/draft", json={"content": make_bitin_content()},
-            headers={"Authorization": f"Bearer {make_token(user_id=1)}"},
-        )
+    def test_admin_pode_editar_rascunho_de_outro_e_dono_nao_muda(self) -> None:
+        create_resp = self.client.post("/api/v1/bitins/draft", json={"content": make_bitin_content()})
         mongo_id = create_resp.json()["mongo_id"]
 
+        admin = self._create_user(99, permission_level=99)
         update_resp = self.client.post(
             "/api/v1/bitins/draft",
-            json={"mongo_id": mongo_id, "content": make_bitin_content(motivo="Editado por outro")},
-            headers={"Authorization": f"Bearer {make_token(user_id=99)}"},
+            json={"mongo_id": mongo_id, "content": make_bitin_content(motivo="Editado por admin")},
+            headers={"Authorization": f"Bearer {self._token_for(admin)}"},
         )
-        self.assertEqual(update_resp.json()["criado_por"], "1")
+        self.assertEqual(update_resp.status_code, 200, update_resp.text)
+        self.assertEqual(update_resp.json()["criado_por"], self.default_user.email)  # dono não muda
 
-    def test_enviar_registra_criado_por_na_tabela_sql(self) -> None:
-        create_resp = self.client.post(
-            "/api/v1/bitins/draft", json={"content": make_bitin_content()},
-            headers={"Authorization": f"Bearer {make_token(user_id=7)}"},
-        )
+    def test_usuario_sem_ser_dono_ou_admin_nao_pode_editar(self) -> None:
+        create_resp = self.client.post("/api/v1/bitins/draft", json={"content": make_bitin_content()})
         mongo_id = create_resp.json()["mongo_id"]
 
-        enviar_resp = self.client.post(
-            f"/api/v1/bitins/{mongo_id}/enviar",
-            headers={"Authorization": f"Bearer {make_token(user_id=7)}"},
+        outro_usuario = self._create_user(2, permission_level=0)
+        update_resp = self.client.post(
+            "/api/v1/bitins/draft",
+            json={"mongo_id": mongo_id, "content": make_bitin_content(motivo="Tentando editar")},
+            headers={"Authorization": f"Bearer {self._token_for(outro_usuario)}"},
         )
+        self.assertEqual(update_resp.status_code, 403)
+
+    def test_usuario_sem_ser_dono_ou_admin_nao_pode_excluir(self) -> None:
+        create_resp = self.client.post("/api/v1/bitins/draft", json={"content": make_bitin_content()})
+        mongo_id = create_resp.json()["mongo_id"]
+
+        outro_usuario = self._create_user(2, permission_level=0)
+        del_resp = self.client.delete(
+            f"/api/v1/bitins/{mongo_id}",
+            headers={"Authorization": f"Bearer {self._token_for(outro_usuario)}"},
+        )
+        self.assertEqual(del_resp.status_code, 403)
+
+    def test_enviar_registra_criado_por_na_tabela_sql(self) -> None:
+        create_resp = self.client.post("/api/v1/bitins/draft", json={"content": make_bitin_content()})
+        mongo_id = create_resp.json()["mongo_id"]
+
+        enviar_resp = self.client.post(f"/api/v1/bitins/{mongo_id}/enviar")
         self.assertTrue(enviar_resp.json()["ok"], enviar_resp.text)
 
         db = self.SessionLocal()
         bitin_sql = db.query(BitinSQL).filter_by(mongo_document_id=mongo_id).one()
-        self.assertEqual(bitin_sql.criado_por, "7")
+        self.assertEqual(bitin_sql.criado_por, self.default_user.email)
         db.close()
 
 

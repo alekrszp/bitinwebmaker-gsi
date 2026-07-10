@@ -3,8 +3,11 @@ uvicorn
 sqlalchemy>=2.0
 motor
 pydantic
+pydantic[email]
 pydantic-settings
 python-jose[cryptography]
+passlib
+python-multipart
 
 # Produção (Postgres real) -- descomentar quando for rodar contra Postgres de verdade:
 # psycopg2-binary

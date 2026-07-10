@@ -106,9 +106,9 @@ Existe um projeto irmão, `GPT_Engineering_BITIN`, que foi uma primeira tentativ
 2. ✅ Validação (formato do número, campos obrigatórios, enum de Alt/Est/Esp/LP/Pre/OC/OF) —
    `scripts/bitin_business_rules.py`, erros estruturados em `scripts/bitin_errors.py`.
 3. ✅ Geração do `.xlsm` real da aba `Plan2` — `bitin_model.write_plan2_xlsx`.
-4. 🔶 Interface web — **backend pronto** (`backend/`, FastAPI + Postgres + MongoDB, ver
-   `docs/BACKEND.md`), sem autenticação ainda; frontend (formulário pro engenheiro) ainda não
-   construído — esse é o próximo passo real agora.
+4. 🔶 Interface web — **backend pronto** (`backend/`, FastAPI + Postgres + MongoDB +
+   autenticação unificada, ver `docs/BACKEND.md`); frontend (formulário pro engenheiro) ainda
+   não construído — esse é o próximo passo real agora.
 
 Também concluído desde então: lista técnica/CS02 (`scripts/lista_tecnica_export.py`),
 documento do BITin/checklist (`scripts/bitin_document.py`, P1 do VBA), ciclo de vida
@@ -130,7 +130,7 @@ replicar algum desses comportamentos.
 - `scripts/bitin_model.py`, `bitin_business_rules.py`, `bitin_lifecycle.py`, `bitin_view.py` — modelo/regras/ciclo de vida do BITin
 - `backend/` — API (FastAPI + Postgres + MongoDB), ver `docs/BACKEND.md`
 - `config/vba_mapping.json` — mapeamento declarativo usado pelo port
-- `tests/` — suíte completa (134 testes)
+- `tests/` — suíte completa (147 testes)
 - `scripts/poc_export.py`
 - `scripts/robust_export.py`
 - `scripts/verify_poc.py`

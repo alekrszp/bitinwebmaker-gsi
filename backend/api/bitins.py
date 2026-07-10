@@ -7,7 +7,8 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 import backend.scripts_path as scripts_path  # noqa: F401  (garante sys.path antes dos imports abaixo)
-from backend.auth import get_current_user_id
+from backend.auth.deps import get_current_active_user
+from backend.auth.models import Usuario
 from backend.bitin_number import SetorInvalido, gerar_e_salvar_bitin_sql
 from backend.db.mongodb import get_mongo_db
 from backend.db.session import get_db
@@ -24,6 +25,7 @@ router = APIRouter()
 
 STATUS_RASCUNHO = bitin_lifecycle.STATUS_RASCUNHO
 STATUS_ENVIADO = bitin_lifecycle.STATUS_ENVIADO
+ADMIN_LEVEL = 99
 
 
 class DraftRequest(BaseModel):
@@ -62,10 +64,21 @@ def _doc_to_response(doc: dict[str, Any]) -> BitinResponse:
     )
 
 
+def _require_owner_or_admin(doc: dict[str, Any], current_user: Usuario) -> None:
+    """Só quem criou o rascunho (ou um admin) pode editar/excluir. Docs sem 'criado_por'
+    (nenhum registrado) não são bloqueados -- não há dono conhecido pra comparar."""
+    criado_por = doc.get("criado_por")
+    if criado_por and criado_por != current_user.email and current_user.permission_level < ADMIN_LEVEL:
+        raise HTTPException(
+            status_code=403,
+            detail="Só quem criou o rascunho (ou um admin) pode editar/excluir",
+        )
+
+
 @router.post("/draft", response_model=BitinResponse)
 async def create_or_update_draft(
     draft_in: DraftRequest,
-    current_user_id: int = Depends(get_current_user_id),
+    current_user: Usuario = Depends(get_current_active_user),
     mongo_db=Depends(get_mongo_db),
 ):
     """Cria ou atualiza um rascunho -- sem validação de negócio (liberdade de edição,
@@ -79,13 +92,14 @@ async def create_or_update_draft(
             raise HTTPException(status_code=404, detail="Rascunho não encontrado")
         if existing.get("status") == STATUS_ENVIADO:
             raise HTTPException(status_code=400, detail="BITin já enviado — não pode ser editado")
+        _require_owner_or_admin(existing, current_user)
         mongo_id = draft_in.mongo_id
         created_at = existing.get("created_at", now)
         criado_por = existing.get("criado_por")  # não muda dono numa atualização
     else:
         mongo_id = str(uuid.uuid4())
         created_at = now
-        criado_por = str(current_user_id)
+        criado_por = current_user.email
 
     doc = {
         "_id": mongo_id,
@@ -103,7 +117,7 @@ async def create_or_update_draft(
 @router.get("/{mongo_id}", response_model=BitinResponse)
 async def get_bitin(
     mongo_id: str,
-    _current_user_id: int = Depends(get_current_user_id),
+    _current_user: Usuario = Depends(get_current_active_user),
     mongo_db=Depends(get_mongo_db),
 ):
     collection = mongo_db["bitin_contents"]
@@ -119,7 +133,7 @@ async def list_bitins(
     termo: str | None = None,
     limit: int = 20,
     skip: int = 0,
-    _current_user_id: int = Depends(get_current_user_id),
+    _current_user: Usuario = Depends(get_current_active_user),
     mongo_db=Depends(get_mongo_db),
 ):
     collection = mongo_db["bitin_contents"]
@@ -140,7 +154,7 @@ async def list_bitins(
 @router.delete("/{mongo_id}")
 async def delete_bitin(
     mongo_id: str,
-    _current_user_id: int = Depends(get_current_user_id),
+    current_user: Usuario = Depends(get_current_active_user),
     mongo_db=Depends(get_mongo_db),
 ):
     collection = mongo_db["bitin_contents"]
@@ -149,6 +163,7 @@ async def delete_bitin(
         raise HTTPException(status_code=404, detail="BITin não encontrado")
     if doc.get("status") == STATUS_ENVIADO:
         raise HTTPException(status_code=400, detail="BITin já enviado — não pode ser excluído")
+    _require_owner_or_admin(doc, current_user)
     await collection.delete_one({"_id": mongo_id})
     return {"message": "Rascunho excluído", "mongo_id": mongo_id}
 
@@ -156,7 +171,7 @@ async def delete_bitin(
 @router.get("/{mongo_id}/resumo")
 async def get_resumo(
     mongo_id: str,
-    _current_user_id: int = Depends(get_current_user_id),
+    _current_user: Usuario = Depends(get_current_active_user),
     mongo_db=Depends(get_mongo_db),
 ):
     collection = mongo_db["bitin_contents"]
@@ -169,7 +184,7 @@ async def get_resumo(
 @router.post("/{mongo_id}/enviar", response_model=EnviarResponse)
 async def enviar_bitin_endpoint(
     mongo_id: str,
-    current_user_id: int = Depends(get_current_user_id),
+    current_user: Usuario = Depends(get_current_active_user),
     db: Session = Depends(get_db),
     mongo_db=Depends(get_mongo_db),
 ):
@@ -191,7 +206,7 @@ async def enviar_bitin_endpoint(
 
     try:
         bitin_sql = gerar_e_salvar_bitin_sql(
-            db, content.get("setor", ""), mongo_id, criado_por=str(current_user_id),
+            db, content.get("setor", ""), mongo_id, criado_por=current_user.email,
         )
     except SetorInvalido as exc:
         return EnviarResponse(ok=False, errors=[

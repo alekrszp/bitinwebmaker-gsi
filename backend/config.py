@@ -13,14 +13,12 @@ class Settings(BaseSettings):
     MONGO_URL: str = "mongodb://localhost:27017"
     MONGO_DB_NAME: str = "bitin_db"
 
-    # Autenticação -- serviço separado (GPT_Engineering_authAPI), não roda dentro deste
-    # backend. AUTH_SECRET_KEY/AUTH_ALGORITHM precisam ser IDÊNTICOS ao SECRET_KEY/ALGORITHM
-    # do .env do serviço de auth (mesma chave em dois arquivos .env distintos, mantida em
-    # sincronia manualmente) -- é assim que este backend valida a assinatura do JWT sem
-    # nenhuma chamada de rede. Ver docs/BACKEND.md, seção "Autenticação".
-    AUTH_SECRET_KEY: str = "secret"
-    AUTH_ALGORITHM: str = "HS256"
-    AUTH_API_URL: str = "http://localhost:8001"
+    # Autenticação -- unificada neste backend (ver docs/BACKEND.md, seção "Autenticação").
+    # SECRET_KEY tem que ser trocada por um valor real via .env em qualquer ambiente que não
+    # seja dev local -- o default aqui existe só pra não quebrar sqlite/testes sem .env.
+    SECRET_KEY: str = "dev-secret-troque-em-producao"
+    ALGORITHM: str = "HS256"
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
 
     model_config = SettingsConfigDict(env_file=".env", env_ignore_empty=True, extra="ignore")
 
