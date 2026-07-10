@@ -2,6 +2,31 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v0.4.0] - 2026-07-10
+
+### Added
+- **Esqueleto do frontend** (`frontend/`, `docs/FRONTEND.md`): React 19 + Vite + Tailwind 4 +
+  react-router-dom + axios, sem lib de estado global (Context API para autenticação). Primeira
+  fatia funcional, validada ponta a ponta com Playwright contra o backend real: login → "Meus
+  Bitins" (abas Todos/Rascunhos/Enviados + busca por termo) → criar rascunho → salvar → reabrir
+  (confirma persistência) → enviar → tela travada com número gerado e checklist de 22 itens.
+- `BitinDetail.jsx`: componente único cobrindo criação e edição (evita a duplicação
+  `BitinForm`/`BitinEdit` vista no projeto de referência `GPT_Engineering_BITIN`).
+- Rota protegida (`RequireAuth`) redireciona pro login sem token; interceptor axios limpa o
+  token guardado ao receber `401`.
+
+### Notes
+- Ainda não incluído nesta fatia (documentado em `docs/FRONTEND.md`): colar do SAP, edição de
+  `dados_basicos`/`impactos_operacionais` por material, `lista_tecnica[]`, `ordem_cliente[]`,
+  RBAC visível na UI. Sem esses campos, o formulário ainda não cria um BITin realmente útil —
+  esse é o próximo incremento.
+- 147 testes automatizados (Python, sem mudança nesta versão) + verificação manual do
+  frontend via Playwright (não faz parte da suíte automatizada ainda).
+- Descoberta durante o teste: sem MongoDB real disponível no ambiente de desenvolvimento,
+  qualquer ação de `/bitins` falha com `500` (limitação já documentada, não é bug) — o teste
+  E2E rodou o backend com `mongomock-motor` no lugar do Mongo real, mesma estratégia da suíte
+  de testes automatizados.
+
 ## [v0.3.0] - 2026-07-10
 
 ### Added
