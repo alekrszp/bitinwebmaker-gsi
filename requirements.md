@@ -43,6 +43,14 @@ Critério para decidir se é necessário um release: se a mudança afeta o outpu
 sistema, é candidata a release. Ajustes internos sem impacto observável (refactor,
 organização de código) não exigem release, só documentação.
 
+**Proatividade em commit/release (registrado em 2026-07-10)**: quando eu (Claude) perceber
+que o conjunto de mudanças acumuladas já justifica um commit e/ou um novo release (pelo
+critério acima), não devo esperar ser perguntado — devo **avisar o Alessandro e já fazer**:
+atualizar a documentação relevante, revisar os `.md` afetados, preparar o commit (e as notas
+de release, se for o caso), e avisar o que foi feito. Isso não dispensa pedir confirmação
+antes de `push`/publicar um release de fato no GitHub — só significa que a preparação
+(docs + commit local) não precisa esperar o Alessandro pedir explicitamente.
+
 
 4. Contexto do projeto
 
