@@ -4,6 +4,7 @@ no lugar do Postgres e mongomock-motor no lugar do MongoDB (não há nenhum dos 
 reais disponíveis neste ambiente -- ver docs/BACKEND.md)."""
 
 import sys
+import time
 import unittest
 from pathlib import Path
 
@@ -12,14 +13,24 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from fastapi.testclient import TestClient  # noqa: E402
+from jose import jwt  # noqa: E402
 from mongomock_motor import AsyncMongoMockClient  # noqa: E402
 from sqlalchemy import create_engine  # noqa: E402
 from sqlalchemy.orm import sessionmaker  # noqa: E402
 from sqlalchemy.pool import StaticPool  # noqa: E402
 
+from backend.config import settings  # noqa: E402
 from backend.db.mongodb import get_mongo_db  # noqa: E402
 from backend.db.session import Base, get_db  # noqa: E402
 from backend.main import app  # noqa: E402
+from backend.models_sql import BitinSQL  # noqa: E402
+
+
+def make_token(user_id: int = 1) -> str:
+    """Simula o token que o serviço de auth separado (GPT_Engineering_authAPI) emitiria --
+    mesma SECRET_KEY/ALGORITHM compartilhada, mesmo formato de payload ({sub, exp})."""
+    payload = {"sub": str(user_id), "exp": int(time.time()) + 3600}
+    return jwt.encode(payload, settings.AUTH_SECRET_KEY, algorithm=settings.AUTH_ALGORITHM)
 
 
 def make_bitin_content(**overrides) -> dict:
@@ -53,11 +64,11 @@ class BitinApiTest(unittest.TestCase):
         self.engine = create_engine(
             "sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool,
         )
-        TestSessionLocal = sessionmaker(bind=self.engine)
+        self.SessionLocal = sessionmaker(bind=self.engine)
         Base.metadata.create_all(bind=self.engine)
 
         def override_get_db():
-            db = TestSessionLocal()
+            db = self.SessionLocal()
             try:
                 yield db
             finally:
@@ -72,6 +83,7 @@ class BitinApiTest(unittest.TestCase):
         app.dependency_overrides[get_db] = override_get_db
         app.dependency_overrides[get_mongo_db] = override_get_mongo_db
         self.client = TestClient(app)  # sem "with": não dispara o lifespan (Mongo real)
+        self.client.headers.update({"Authorization": f"Bearer {make_token()}"})
 
     def tearDown(self) -> None:
         app.dependency_overrides.clear()
@@ -301,6 +313,56 @@ class BitinApiTest(unittest.TestCase):
             e["code"] == "required_field_missing" and "codigo_filho" in e["field"]
             for e in body["errors"]
         ))
+
+    def test_sem_token_retorna_401(self) -> None:
+        client_sem_auth = TestClient(app)  # reusa os mesmos dependency_overrides (app-level)
+        resp = client_sem_auth.post("/api/v1/bitins/draft", json={"content": make_bitin_content()})
+        self.assertEqual(resp.status_code, 401)
+
+    def test_token_invalido_retorna_401(self) -> None:
+        client_sem_auth = TestClient(app)
+        client_sem_auth.headers.update({"Authorization": "Bearer token-forjado-invalido"})
+        resp = client_sem_auth.post("/api/v1/bitins/draft", json={"content": make_bitin_content()})
+        self.assertEqual(resp.status_code, 401)
+
+    def test_draft_registra_criado_por_na_criacao(self) -> None:
+        resp = self.client.post(
+            "/api/v1/bitins/draft", json={"content": make_bitin_content()},
+            headers={"Authorization": f"Bearer {make_token(user_id=42)}"},
+        )
+        self.assertEqual(resp.json()["criado_por"], "42")
+
+    def test_draft_nao_muda_criado_por_ao_atualizar_com_outro_usuario(self) -> None:
+        create_resp = self.client.post(
+            "/api/v1/bitins/draft", json={"content": make_bitin_content()},
+            headers={"Authorization": f"Bearer {make_token(user_id=1)}"},
+        )
+        mongo_id = create_resp.json()["mongo_id"]
+
+        update_resp = self.client.post(
+            "/api/v1/bitins/draft",
+            json={"mongo_id": mongo_id, "content": make_bitin_content(motivo="Editado por outro")},
+            headers={"Authorization": f"Bearer {make_token(user_id=99)}"},
+        )
+        self.assertEqual(update_resp.json()["criado_por"], "1")
+
+    def test_enviar_registra_criado_por_na_tabela_sql(self) -> None:
+        create_resp = self.client.post(
+            "/api/v1/bitins/draft", json={"content": make_bitin_content()},
+            headers={"Authorization": f"Bearer {make_token(user_id=7)}"},
+        )
+        mongo_id = create_resp.json()["mongo_id"]
+
+        enviar_resp = self.client.post(
+            f"/api/v1/bitins/{mongo_id}/enviar",
+            headers={"Authorization": f"Bearer {make_token(user_id=7)}"},
+        )
+        self.assertTrue(enviar_resp.json()["ok"], enviar_resp.text)
+
+        db = self.SessionLocal()
+        bitin_sql = db.query(BitinSQL).filter_by(mongo_document_id=mongo_id).one()
+        self.assertEqual(bitin_sql.criado_por, "7")
+        db.close()
 
 
 if __name__ == "__main__":

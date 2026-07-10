@@ -41,7 +41,7 @@ fluxo hoje feito em Excel/VBA (`Novo_template_BITin_V2 TESTE.xlsm`) para Python 
    .venv/Scripts/python.exe scripts/lista_tecnica_export.py meu_bitin.json --out-csv lista_tecnica.csv
    ```
 
-4. Rodar a suíte de testes (129 testes cobrindo tudo acima):
+4. Rodar a suíte de testes (134 testes cobrindo tudo acima):
 
    ```powershell
    .venv/Scripts/python.exe -m unittest discover -s tests
@@ -58,10 +58,14 @@ arquitetura completa e decisões.
 .venv/Scripts/python.exe -m uvicorn backend.main:app --reload
 ```
 
-Sem autenticação por enquanto (foco na lógica do BITin primeiro). Sem Postgres/MongoDB
-configurados em `.env`, a API sobe mas as operações de banco falham ao serem chamadas — ver
-`docs/BACKEND.md` para como os testes automatizados rodam sem bancos reais (SQLite +
-mongomock-motor).
+**Autenticação roda como serviço separado** (`GPT_Engineering_authAPI`, outro repo/processo,
+porta `8001` por padrão) — todo endpoint de `/bitins` exige `Authorization: Bearer <token>`
+emitido por esse serviço. `AUTH_SECRET_KEY`/`AUTH_ALGORITHM` (`.env` deste backend) precisam
+ser idênticos ao `SECRET_KEY`/`ALGORITHM` do `.env` do serviço de auth. Ver `docs/BACKEND.md`,
+seção "Autenticação", para rodar os dois serviços juntos e o que ainda falta (RBAC, reforço de
+dono do rascunho). Sem Postgres/MongoDB configurados em `.env`, a API sobe mas as operações de
+banco falham ao serem chamadas — ver `docs/BACKEND.md` para como os testes automatizados rodam
+sem bancos reais (SQLite + mongomock-motor).
 
 ## Release manual
 

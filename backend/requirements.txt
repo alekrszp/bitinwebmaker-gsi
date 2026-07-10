@@ -4,6 +4,7 @@ sqlalchemy>=2.0
 motor
 pydantic
 pydantic-settings
+python-jose[cryptography]
 
 # Produção (Postgres real) -- descomentar quando for rodar contra Postgres de verdade:
 # psycopg2-binary

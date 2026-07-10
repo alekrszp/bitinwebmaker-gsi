@@ -7,6 +7,7 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 import backend.scripts_path as scripts_path  # noqa: F401  (garante sys.path antes dos imports abaixo)
+from backend.auth import get_current_user_id
 from backend.bitin_number import SetorInvalido, gerar_e_salvar_bitin_sql
 from backend.db.mongodb import get_mongo_db
 from backend.db.session import get_db
@@ -37,6 +38,7 @@ class BitinResponse(BaseModel):
     status: str
     titulo: str | None = None
     content: dict[str, Any]
+    criado_por: str | None = None
     created_at: str
     updated_at: str
 
@@ -54,13 +56,18 @@ def _doc_to_response(doc: dict[str, Any]) -> BitinResponse:
         status=doc.get("status", STATUS_RASCUNHO),
         titulo=doc.get("titulo"),
         content=doc.get("content", {}),
+        criado_por=doc.get("criado_por"),
         created_at=doc.get("created_at", ""),
         updated_at=doc.get("updated_at", ""),
     )
 
 
 @router.post("/draft", response_model=BitinResponse)
-async def create_or_update_draft(draft_in: DraftRequest, mongo_db=Depends(get_mongo_db)):
+async def create_or_update_draft(
+    draft_in: DraftRequest,
+    current_user_id: int = Depends(get_current_user_id),
+    mongo_db=Depends(get_mongo_db),
+):
     """Cria ou atualiza um rascunho -- sem validação de negócio (liberdade de edição,
     ver docs/BITIN_MODEL.md 'Ciclo de vida')."""
     collection = mongo_db["bitin_contents"]
@@ -74,15 +81,18 @@ async def create_or_update_draft(draft_in: DraftRequest, mongo_db=Depends(get_mo
             raise HTTPException(status_code=400, detail="BITin já enviado — não pode ser editado")
         mongo_id = draft_in.mongo_id
         created_at = existing.get("created_at", now)
+        criado_por = existing.get("criado_por")  # não muda dono numa atualização
     else:
         mongo_id = str(uuid.uuid4())
         created_at = now
+        criado_por = str(current_user_id)
 
     doc = {
         "_id": mongo_id,
         "status": STATUS_RASCUNHO,
         "titulo": draft_in.titulo or "Novo Rascunho",
         "content": draft_in.content,
+        "criado_por": criado_por,
         "created_at": created_at,
         "updated_at": now,
     }
@@ -91,7 +101,11 @@ async def create_or_update_draft(draft_in: DraftRequest, mongo_db=Depends(get_mo
 
 
 @router.get("/{mongo_id}", response_model=BitinResponse)
-async def get_bitin(mongo_id: str, mongo_db=Depends(get_mongo_db)):
+async def get_bitin(
+    mongo_id: str,
+    _current_user_id: int = Depends(get_current_user_id),
+    mongo_db=Depends(get_mongo_db),
+):
     collection = mongo_db["bitin_contents"]
     doc = await collection.find_one({"_id": mongo_id})
     if not doc:
@@ -105,6 +119,7 @@ async def list_bitins(
     termo: str | None = None,
     limit: int = 20,
     skip: int = 0,
+    _current_user_id: int = Depends(get_current_user_id),
     mongo_db=Depends(get_mongo_db),
 ):
     collection = mongo_db["bitin_contents"]
@@ -123,7 +138,11 @@ async def list_bitins(
 
 
 @router.delete("/{mongo_id}")
-async def delete_bitin(mongo_id: str, mongo_db=Depends(get_mongo_db)):
+async def delete_bitin(
+    mongo_id: str,
+    _current_user_id: int = Depends(get_current_user_id),
+    mongo_db=Depends(get_mongo_db),
+):
     collection = mongo_db["bitin_contents"]
     doc = await collection.find_one({"_id": mongo_id})
     if not doc:
@@ -135,7 +154,11 @@ async def delete_bitin(mongo_id: str, mongo_db=Depends(get_mongo_db)):
 
 
 @router.get("/{mongo_id}/resumo")
-async def get_resumo(mongo_id: str, mongo_db=Depends(get_mongo_db)):
+async def get_resumo(
+    mongo_id: str,
+    _current_user_id: int = Depends(get_current_user_id),
+    mongo_db=Depends(get_mongo_db),
+):
     collection = mongo_db["bitin_contents"]
     doc = await collection.find_one({"_id": mongo_id})
     if not doc:
@@ -146,6 +169,7 @@ async def get_resumo(mongo_id: str, mongo_db=Depends(get_mongo_db)):
 @router.post("/{mongo_id}/enviar", response_model=EnviarResponse)
 async def enviar_bitin_endpoint(
     mongo_id: str,
+    current_user_id: int = Depends(get_current_user_id),
     db: Session = Depends(get_db),
     mongo_db=Depends(get_mongo_db),
 ):
@@ -166,9 +190,9 @@ async def enviar_bitin_endpoint(
         return EnviarResponse(ok=False, errors=errors)
 
     try:
-        # criado_por fica None até existir autenticação -- parâmetro já existe pra não
-        # exigir mudança de schema quando o login for ligado (ver docs/BACKEND.md).
-        bitin_sql = gerar_e_salvar_bitin_sql(db, content.get("setor", ""), mongo_id)
+        bitin_sql = gerar_e_salvar_bitin_sql(
+            db, content.get("setor", ""), mongo_id, criado_por=str(current_user_id),
+        )
     except SetorInvalido as exc:
         return EnviarResponse(ok=False, errors=[
             {"field": "setor", "code": "invalid_setor_value", "message": str(exc)}
