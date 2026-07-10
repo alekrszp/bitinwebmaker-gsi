@@ -1,0 +1,17 @@
+{
+  "_comment": "Export de lista tecnica (CS02/BOM) a partir do BITin. Nao e port de VBA (nunca existiu automacao) - estrutura confirmada em exemplo real (bitin teste 2.xlsm, aba 'Lista tecnica'). Ver docs/BITIN_MODEL.md.",
+  "sheet_name": "Lista técnica",
+  "start_row": 2,
+  "stlan_default": "5",
+  "column_headers": [
+    "Nº do material",
+    "Centro",
+    "Utilização de listas técnicas",
+    "Nº modificação",
+    "Componente de lista técnica",
+    "Quantidade do componente",
+    "INSERIR",
+    "ALTERAR",
+    "EXCLUIR"
+  ]
+}

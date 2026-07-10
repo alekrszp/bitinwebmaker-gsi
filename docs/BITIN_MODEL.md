@@ -1,0 +1,305 @@
+# Modelo de dados do BITin
+
+Este documento descreve o modelo de dados que o engenheiro vai manipular na futura interface
+web (fora do escopo Python atual) e como ele se conecta ao mapeamento `Módulo1`/`Módulo2`
+já portado (`config/vba_mapping.json`, `scripts/vba_port_export.py`).
+
+
+## Estrutura
+
+```
+bitin              - número no formato YXXXX/AA (Y = P/Proteína ou A/Armazenagem) --
+                      GERADO PELO SISTEMA no momento do envio (não preenchido pelo
+                      engenheiro), vazio/ausente durante o rascunho (ver "Backend")
+status              - "rascunho" (editável) ou "enviado" (travado) -- ver seção "Ciclo de vida"
+setor              - "Proteína Animal" ou "Armazenagem de Grãos" -- obrigatório no envio
+                      (define o prefixo P/A do número gerado, ver "Backend")
+produto             - hierarquia de produto (SAP)
+motivo              - motivo da alteração (SPN, SPE, melhoria, correção, ...)
+solicitante         - engenheiro responsável
+data_solicitacao    - data de emissão do BITin
+ordem_cliente[]     - itens que afetam ordens de cliente (acrescentar/retirar do pedido)
+checklist[]         - 22 itens fixos de responsabilidade pós-aprovação (Quadro 01 do POP)
+materiais[]:
+  codigo_material
+  descricao_material
+  centro              - 2001 (Marau) ou 2005 (Passo Fundo) -- POR MATERIAL, não por BITin
+                        (um mesmo BITin pode alterar materiais em centros diferentes)
+  tipo_material       - POR MATERIAL, pelo mesmo motivo
+  desenho_aprovado    - bool, exigido quando há alteração de desenho (POP Nota 2)
+  ncm_aprovado_fiscal - bool, exigido quando NCM muda (POP Nota 17)
+  grupo_mercadorias_atual - snapshot do Grupo Mercadorias ATUAL (SAP/ZBPP009), sempre
+                        necessário pro cálculo de Alt/Esp/DWG-SAT, muda ou não
+  tem_desenho         - bool, snapshot de "este material tem desenho associado" (SAP/ZBPP009)
+  alteracoes:
+    lista_tecnica[]     - componentes filhos alterados na lista técnica
+    dados_basicos:      - um {de, para} por campo SAP alterável (ver crosswalk abaixo)
+    impactos_operacionais: alt / est / esp / lp / pre / oc / of (campos do ANEXO A do POP)
+                          + centro_custo / conta_razao (exigidos quando est="S", POP Nota 8)
+```
+
+**Decisão registrada**: Centro e Tipo Material ficam por material (`materiais[].centro`,
+`materiais[].tipo_material`), não no cabeçalho do BITin — confirmado com o responsável do
+projeto, já que um BITin pode abranger materiais de mais de um centro.
+
+## Crosswalk `dados_basicos` -> coluna "Novo" de `Plan2`
+
+O campo `para` de cada entrada em `dados_basicos` é exatamente o valor que vai para a coluna
+`"... Novo"` da aba real `ZBPP009 + ALTERACAO`, que o `Módulo2.Winshuttle` lê (ver
+`docs/VBA_EXPORT_MAPPING.md`, seção "Padrão atual vs. Novo"). O crosswalk completo está em
+`config/vba_mapping.json` → `bitin_schema_crosswalk`, e é usado por `scripts/bitin_model.py`.
+
+Duas convenções de "campo não alterado" coexistem (herdadas do VBA original):
+
+- **Convenção `N/A`**: campos que o `Módulo1` inicializa com a constante `"N/A"` — usado por
+  `material_substituto`, `status_bloqueio_vendas`, `data_bloqueio_vendas`, `grupo_compradores`,
+  `tipo_suprimento_especial`, `deposito_producao`, `deposito_suprimento_externo`,
+  `prazo_entrega`, `responsavel_controle_producao`, `perfil_producao`, `producao_interna`,
+  `texto_pedidos_compras`. Se o engenheiro não informar `para` para esses campos, o valor
+  correto para Plan2 é a string `"N/A"`, não vazio.
+- **Convenção vazio**: todos os outros campos de `dados_basicos` — se `para` não for
+  informado, o valor correto para Plan2 é `""`.
+
+`scripts/bitin_model.py` aplica a convenção certa automaticamente por campo, sem precisar que
+quem monta o BITin saiba dessa distinção.
+
+## Lacunas conhecidas entre o `schema.json` de referência e o `Módulo2`
+
+- O `schema.json` não tinha `centro`/`tipo_material` — adicionados por material (ver acima).
+- A coluna `Plan2` 71 ("Marcação eliminar nível centro Novo") não tem campo correspondente no
+  `schema.json` — só existe `marcacao_eliminar_nivel_mandante` (coluna 69). Por enquanto o
+  port só preenche a coluna 69; a 71 fica sempre vazia até o schema ganhar esse campo.
+- `checklist[]` e `ordem_cliente[]` ainda não têm uso no export (servem para o processo humano
+  — roteamento, Windchill — descrito no POP, não para um upload SAP em si).
+
+## Export de `lista_tecnica[]` (CS02 — estrutura de material / BOM)
+
+Diferente de `dados_basicos` (que alimenta o `Módulo2`/MM02), alteração de lista técnica é
+outra transação SAP inteira (**CS02**) e usa outro template Winshuttle, com campos de
+`RC29N`/`RC29P` (cabeçalho e item da lista técnica), não `MARA`/`MARC`/`MVKE`. **Não existe
+nenhuma macro VBA que gera esse export** — no workbook original, `Módulo15.dados_lista_técnia`
+só insere rótulos em branco no documento de apresentação (`Plan4`) para alguém preencher à
+mão; a aba real `Lista técnica` (Winshuttle) é preenchida manualmente, direto no formato final.
+Por isso `scripts/lista_tecnica_export.py` não é um port — é automação nova, construída a
+partir da estrutura real observada em exemplos de BITin verdadeiros (`bitin teste 2.xlsm`,
+aba `Lista técnica`, ~60 linhas de um BITin de 2023).
+
+Colunas reais da aba `Lista técnica` (confirmadas no exemplo real, ver
+`config/lista_tecnica_mapping.json`):
+
+| Coluna | Campo SAP | Origem no BITin |
+|---|---|---|
+| 1 | Nº do material (`RC29N-MATNR`) | `materiais[].codigo_material` (material pai) |
+| 2 | Centro (`RC29N-WERKS`) | `materiais[].centro` |
+| 3 | Utilização de listas técnicas (`RC29N-STLAN`) | constante (`"5"` — todo exemplo real observado usa esse valor; **assumido, não confirmado com o time**) |
+| 4 | Nº modificação (`RC29N-AENNR`) | `bitin` (número do BITin — confirmado: exemplo real tinha `A0618/23`, mesmo formato `YXXXX/AA`) |
+| 5 | Componente de lista técnica (`RC29P-IDNRK`) | `materiais[].alteracoes.lista_tecnica[].codigo_filho` |
+| 6 | Quantidade do componente (`RC29P-MENGE`) | `quantidade_para` (inserir/alterar) ou `quantidade_de` (excluir) |
+| 7 | INSERIR | `"X"` quando `operacao = "inserir"` |
+| 8 | ALTERAR | `"X"` quando `operacao = "alterar"` (ou quando `operacao` não é informado — default) |
+| 9 | EXCLUIR | `"X"` quando `operacao = "excluir"` |
+
+### Campo `operacao` (adicionado em 2026-07-10)
+
+Cada item de `lista_tecnica[]` agora tem um campo `operacao: "inserir" | "alterar" | "excluir"`
+(opcional — default `"alterar"`, para não quebrar BITins já criados sem esse campo). Isso
+cobre o caso real observado (troca de componente = um item `"excluir"` pro código antigo +
+um item `"inserir"` pro código novo), além do caso simples de só mudar a quantidade
+(`"alterar"`, um único item, mesmo `codigo_filho`).
+
+Exemplo de troca de componente (2 itens numa `lista_tecnica[]`):
+
+```json
+"lista_tecnica": [
+  {"operacao": "excluir", "codigo_filho": "S2048-122264", "quantidade_de": "1"},
+  {"operacao": "inserir", "codigo_filho": "S2048-122232", "quantidade_para": "2"}
+]
+```
+
+Validação: `codigo_filho` é sempre obrigatório; `quantidade_para` é obrigatório para
+`inserir`/`alterar`; `quantidade_de` é obrigatório para `excluir` (é o valor que vai na
+coluna "Quantidade do componente" ao remover a associação).
+
+## Documento do BITin (Alt/Esp/checklist — `Módulo4`+`Módulo10`+`Módulo13`)
+
+`scripts/bitin_document.py` porta `Módulo4.Preencher_Bitin` (+ `Módulo10.DWG_SAT` e
+`Módulo13.DWG_SAT_N_DESENHO`, que ele chama).
+
+### Alt/Esp declarados pelo engenheiro, não derivados de código SAP (decisão de 2026-07-10)
+
+O `Módulo4` original deriva `Alt`/`Esp`/ação de desenho a partir de códigos de Grupo de
+Mercadorias (`SA003`, `SA013`, `SA014`, `SA016`, `SA017`, prefixo `"MP"`). Na prática esse
+catálogo de códigos é vasto e muda com o tempo — codificar regras de negócio em cima de
+códigos específicos é frágil (qualquer código novo/desconhecido quebra a classificação
+silenciosamente). Decisão registrada: **o engenheiro declara `alt`/`esp`/`atualizar_dwg_sat`
+diretamente em `impactos_operacionais`** (é exatamente o que `schema.json` já modelava) — o
+sistema não tenta adivinhar a partir de código SAP.
+
+`suggest_alt`, `suggest_esp` e `suggest_dwg_sat_action` continuam existindo em
+`bitin_document.py`, mas como **sugestão opcional, não autoritativa** (útil como dica de UI
+no futuro formulário web, nunca para validação). Foram validados contra dados reais
+(`bitin teste 2.xlsm`, BITin `P0812/26`): os 8 materiais com revisão de desenho alterada e
+Grupo Mercadorias `SA016` sugeririam `Alt = "D/P"` e `DWG_SAT = "SALVAR DWG"`, batendo com o
+que está na aba `Template apresentação` desse arquivo real; os materiais sem alteração de
+desenho (`NAP-0734`, `NAP-2339`) sugeririam `Alt = "-"`, também batendo.
+
+`build_campo_alterado_diffs` monta a lista "Campo alterado / De / Para" por material direto
+do JSON, sem precisar reconsultar `Plan2` — a diff real "Nível Revisão: C → D" bateu
+exatamente com o exemplo real.
+
+**Divergência deliberada do `.bas` extraído (checklist)**: `Módulo4.bas` escreve o checklist
+em linhas fixas da planilha (`Plan4.Cells(9,3)`, `Cells(8,3)`, etc.) que **não batem** com os
+rótulos reais observados no exemplo — o código escreve `Alt="D/P"` na linha 9, mas a linha 9
+real é "Desenho", não "Desenho/Processo"; o dado real mostra "Desenho/Processo" marcado
+quando `Alt="D/P"`, batendo com a linha 10, não a 9. Isso indica que o `.bas` extraído está
+desatualizado em relação ao que realmente gera esses arquivos. Diferente do `Módulo2` (onde a
+posição da coluna tem risco real de quebrar o upload SAP), aqui não há esse risco — é uma
+estrutura de dados nova, não uma célula de planilha legada. Por isso o checklist usa o
+**mapeamento semântico por rótulo** (`alt_to_checklist_id` em
+`config/bitin_document_mapping.json`), que bateu com os dados reais, em vez da posição de
+linha literal do `.bas`.
+
+**Itens de checklist ainda sem regra automática** (`manual_only_checklist_ids`): DPO-PAN,
+Atualizar manual, Atualizar instrução de montagem, Elétrica/Embalagem/Montagem/Helicoides,
+Estamparia, Madeira ou Plástico, Atualizar custos — nenhuma regra no `Módulo4` lido determina
+esses automaticamente a partir dos campos que temos hoje; continuam dependendo de marcação
+manual. "Atualizar BITex" (id 11) é coberto parcialmente, só via o campo `bitex` do
+cabeçalho.
+
+**Campo `bitex` adicionado ao cabeçalho do BITin** (visto no `Template apresentação` real,
+linha 2: `"BITex" / "NÃO"`) — não estava em `schema.json`; usado só para o checklist id 11.
+
+## Erros estruturados (decisão de 2026-07-10)
+
+Todas as funções `validate_*` (`bitin_model.validate_bitin`, `lista_tecnica_export.validate_lista_tecnica`,
+`bitin_business_rules.validate_business_rules`) devolvem `list[dict]`, não `list[str]`. Cada
+erro é `{"field": "...", "code": "...", "message": "..."}`:
+
+- `field` — caminho no estilo `materiais[0].alteracoes.impactos_operacionais.alt` (o frontend
+  usa isso pra destacar o campo exato, sem precisar fazer parsing de texto).
+- `code` — identificador estável em snake_case (ex.: `invalid_alt_value`,
+  `desenho_aprovado_required`) — o frontend pode decidir tratamento por código sem depender do
+  texto da mensagem (que pode mudar).
+- `message` — texto em português pronto pra mostrar ao usuário.
+
+Decisão registrada: essa troca foi feita **antes** de existir qualquer frontend consumindo o
+formato antigo (string solta) — é a hora mais barata de fazer essa mudança.
+
+### Validação de enum dos campos do POP (adicionado junto)
+
+`alt`/`est`/`esp`/`lp`/`pre`/`oc`/`of` em `impactos_operacionais` agora são validados contra os
+valores do `ANEXO A` do POP (`config/bitin_document_mapping.json` → `valores_validos`); antes
+qualquer string passava despercebida. `"-"` é aceito em todos como "sem impacto" (convenção já
+usada no resto do sistema), mesmo quando o POP não lista `"-"` explicitamente pra `Est`
+(ambiguidade registrada: o POP diz "indicar sempre" o destino do estoque, mas não fica claro
+se isso é obrigatório em BITins que não mexem em estoque — mantivemos `"-"` como aceitável até
+confirmação).
+
+## Regras de negócio do POP (portão de envio, não bloqueia edição)
+
+Filosofia registrada com o responsável do projeto: o engenheiro tem liberdade total pra editar
+o BITin (adicionar/remover material, mudar de ideia, sem validação no meio do caminho) — as
+regras abaixo só rodam no **envio** (mesmo espírito de `validate_bitin`/`validate_lista_tecnica`),
+implementadas em `scripts/bitin_business_rules.py` (`validate_business_rules`).
+
+Regras derivadas das Notas do `POP_ENG_7.3.7_002`, com automação clara a partir dos dados que
+já temos (`alt` aqui é o valor **declarado** pelo engenheiro, não derivado de código SAP):
+
+| Regra | Nota do POP | Condição | Exigência |
+|---|---|---|---|
+| Desenho aprovado | Nota 2 | `impactos_operacionais.alt` começa com `"D"` (D/P, D/-, D/F) | `materiais[].desenho_aprovado == true` |
+| NCM exige fiscal | Nota 17 | `alteracoes.dados_basicos.ncm.para` preenchido | `materiais[].ncm_aprovado_fiscal == true` |
+| Sucateamento exige centro de custo | Nota 8 | `impactos_operacionais.est == "S"` | `impactos_operacionais.centro_custo` e `.conta_razao` preenchidos |
+| Ordem de cliente precisa do quadro 2 | Nota 10 | `impactos_operacionais.oc == "X"` | existe uma entrada em `ordem_cliente[]` com `codigo` igual ao `codigo_material` |
+
+**Não automatizadas ainda** (precisam de mais contexto ou integração externa antes de virar
+regra): Nota 6 (conferir versão do desenho aprovada no Windchill — precisa integração com o
+Windchill, fora do escopo Python atual), Nota 9 (texto "Retirado bloqueio de vendas" ao
+liberar/precificar — formato exato do texto não confirmado), Nota 19 (formato do campo
+`Documento` para materiais novos — formato exato não confirmado), Nota 20 (múltiplos centros
+na mesma lista técnica — é julgamento de negócio, não uma regra determinística clara).
+
+### Regras gerais de consistência (não dependem de código específico)
+
+Complementam as regras do POP acima — pegam erro de digitação/inconsistência entre o que foi
+**declarado** (`alt`) e o que foi **de fato registrado como mudança**, sem precisar conhecer
+nenhum código SAP específico (por isso "gerais" — funcionam pra qualquer material, presente
+ou futuro):
+
+| Regra | Condição | Por quê |
+| --- | --- | --- |
+| Código+centro duplicado | mesmo par `(codigo_material, centro)` aparece 2x em `materiais[]` | ambíguo qual entrada vale — mas o **mesmo código em centros diferentes é permitido** (ex.: material `8661` em 2001/2003/2005/2006, caso real) |
+| Campo sem efeito real | `dados_basicos.<campo>.de == .para` (e `para` não vazio) | listar um campo que não muda é sinal de erro de preenchimento |
+| Alt inconsistente com mudanças | `alt == "-"` mas há `dados_basicos` com `para` preenchido | se declarou "sem alteração" mas hay mudança registrada, o Alt provavelmente está errado |
+| Alt de desenho sem revisão | `alt` começa com `"D"` mas não há mudança em `nivel_revisao` | alteração de desenho sem bater com nenhum campo de desenho mudando é sinal de Alt errado |
+
+## Ciclo de vida do BITin (rascunho → enviado)
+
+Decisão registrada com o responsável do projeto: o BITin tem duas telas/estados —
+**criação/edição** (rascunho, liberdade total, sem validação no meio do caminho — "salvar
+rascunho") e **visualização** (depois de enviado, travado, ninguém edita mais). Implementado
+em `scripts/bitin_lifecycle.py`:
+
+- `status: "rascunho" | "enviado"` no cabeçalho do BITin (default `"rascunho"`).
+- `is_editable(bitin) -> bool` — `False` quando `status == "enviado"`.
+- `enviar_bitin(bitin, vba_mapping_config, document_config) -> (bool, list[str])` — o único
+  ponto em que TODA a validação roda de uma vez (estrutural + lista técnica + regras de
+  negócio do POP + regras gerais, todas já construídas). Se passar, marca `status="enviado"`
+  e carimba `data_envio`; se falhar, `status` continua `"rascunho"` e a lista de erros volta
+  pra tela de edição. Tentar enviar um BITin já `"enviado"` retorna erro (não reenvia).
+- `require_editable(bitin)` — guarda a ser chamada por qualquer função que for *mutar* um
+  BITin (adicionar/remover material, editar campo); levanta `ValueError` se `status ==
+  "enviado"`. É o mecanismo de trava — nenhuma edição deve contornar essa checagem.
+
+Essa separação é também a "otimização do sistema" da conversa: a validação cara (5 funções,
+todo o cruzamento de regras) só roda **uma vez**, no envio — não em cada tecla digitada
+durante o rascunho.
+
+`scripts/bitin_view.py` gera o modelo de visualização (`render_bitin_summary`): cabeçalho +
+status + por material (Alt/Esp/diffs de dados básicos/itens de lista técnica) + checklist —
+serve tanto de prévia durante o rascunho quanto de tela final depois de enviado. É um dict
+estruturado (não HTML/markdown) — a formatação visual fica a cargo do frontend.
+
+## Uso
+
+- `scripts/bitin_model.py`:
+  - `validate_bitin(bitin)` — valida cabeçalho obrigatório, formato do número do BITin, e campos
+    obrigatórios por material (`codigo_material`, `centro`, `tipo_material`).
+  - `bitin_to_plan2_rows(bitin, config)` — converte `materiais[]` em linhas de `Plan2` (mesmo
+    formato usado por `scripts/vba_port_export.py`), prontas para alimentar `build_plan3_row()`
+    direto, sem precisar de um arquivo `.xlsm` intermediário.
+- `scripts/lista_tecnica_export.py` — export CS02/BOM (ver seção acima).
+- `scripts/bitin_document.py` — Alt/Esp/checklist/diffs (ver seção acima).
+- `scripts/bitin_lifecycle.py`, `scripts/bitin_view.py` — ciclo de vida e visualização (ver seção acima).
+- `scripts/sap_paste_parser.py`, `scripts/csv_safety.py` — colar do SAP e sanitização (ver seção abaixo).
+
+## Colar dados do SAP direto na interface (`sap_paste_parser.py`)
+
+Decisão registrada: hoje o engenheiro copia a grade do SAP (ZBPP009 ou relatório
+equivalente) e cola direto no Excel — o Excel separa em colunas sozinho porque o SAP usa
+**TAB real** entre células (confirmado com o responsável do projeto). A futura interface web
+deve suportar esse mesmo fluxo de "colar" — sem isso, o engenheiro perderia uma liberdade que
+já tem hoje.
+
+`parse_sap_paste(raw_text)` separa por `\t` (não por espaço/largura fixa) — decisão
+deliberada, porque campos de texto livre como a descrição podem ter espaços internos (ex.:
+`TUBO MENOR 1/2"`) que quebrariam qualquer parser baseado em espaço. Cada linha colada vira
+um dict de 36 colunas (mesma estrutura de `Plan1`/`ZBPP009`, ver `plan1_column_headers` em
+`config/vba_mapping.json`). `parse_sap_paste_to_materiais` já extrai os campos de
+identificação + snapshot "atual" (`tipo_material`, `codigo_material`, `centro`,
+`descricao_material`, `grupo_mercadorias_atual`, `tem_desenho`) prontos para virar
+`materiais[]` no BITin.
+
+**Importante**: um mesmo código de material pode aparecer em várias linhas coladas, cada uma
+com um `centro` diferente (ex.: material `8661` em 2001/2003/2005/2006) — são materiais
+distintos no BITin, não duplicata (ver correção na regra geral de duplicidade abaixo).
+
+## Sanitização de exports (`csv_safety.py`)
+
+Toda célula escrita nos exports (`vba_port_export.py`, `lista_tecnica_export.py`,
+`bitin_model.py`) passa por `csv_safety.sanitize_row` antes de gravar — protege contra CSV/
+formula injection (OWASP): células começando com `=`, `+` ou `@` são prefixadas com `'` pra
+não serem interpretadas como fórmula quando o arquivo é aberto no Excel. **`-` (hífen) foi
+deliberadamente excluído** dessa lista (diferente da recomendação OWASP completa) porque é um
+valor de domínio legítimo e onipresente neste sistema — os códigos de `Alt` são literalmente
+`"-"`, `"-/P"`, `"-/F"`; sanitizar isso quebraria o export real.

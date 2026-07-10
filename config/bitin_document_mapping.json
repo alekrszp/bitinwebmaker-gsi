@@ -1,0 +1,66 @@
+{
+  "_comment": "Determinação de Alt/Esp/DWG-SAT/checklist a partir do Plan2, portado de Módulo4+Módulo10+Módulo13. Ver docs/BITIN_MODEL.md secao 'Documento do BITin (Modulo4)'.",
+  "grupo_mercadorias_dwg_sat": {
+    "SA003": "SALVAR DWG",
+    "SA016": "SALVAR DWG",
+    "SA017": "SALVAR DWG",
+    "SA013": "SALVAR SAT"
+  },
+  "grupo_mercadorias_fornecedor": "SA014",
+  "mp_prefix": "MP",
+  "plan2_columns": {
+    "grupo_mercadorias_atual": 8,
+    "grupo_mercadorias_novo": 9,
+    "desenho_atual": 24,
+    "nivel_revisao_novo": 27,
+    "texto_pedido_compras_novo": 67,
+    "estoque": 75,
+    "lista_preco": 76,
+    "precificacao": 77,
+    "ordem_cliente": 78,
+    "ordem_fabricacao": 79
+  },
+  "checklist_items": [
+    {"id": "1", "etapa": "Desenho"},
+    {"id": "2", "etapa": "Desenho/Processo"},
+    {"id": "3", "etapa": "Desenho/Fornecedor"},
+    {"id": "4", "etapa": "Processo"},
+    {"id": "5", "etapa": "Fornecedor"},
+    {"id": "6", "etapa": "Especificações técnicas"},
+    {"id": "7", "etapa": "Alteração lista técnica"},
+    {"id": "8", "etapa": "Retrabalhar ou descartar estoque"},
+    {"id": "9", "etapa": "DPO - PAN"},
+    {"id": "10", "etapa": "Ordem de cliente"},
+    {"id": "11", "etapa": "Atualizar BITex"},
+    {"id": "12", "etapa": "Atualizar manual"},
+    {"id": "13", "etapa": "Atualizar instrução de montagem"},
+    {"id": "14", "etapa": "Elétrica / Embalagem / Montagem / Helicoides"},
+    {"id": "15", "etapa": "Estamparia"},
+    {"id": "16", "etapa": "Madeira ou Plástico"},
+    {"id": "17", "etapa": "Atualizar ordem de fabricação"},
+    {"id": "18", "etapa": "Atualizar DWG / SAT"},
+    {"id": "19", "etapa": "Lista de preço"},
+    {"id": "20", "etapa": "Precificação"},
+    {"id": "21", "etapa": "Atualizar custos"},
+    {"id": "22", "etapa": "Centro de custo (se tem sucata)"}
+  ],
+  "alt_to_checklist_id": {
+    "D/-": "1",
+    "D/P": "2",
+    "D/F": "3",
+    "-/P": "4",
+    "-/F": "5"
+  },
+  "automated_checklist_ids": ["1", "2", "3", "4", "5", "6", "7", "8", "10", "17", "18", "19", "20", "22"],
+  "manual_only_checklist_ids": ["9", "11", "12", "13", "14", "15", "16", "21"],
+  "valores_validos": {
+    "_comment": "Valores do ANEXO A do POP_ENG_7.3.7_002 para impactos_operacionais. '-' aceito em todos como 'sem impacto' (convenção do sistema).",
+    "alt": ["D/P", "D/-", "-/P", "D/F", "-/F", "-"],
+    "est": ["U", "R", "S", "T", "-"],
+    "esp": ["X", "-"],
+    "lp": ["I", "ID", "IC", "E", "A", "-"],
+    "pre": ["PÇ", "PC", "PR", "RE", "A", "-"],
+    "oc": ["X", "-"],
+    "of": ["X", "-"]
+  }
+}

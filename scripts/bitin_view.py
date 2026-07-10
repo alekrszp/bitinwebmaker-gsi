@@ -1,0 +1,47 @@
+#!/usr/bin/env python3
+"""Modelo de visualização do BITin: um resumo estruturado (dict), não HTML/markdown --
+a formatação visual fica a cargo do frontend. Serve tanto de prévia durante o rascunho
+quanto de tela final depois de enviado. Ver docs/BITIN_MODEL.md, seção "Ciclo de vida".
+"""
+
+from typing import Any
+
+import bitin_document
+
+from bitin_lifecycle import STATUS_RASCUNHO
+
+
+def render_material_summary(material: dict[str, Any], vba_mapping_config: dict[str, Any]) -> dict[str, Any]:
+    impactos = bitin_document.read_impactos_operacionais(material)
+    return {
+        "codigo_material": material.get("codigo_material", ""),
+        "descricao_material": material.get("descricao_material", ""),
+        "centro": material.get("centro", ""),
+        "tipo_material": material.get("tipo_material", ""),
+        "impactos_operacionais": impactos,
+        "dados_basicos_alterados": bitin_document.build_campo_alterado_diffs(material, vba_mapping_config),
+        "lista_tecnica": material.get("alteracoes", {}).get("lista_tecnica", []),
+    }
+
+
+def render_bitin_summary(
+    bitin: dict[str, Any],
+    vba_mapping_config: dict[str, Any],
+    document_config: dict[str, Any],
+) -> dict[str, Any]:
+    materiais = bitin.get("materiais", [])
+    checklist = bitin_document.build_checklist(bitin, materiais, document_config)
+
+    return {
+        "bitin": bitin.get("bitin", ""),
+        "status": bitin.get("status", STATUS_RASCUNHO),
+        "data_envio": bitin.get("data_envio"),
+        "setor": bitin.get("setor", ""),
+        "produto": bitin.get("produto", ""),
+        "motivo": bitin.get("motivo", ""),
+        "solicitante": bitin.get("solicitante", ""),
+        "data_solicitacao": bitin.get("data_solicitacao", ""),
+        "materiais": [render_material_summary(m, vba_mapping_config) for m in materiais],
+        "checklist": checklist,
+        "checklist_pendencias": [item["etapa"] for item in checklist if item["afeta"]],
+    }

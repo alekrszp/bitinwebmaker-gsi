@@ -1,0 +1,13 @@
+fastapi
+uvicorn
+sqlalchemy>=2.0
+motor
+pydantic
+pydantic-settings
+
+# Produção (Postgres real) -- descomentar quando for rodar contra Postgres de verdade:
+# psycopg2-binary
+
+# Só para testes (tests/test_backend_bitins.py) -- não usados em produção:
+mongomock-motor
+httpx
