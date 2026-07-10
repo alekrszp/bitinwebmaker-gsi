@@ -10,6 +10,7 @@ fluxo hoje feito em Excel/VBA (`Novo_template_BITin_V2 TESTE.xlsm`) para Python 
 - `docs/VBA_EXPORT_MAPPING.md` — mapeamento de colunas do fluxo real `Módulo1`/`Módulo2`.
 - `docs/VBA_MIGRATION_GUIDE.md` — estado da migração VBA → Python.
 - `docs/BACKEND.md` — arquitetura da API (`backend/`).
+- `docs/FRONTEND.md` — arquitetura do frontend web (`frontend/`).
 - `docs/README_HANDOFF.md` — histórico do PoC original (inventário, macros, comparação com export real).
 
 ## Uso rápido (motor Python — `scripts/`)
@@ -69,6 +70,20 @@ usado como referência). Sem Postgres/MongoDB configurados em `.env`, a API sobe
 operações de banco falham ao serem chamadas — ver `docs/BACKEND.md` para como os testes
 automatizados rodam sem bancos reais (SQLite + mongomock-motor).
 
+## Frontend (web)
+
+`frontend/` é a interface web que substitui o Excel/VBA pro engenheiro — React + Vite +
+Tailwind + react-router-dom, sem lib de estado global. Ver `docs/FRONTEND.md` para arquitetura,
+o que já funciona (login, "Meus Bitins", criar/editar rascunho, visualizar enviado — validado
+ponta a ponta com o backend real) e o que ainda falta (colar do SAP, edição de
+dados_basicos/impactos_operacionais, lista técnica, ordem de cliente).
+
+```powershell
+cd frontend
+npm install
+npm run dev
+```
+
 ## Release manual
 
 Releases são criadas manualmente no GitHub, usando `docs/RELEASE_vX.Y.Z.md` como corpo de
@@ -102,7 +117,9 @@ Veja também `docs/CHANGELOG.md` para as notas de release completas.
 - `auth/` — autenticação unificada (models, hash/JWT, dependências de permissão, rotas de
   registro/login)
 
-**Documentação (`docs/`)**: `BITIN_MODEL.md`, `VBA_EXPORT_MAPPING.md`, `VBA_MIGRATION_GUIDE.md`, `BACKEND.md`
+**Frontend (`frontend/`)**: interface web (ver seção acima e `docs/FRONTEND.md`)
+
+**Documentação (`docs/`)**: `BITIN_MODEL.md`, `VBA_EXPORT_MAPPING.md`, `VBA_MIGRATION_GUIDE.md`, `BACKEND.md`, `FRONTEND.md`
 
 **Arquivos de exemplo/dados reais (`examples/`)**: `Novo_template_BITin_V2 TESTE.xlsm` (template original), `exported_winshuttle.csv` (referência), `bitin teste.xlsm`, `bitin teste 2.xlsm` (BITins reais usados para validar o motor), `POP_ENG_7 3 7_002.pdf`
 
@@ -117,6 +134,8 @@ Veja também `docs/CHANGELOG.md` para as notas de release completas.
 
 ## Próximo passo
 
-Ler `docs/BITIN_MODEL.md` (modelo de dados e regras) e `docs/BACKEND.md` (API) para a visão
-completa do sistema atual. `docs/README_HANDOFF.md` guarda o histórico do PoC original
-(v0.1.0).
+Ler `docs/BITIN_MODEL.md` (modelo de dados e regras), `docs/BACKEND.md` (API) e
+`docs/FRONTEND.md` (interface web) para a visão completa do sistema atual. Próximos
+incrementos do frontend: colar do SAP, edição de dados básicos/impactos operacionais por
+material, lista técnica e ordem de cliente (ver `docs/FRONTEND.md`, seção "O que NÃO está
+nesta fatia ainda"). `docs/README_HANDOFF.md` guarda o histórico do PoC original (v0.1.0).

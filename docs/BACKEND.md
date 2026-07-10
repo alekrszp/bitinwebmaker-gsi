@@ -7,7 +7,7 @@ persistência real e uma API HTTP, pronta pra futura interface web.
 
 ## Origem e decisões
 
-Baseado numa análise de um backend de teste que o Alessandro já tinha feito (FastAPI +
+Baseado numa análise de um backend de teste já tinha feito (FastAPI +
 Postgres + MongoDB + auth desacoplada via JWT, ver `backend para teste/` na raiz — cópia
 de referência do projeto `GPT_Engineering_BITIN`). Decisões registradas depois da análise:
 
