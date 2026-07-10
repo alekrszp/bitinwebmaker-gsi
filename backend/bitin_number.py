@@ -34,7 +34,9 @@ def prefixo_para_setor(setor: str) -> str:
     return SETOR_PREFIXO[setor]
 
 
-def gerar_e_salvar_bitin_sql(db: Session, setor: str, mongo_document_id: str) -> BitinSQL:
+def gerar_e_salvar_bitin_sql(
+    db: Session, setor: str, mongo_document_id: str, criado_por: str | None = None,
+) -> BitinSQL:
     prefixo = prefixo_para_setor(setor)
     ano = datetime.now().year % 100
 
@@ -49,7 +51,7 @@ def gerar_e_salvar_bitin_sql(db: Session, setor: str, mongo_document_id: str) ->
 
         bitin_sql = BitinSQL(
             codigo=codigo, prefixo=prefixo, ano=ano, sequencial=next_seq,
-            mongo_document_id=mongo_document_id,
+            mongo_document_id=mongo_document_id, criado_por=criado_por,
         )
         db.add(bitin_sql)
         try:

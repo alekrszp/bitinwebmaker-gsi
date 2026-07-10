@@ -169,6 +169,32 @@ cabeçalho.
 **Campo `bitex` adicionado ao cabeçalho do BITin** (visto no `Template apresentação` real,
 linha 2: `"BITex" / "NÃO"`) — não estava em `schema.json`; usado só para o checklist id 11.
 
+## Validação estrutural de `ordem_cliente[]` (adicionado em 2026-07-10)
+
+Cada entrada de `ordem_cliente[]` tem o formato herdado do `schema.json` original:
+
+```json
+{
+  "codigo": "CT30-7103",
+  "descricao": "Pedido especial exportação",
+  "acrescentar_no_pedido": [{"codigo_material": "COD999", "quantidade": "2 pçs"}],
+  "retira_do_pedido": [{"codigo_material": "COD111", "quantidade": "1 pç"}]
+}
+```
+
+Até aqui só o campo `codigo` era efetivamente lido (pela regra da Nota 10, ver abaixo) — `acrescentar_no_pedido[]`/`retira_do_pedido[]` existiam no schema mas nada validava seu conteúdo.
+`bitin_model.validate_ordem_cliente` (chamada por `validate_bitin`) agora garante:
+
+- `codigo` é obrigatório em toda entrada de `ordem_cliente[]`.
+- cada item de `acrescentar_no_pedido[]`/`retira_do_pedido[]` precisa de `codigo_material` e
+  `quantidade`.
+- uma entrada sem nenhum item nas duas listas é sinalizada (`ordem_cliente_sem_itens`) — declarar
+  um pedido afetado sem dizer o que muda nele não tem efeito real.
+
+Isso é validação **estrutural** (roda em `validate_bitin`, junto com os campos obrigatórios do
+cabeçalho/material) — diferente da regra de negócio da Nota 10 (`bitin_business_rules.py`), que
+continua checando só se existe uma entrada com `codigo` igual ao material quando `oc == "X"`.
+
 ## Erros estruturados (decisão de 2026-07-10)
 
 Todas as funções `validate_*` (`bitin_model.validate_bitin`, `lista_tecnica_export.validate_lista_tecnica`,

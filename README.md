@@ -41,7 +41,7 @@ fluxo hoje feito em Excel/VBA (`Novo_template_BITin_V2 TESTE.xlsm`) para Python 
    .venv/Scripts/python.exe scripts/lista_tecnica_export.py meu_bitin.json --out-csv lista_tecnica.csv
    ```
 
-4. Rodar a suíte de testes (114 testes cobrindo tudo acima):
+4. Rodar a suíte de testes (129 testes cobrindo tudo acima):
 
    ```powershell
    .venv/Scripts/python.exe -m unittest discover -s tests

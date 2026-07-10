@@ -36,7 +36,7 @@ backend/
     session.py     - engine/sessão SQLAlchemy (Postgres em produção, SQLite em teste)
     mongodb.py      - cliente Motor (MongoDB em produção, mongomock-motor em teste)
   models_sql.py    - BitinSQL (tabela `bitins`: id, codigo, prefixo, ano, sequencial,
-                      status, mongo_document_id, created_at, updated_at)
+                      mongo_document_id, criado_por, created_at, updated_at)
   bitin_number.py  - geração do número sequencial, com retry seguro contra corrida
   main.py          - app FastAPI
   api/
@@ -49,11 +49,17 @@ backend/
 ## Modelo de dados
 
 **Postgres — tabela `bitins`** (só existe uma linha por BITin **enviado**, nunca por
-rascunho):
+rascunho — o status em si vive no documento Mongo, não aqui):
 ```
 id, codigo (único, ex: "P6601/26"), prefixo (P/A), ano, sequencial,
-status ("enviado"), mongo_document_id, created_at, updated_at
+mongo_document_id, criado_por (nullable, ver nota abaixo), created_at, updated_at
 ```
+
+**`criado_por` (adicionado em 2026-07-10)**: nullable porque ainda não existe autenticação —
+`gerar_e_salvar_bitin_sql` já aceita o parâmetro (`criado_por: str | None = None`), preparado
+pra quando o login existir (achado da revisão do `GPT_Engineering_authAPI`: a tabela `Bitin`
+de referência tem `usuario_id`/autoria e a nossa não tinha nenhum campo equivalente). Enquanto
+não há auth, todo BITin é salvo com `criado_por=None`.
 
 **MongoDB — coleção `bitin_contents`** (rascunho e enviado, documento inteiro):
 o conteúdo é exatamente a estrutura de `docs/BITIN_MODEL.md` (não o modelo antigo

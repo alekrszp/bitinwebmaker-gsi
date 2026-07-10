@@ -166,6 +166,8 @@ async def enviar_bitin_endpoint(
         return EnviarResponse(ok=False, errors=errors)
 
     try:
+        # criado_por fica None até existir autenticação -- parâmetro já existe pra não
+        # exigir mudança de schema quando o login for ligado (ver docs/BACKEND.md).
         bitin_sql = gerar_e_salvar_bitin_sql(db, content.get("setor", ""), mongo_id)
     except SetorInvalido as exc:
         return EnviarResponse(ok=False, errors=[

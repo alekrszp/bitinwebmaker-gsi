@@ -130,7 +130,7 @@ replicar algum desses comportamentos.
 - `scripts/bitin_model.py`, `bitin_business_rules.py`, `bitin_lifecycle.py`, `bitin_view.py` — modelo/regras/ciclo de vida do BITin
 - `backend/` — API (FastAPI + Postgres + MongoDB), ver `docs/BACKEND.md`
 - `config/vba_mapping.json` — mapeamento declarativo usado pelo port
-- `tests/` — suíte completa (114 testes)
+- `tests/` — suíte completa (129 testes)
 - `scripts/poc_export.py`
 - `scripts/robust_export.py`
 - `scripts/verify_poc.py`

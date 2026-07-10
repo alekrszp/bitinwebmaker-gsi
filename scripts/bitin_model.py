@@ -58,6 +58,52 @@ def validate_bitin(bitin: dict[str, Any], config: dict[str, Any]) -> list[BitinE
                     f"materiais[{idx}]: campo obrigatório vazio: {field}",
                 ))
 
+    errors.extend(validate_ordem_cliente(bitin))
+
+    return errors
+
+
+def validate_ordem_cliente(bitin: dict[str, Any]) -> list[BitinError]:
+    """Valida a estrutura de ordem_cliente[] (codigo + itens de acrescentar_no_pedido/
+    retira_do_pedido). O campo em si é opcional (nem todo BITin afeta ordem de cliente) --
+    só valida entradas que existem. A regra de negócio "OC=X exige entrada correspondente"
+    (POP Nota 10) fica em bitin_business_rules.py, que já lê só o 'codigo'; aqui é a
+    estrutura interna de cada entrada que passa a ser checada."""
+    errors: list[BitinError] = []
+    for idx, entrada in enumerate(bitin.get("ordem_cliente", [])):
+        base_field = f"ordem_cliente[{idx}]"
+        if not entrada.get("codigo"):
+            errors.append(make_error(
+                f"{base_field}.codigo", "required_field_missing",
+                f"{base_field}: campo obrigatório vazio: codigo",
+            ))
+
+        itens_acrescentar = entrada.get("acrescentar_no_pedido", [])
+        itens_retirar = entrada.get("retira_do_pedido", [])
+        for lista_nome, itens in (
+            ("acrescentar_no_pedido", itens_acrescentar),
+            ("retira_do_pedido", itens_retirar),
+        ):
+            for item_idx, item in enumerate(itens):
+                item_field = f"{base_field}.{lista_nome}[{item_idx}]"
+                if not item.get("codigo_material"):
+                    errors.append(make_error(
+                        f"{item_field}.codigo_material", "required_field_missing",
+                        f"{item_field}: campo obrigatório vazio: codigo_material",
+                    ))
+                if not item.get("quantidade"):
+                    errors.append(make_error(
+                        f"{item_field}.quantidade", "required_field_missing",
+                        f"{item_field}: campo obrigatório vazio: quantidade",
+                    ))
+
+        if not itens_acrescentar and not itens_retirar:
+            errors.append(make_error(
+                base_field, "ordem_cliente_sem_itens",
+                f"{base_field}: nenhum item em 'acrescentar_no_pedido' nem 'retira_do_pedido' "
+                f"— entrada sem efeito",
+            ))
+
     return errors
 
 

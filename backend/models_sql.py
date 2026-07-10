@@ -16,6 +16,9 @@ class BitinSQL(Base):
     ano = Column(Integer, nullable=False)
     sequencial = Column(Integer, nullable=False)
     mongo_document_id = Column(String, nullable=False, unique=True)
+    # Nullable até existir autenticação de verdade -- preparado agora pra não exigir
+    # migração de schema quando o login for ligado (ver docs/BACKEND.md).
+    criado_por = Column(String, nullable=True)
 
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())

@@ -81,6 +81,47 @@ class ValidateBitinTest(unittest.TestCase):
         errors = bm.validate_bitin(make_bitin(materiais=[]), self.config)
         self.assertTrue(any("nenhum material" in e["message"] for e in errors))
 
+    def test_ordem_cliente_ausente_nao_gera_erro(self) -> None:
+        """ordem_cliente[] é opcional -- BITin sem nenhuma entrada é válido."""
+        errors = bm.validate_bitin(make_bitin(), self.config)
+        self.assertEqual(errors, [])
+
+    def test_ordem_cliente_sem_codigo_falha(self) -> None:
+        bitin = make_bitin(ordem_cliente=[{"acrescentar_no_pedido": [
+            {"codigo_material": "COD999", "quantidade": "2 pçs"}
+        ]}])
+        errors = bm.validate_bitin(bitin, self.config)
+        self.assertTrue(any(
+            e["code"] == "required_field_missing" and e["field"] == "ordem_cliente[0].codigo"
+            for e in errors
+        ))
+
+    def test_ordem_cliente_sem_nenhum_item_falha(self) -> None:
+        bitin = make_bitin(ordem_cliente=[{"codigo": "COD123", "descricao": "x"}])
+        errors = bm.validate_bitin(bitin, self.config)
+        self.assertTrue(any(e["code"] == "ordem_cliente_sem_itens" for e in errors))
+
+    def test_ordem_cliente_item_sem_quantidade_falha(self) -> None:
+        bitin = make_bitin(ordem_cliente=[{
+            "codigo": "COD123",
+            "retira_do_pedido": [{"codigo_material": "COD999"}],
+        }])
+        errors = bm.validate_bitin(bitin, self.config)
+        self.assertTrue(any(
+            e["code"] == "required_field_missing"
+            and e["field"] == "ordem_cliente[0].retira_do_pedido[0].quantidade"
+            for e in errors
+        ))
+
+    def test_ordem_cliente_valida_passa(self) -> None:
+        bitin = make_bitin(ordem_cliente=[{
+            "codigo": "COD123",
+            "descricao": "Pedido especial",
+            "acrescentar_no_pedido": [{"codigo_material": "COD999", "quantidade": "2 pçs"}],
+        }])
+        errors = bm.validate_bitin(bitin, self.config)
+        self.assertEqual(errors, [])
+
 
 class MaterialToPlan2RowTest(unittest.TestCase):
     def setUp(self) -> None:
