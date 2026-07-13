@@ -117,14 +117,45 @@ IMPACTOS_OPERACIONAIS_LABELS = {
     "of": "OF",
 }
 
-LABEL_OVERRIDES = {
+DADOS_BASICOS_LABELS = {
+    "descricao": "Descrição",
+    "grupo_mercadorias": "Grupo Mercadorias",
+    "status": "Status",
+    "hierarquia": "Hierarquia",
+    "peso_bruto": "Peso Bruto",
+    "peso_liquido": "Peso Líquido",
+    "unidade_peso": "Unidade de Peso",
+    "volume": "Volume",
+    "unidade_volume": "Unidade de Volume",
+    "desenho": "Desenho",
+    "nivel_revisao": "Nível de Revisão",
+    "documento": "Documento",
+    "material_substituto": "Material Substituto",
+    "status_bloqueio_vendas": "Status Bloqueio de Vendas",
+    "data_bloqueio_vendas": "Data Bloqueio de Vendas",
     "ncm": "NCM",
+    "grupo_compradores": "Grupo Compradores",
+    "planejador": "Planejador",
+    "tipo_suprimento": "Tipo de Suprimento",
+    "tipo_suprimento_especial": "Tipo de Suprimento Especial",
+    "deposito_producao": "Depósito de Produção",
+    "deposito_suprimento_externo": "Depósito de Suprimento Externo",
+    "prazo_entrega": "Prazo de Entrega",
+    "responsavel_controle_producao": "Responsável Controle de Produção",
+    "perfil_producao": "Perfil de Produção",
+    "utilizacao_material": "Utilização do Material",
+    "origem_material": "Origem do Material",
+    "producao_interna": "Produção Interna",
+    "texto_pedidos_compras": "Texto Pedidos de Compras",
+    "marcacao_eliminar_nivel_mandante": "Marcação Eliminar Nível Mandante",
 }
 
 
 def _humanize_label(campo: str) -> str:
-    palavras = campo.split("_")
-    return " ".join(LABEL_OVERRIDES.get(p, p.capitalize()) for p in palavras)
+    """Fallback só pra campo novo no crosswalk sem entrada em DADOS_BASICOS_LABELS ainda --
+    todos os 29 campos atuais já têm rótulo explícito (com acentuação correta em português,
+    que um capitalize() ingênuo não reproduz)."""
+    return " ".join(palavra.capitalize() for palavra in campo.split("_"))
 
 
 def build_materiais_schema(vba_mapping_config: dict[str, Any], document_config: dict[str, Any]) -> dict[str, Any]:
@@ -148,7 +179,8 @@ def build_materiais_schema(vba_mapping_config: dict[str, Any], document_config: 
         {"key": "ncm_aprovado_fiscal", "label": "NCM aprovado (fiscal)", "type": "boolean"},
     ]
     dados_basicos = [
-        {"key": campo, "label": _humanize_label(campo)} for campo in crosswalk["dados_basicos"]
+        {"key": campo, "label": DADOS_BASICOS_LABELS.get(campo, _humanize_label(campo))}
+        for campo in crosswalk["dados_basicos"]
     ]
     impactos_operacionais = [
         {"key": campo, "label": IMPACTOS_OPERACIONAIS_LABELS[campo], "options": valores_validos[campo]}

@@ -5,15 +5,29 @@ All notable changes to this project will be documented in this file.
 ## [v0.5.0] - 2026-07-13
 
 ### Added
-- **Grid de materiais dirigido por schema** (`frontend/src/components/MaterialGrid.jsx`,
-  `docs/FRONTEND.md`): substitui a lista simples de identificação por uma planilha completa
-  (linha = material, colunas = campos) cobrindo `dados_basicos` (De/Para, ~30 campos, ocultos
-  por padrão até o usuário escolher quais editar), `impactos_operacionais` (Alt/Est/Esp/LP/
-  Pré/OC/OF como `<select>` com as opções válidas do POP) e snapshot atual (grupo mercadorias,
-  tem desenho, desenho aprovado, NCM aprovado fiscal). Modelado no `CodeForm.jsx` do projeto
-  irmão `GPT_Engineering_BITIN`, mas reconstruído: colunas vêm do backend (não hardcoded),
-  colar do SAP reaproveita o parser Python já testado, e erros de envio destacam a célula
-  exata em vez de só listar texto solto.
+- **Grid de materiais dirigido por schema, com navegação e visual de planilha real**
+  (`frontend/src/components/MaterialGrid.jsx`, `MaterialDetailModal.jsx`, `docs/FRONTEND.md`):
+  substitui a lista simples de identificação por uma planilha completa (linha = material,
+  colunas = campos), refeita em 3 rodadas de feedback direto até ficar de verdade "tipo
+  Excel":
+  - Navegação por teclado nas 4 setas (não depende de Tab) + `Enter`/`Shift+Enter`.
+  - Colar em qualquer célula (`Ctrl+V`, bloco copiado do Excel), criando linhas novas
+    automaticamente, além de "Importar relatório do SAP" (formato fixo, sempre linha nova).
+  - Colunas "#"/"Código" congeladas ao rolar (como "congelar painéis" do Excel).
+  - Painel de "Detalhes" por material (`MaterialDetailModal.jsx`) com todos os ~30 campos de
+    `dados_basicos` (De/Para, com busca) e `impactos_operacionais` num layout espaçoso — a
+    grade em si só fixa como coluna os campos que o usuário escolher (ideal pra colar em
+    massa), evitando o problema de "muitos campos, pouco espaço".
+  - **Cabeçalho "Novo" em vermelho**: convenção extraída da planilha real do BITin
+    (`examples/bitin teste 2.xlsm`, aba `ZBPP009 + ALTERACAO`, inspecionada via `openpyxl`) —
+    toda coluna de valor novo/editável tem o rótulo em vermelho negrito, igual ao Excel que o
+    time já usa.
+  - Modelado no `CodeForm.jsx` do projeto irmão `GPT_Engineering_BITIN`, mas reconstruído:
+    colunas vêm do backend (não hardcoded), colar do SAP reaproveita o parser Python já
+    testado, erros de envio destacam a célula exata (na grade ou no painel de Detalhes,
+    dependendo de onde o campo está sendo editado) em vez de só listar texto solto.
+  - Busca insensível a acento (`lib/textSearch.js`) no seletor de campos e no painel de
+    Detalhes — achado testando: buscar "liquido" não encontrava "Peso Líquido".
 - **`GET /bitins/schema/materiais`** (`bitin_model.build_materiais_schema`): fonte única de
   colunas do grid — identificação, snapshot, `dados_basicos` (na mesma ordem do crosswalk) e
   `impactos_operacionais` com os valores válidos do POP (`config/bitin_document_mapping.json`).
@@ -28,10 +42,14 @@ All notable changes to this project will be documented in this file.
 ### Notes
 - 8 testes novos (Python): `build_materiais_schema` (`tests/test_bitin_model.py`) + os dois
   endpoints novos (`tests/test_backend_bitins.py`) — 154 testes automatizados no total.
-- Validado manualmente com Playwright ad-hoc (login → criar rascunho → adicionar material →
-  filtrar campo NCM → selecionar Alt → colar do SAP → enviar com erros mockados → célula
-  destacada) — mesma limitação de ambiente já documentada (sem MongoDB real, backend testado
-  com `mongomock-motor`/rotas mockadas onde necessário).
+- Validado com um roteiro de 24 checagens via Playwright ad-hoc cobrindo as 10 áreas do grid
+  (edição básica, navegação por teclado, colunas congeladas, colar em bloco, importar SAP,
+  fixar campos, painel de Detalhes, validação de envio) — mesma limitação de ambiente já
+  documentada (sem MongoDB real, backend testado com `mongomock-motor`/rotas mockadas onde
+  necessário). 2 bugs reais encontrados durante o teste e corrigidos antes de fechar: coluna
+  congelada sobrepondo a seguinte (`position: sticky` não é confiável com `border-collapse`,
+  nem `table-layout: fixed` sozinho sem largura total explícita — ver `docs/FRONTEND.md`) e
+  busca de campo sem suporte a acento.
 - Ainda não incluído (ver `docs/FRONTEND.md`, "O que NÃO está nesta fatia ainda"):
   `ordem_cliente[]`, `lista_tecnica[]`, checklist editável, modo de leitura explícito pra quem
   abre o rascunho de outra pessoa sem ser dono/admin, mesclar (em vez de sempre duplicar) ao

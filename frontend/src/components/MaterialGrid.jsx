@@ -1,23 +1,89 @@
-import { Fragment, useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { api } from '../lib/api'
-import { blankMaterial, getDadosBasico, getImpacto, materialFromSapPaste, setDadosBasico, setImpacto } from '../lib/bitinFields'
+import { blankMaterial, coerceBoolean, getCellValue, materialFromSapPaste, setCellValue } from '../lib/bitinFields'
 import { buildErrorIndex, cellKey } from '../lib/bitinErrors'
+import { matchesSearch } from '../lib/textSearch'
+import MaterialDetailModal from './MaterialDetailModal'
 
 const IMPACTOS_CONDICIONAIS = [
   { key: 'centro_custo', label: 'Centro de custo' },
   { key: 'conta_razao', label: 'Conta razão' },
 ]
 
-// Grid de materiais (linhas/colunas) -- ver docs/FRONTEND.md, "Grid de materiais". As
-// colunas de identificação/snapshot/impactos são fixas; as de dados_basicos (De/Para) vêm
-// do schema do backend e ficam ocultas por padrão (são ~30 campos -- mostrar todas de uma
-// vez deixaria a planilha impraticável) até o usuário escolher quais quer editar.
+// Colunas maiores que a primeira versão -- feedback direto: células pequenas demais pra
+// campos com valores reais (código de material, descrição, texto de dados_basicos).
+const CELL_WIDTHS = { sm: 'w-24', md: 'w-40', lg: 'w-60' }
+// Mesmos valores de CELL_WIDTHS em px -- table-layout:fixed só respeita a largura declarada
+// de cada coluna se a <table> tiver uma largura total explícita (senão o navegador encolhe
+// tudo proporcionalmente pra caber no container, ignorando os valores declarados por célula
+// -- foi exatamente o bug visto: a coluna "#" de 48px renderizava a 25px, e a coluna
+// congelada "Código" ficava com o offset errado, sobrepondo "Descrição"). Por isso o total é
+// somado em JS e aplicado como `width` da <table> abaixo.
+const CELL_WIDTH_PX = { sm: 96, md: 160, lg: 240 }
+const ROW_NUMBER_WIDTH = 48 // px -- usado pra calcular o offset da 2ª coluna congelada
+const ACTIONS_WIDTH = 168 // px -- table-fixed exige largura explícita em toda coluna
+
+const FIXED_COLUMNS = [
+  { group: 'campo', field: 'codigo_material', label: 'Código', type: 'text', width: 'md', required: true, freeze: true },
+  { group: 'campo', field: 'descricao_material', label: 'Descrição', type: 'text', width: 'lg' },
+  { group: 'campo', field: 'centro', label: 'Centro', type: 'text', width: 'sm', required: true },
+  { group: 'campo', field: 'tipo_material', label: 'Tipo Material', type: 'text', width: 'sm', required: true },
+  { group: 'campo', field: 'grupo_mercadorias_atual', label: 'Grupo Mercadorias (atual)', type: 'text', width: 'md' },
+  { group: 'campo', field: 'tem_desenho', label: 'Tem desenho', type: 'checkbox' },
+  { group: 'campo', field: 'desenho_aprovado', label: 'Desenho aprovado', type: 'checkbox' },
+  { group: 'campo', field: 'ncm_aprovado_fiscal', label: 'NCM aprovado (fiscal)', type: 'checkbox' },
+]
+
+// Uma lista única e "achatada" de colunas (em vez de identificação/dados_basicos/impactos
+// renderizados em blocos separados) -- é o que permite a navegação por teclado e o colar em
+// bloco tratarem o grid inteiro como uma única planilha contígua, com (linha, coluna) simples.
+function buildColumns(schema, visibleFields) {
+  if (!schema) return FIXED_COLUMNS
+
+  // "para" pintado como "Novo" em vermelho no cabeçalho -- convenção da própria planilha real
+  // do BITin (aba "ZBPP009 + ALTERACAO"): toda coluna "Novo"/editável tem o rótulo em
+  // vermelho negrito, diferente das colunas de valor atual. Mantido aqui de propósito.
+  const dadosBasicosCols = visibleFields.flatMap((campo) => {
+    const label = schema.dados_basicos.find((c) => c.key === campo)?.label || campo
+    return [
+      { group: 'dados_basicos', field: campo, sub: 'de', label, subLabel: 'Atual', type: 'text', width: 'md' },
+      { group: 'dados_basicos', field: campo, sub: 'para', label, subLabel: 'Novo', variant: 'novo', type: 'text', width: 'md' },
+    ]
+  })
+  const impactosCols = schema.impactos_operacionais.map((col) => ({
+    group: 'impactos_operacionais',
+    field: col.key,
+    label: col.label,
+    type: 'select',
+    options: col.options,
+    width: 'sm',
+  }))
+  const impactosCondicionaisCols = IMPACTOS_CONDICIONAIS.map((col) => ({
+    group: 'impactos_operacionais',
+    field: col.key,
+    label: col.label,
+    type: 'text',
+    width: 'md',
+    dynamicPlaceholder: (material) => (getCellValue(material, impactosCols.find((c) => c.field === 'est')) === 'S' ? 'obrigatório (Est=S)' : ''),
+  }))
+
+  return [...FIXED_COLUMNS, ...dadosBasicosCols, ...impactosCols, ...impactosCondicionaisCols]
+}
+
+// Grid de materiais em formato planilha -- ver docs/FRONTEND.md, "Grid de materiais". Navega
+// como Excel nas 4 setas (não depende de Tab, que pula pros botões de ação no fim da linha),
+// Enter confirma e desce, e aceita colar um bloco de células a partir de qualquer célula. Os
+// ~30 campos de dados_basicos ficam ocultos da grade por padrão (pouco espaço útil numa
+// célula de planilha pra rótulo+valor) -- o botão "Detalhes" por linha abre um painel grande
+// com todos eles, um por linha, pra edição sem aperto.
 export default function MaterialGrid({ materiais, onChange, errors = [], disabled = false }) {
   const [schema, setSchema] = useState(null)
   const [schemaError, setSchemaError] = useState(null)
   const [visibleFields, setVisibleFields] = useState([])
   const [showFieldPicker, setShowFieldPicker] = useState(false)
-  const [showPaste, setShowPaste] = useState(false)
+  const [showSapImport, setShowSapImport] = useState(false)
+  const [detailRowIndex, setDetailRowIndex] = useState(null)
+  const cellRefs = useRef({})
 
   useEffect(() => {
     let cancelado = false
@@ -34,13 +100,87 @@ export default function MaterialGrid({ materiais, onChange, errors = [], disable
     }
   }, [])
 
+  const columns = useMemo(() => buildColumns(schema, visibleFields), [schema, visibleFields])
+  const tableWidth =
+    ROW_NUMBER_WIDTH +
+    columns.reduce((soma, col) => soma + CELL_WIDTH_PX[col.width || 'md'], 0) +
+    (disabled ? 0 : ACTIONS_WIDTH)
+
   // Só usa os erros com caminho materiais[idx]... pra destacar célula -- erros gerais
   // (cabeçalho, ordem_cliente) já aparecem na lista completa mostrada por quem usa este
   // componente (ver BitinDetail.jsx), não precisam de um painel duplicado aqui.
   const { byCell } = useMemo(() => buildErrorIndex(errors), [errors])
 
-  function updateRow(idx, updater) {
-    const novo = materiais.map((m, i) => (i === idx ? updater(m) : m))
+  function cellErrors(rowIndex, col) {
+    return byCell.get(cellKey(rowIndex, col.group, col.field)) || []
+  }
+
+  function registerRef(rowIndex, colIndex, el) {
+    const key = `${rowIndex}-${colIndex}`
+    if (el) cellRefs.current[key] = el
+    else delete cellRefs.current[key]
+  }
+
+  function focusCell(rowIndex, colIndex) {
+    const el = cellRefs.current[`${rowIndex}-${colIndex}`]
+    if (!el) return
+    el.focus()
+    if (el.select) el.select()
+  }
+
+  // Navegação nas 4 setas -- deliberadamente não depende de Tab (a ordem do DOM inclui os
+  // botões "Detalhes"/"Remover" no fim de cada linha, o que quebraria o fluxo horizontal).
+  // As 4 setas SEMPRE pulam de célula (sem meio-termo tipo "só pula na borda do texto") --
+  // mais previsível pra digitação rápida, e cada célula já seleciona o conteúdo inteiro ao
+  // chegar (foco programático em focusCell), então digitar direto substitui o valor. Pra
+  // editar o meio de um texto longo, clique com o mouse ou use Home/End (não afetados aqui).
+  function handleCellKeyDown(e, rowIndex, colIndex) {
+    if (e.key === 'ArrowDown') {
+      e.preventDefault()
+      focusCell(rowIndex + 1, colIndex)
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault()
+      focusCell(rowIndex - 1, colIndex)
+    } else if (e.key === 'Enter') {
+      e.preventDefault()
+      focusCell(e.shiftKey ? rowIndex - 1 : rowIndex + 1, colIndex)
+    } else if (e.key === 'ArrowLeft') {
+      e.preventDefault()
+      focusCell(rowIndex, colIndex - 1)
+    } else if (e.key === 'ArrowRight') {
+      e.preventDefault()
+      focusCell(rowIndex, colIndex + 1)
+    }
+  }
+
+  function commitCell(rowIndex, col, value) {
+    onChange(materiais.map((m, i) => (i === rowIndex ? setCellValue(m, col, value) : m)))
+  }
+
+  // Cola um bloco de células (copiado do Excel ou de outra parte do grid) a partir da célula
+  // focada -- preenche linhas/colunas seguintes, criando materiais novos se o bloco for maior
+  // que o grid atual. Um valor único colado (sem tab/quebra de linha) não entra aqui -- usa o
+  // paste nativo do input, sem interferência.
+  function handleCellPaste(e, rowIndex, colIndex) {
+    const text = e.clipboardData?.getData('text')
+    if (!text || (!text.includes('\t') && !text.includes('\n'))) return
+    e.preventDefault()
+
+    const linhas = text.replace(/\r/g, '').split('\n')
+    if (linhas[linhas.length - 1] === '') linhas.pop()
+    const bloco = linhas.map((linha) => linha.split('\t'))
+
+    const novo = [...materiais]
+    bloco.forEach((valores, r) => {
+      const targetRow = rowIndex + r
+      while (novo.length <= targetRow) novo.push(blankMaterial())
+      valores.forEach((valor, c) => {
+        const col = columns[colIndex + c]
+        if (!col) return
+        const valorFinal = col.type === 'checkbox' ? coerceBoolean(valor) : valor.trim()
+        novo[targetRow] = setCellValue(novo[targetRow], col, valorFinal)
+      })
+    })
     onChange(novo)
   }
 
@@ -52,47 +192,34 @@ export default function MaterialGrid({ materiais, onChange, errors = [], disable
     onChange(materiais.filter((_, i) => i !== idx))
   }
 
-  function addFromPaste(novosMateriais) {
+  function addFromSapImport(novosMateriais) {
     onChange([...materiais, ...novosMateriais.map(materialFromSapPaste)])
-  }
-
-  function cellErrors(idx, group, key) {
-    return byCell.get(cellKey(idx, group, key)) || []
-  }
-
-  const CELL_WIDTHS = { sm: 'w-20', md: 'w-32', lg: 'w-48' }
-
-  function cellClass(idx, group, key, width = 'md') {
-    const base = `${CELL_WIDTHS[width]} rounded border px-2 py-1.5 text-sm disabled:bg-gray-50 disabled:text-gray-500`
-    return cellErrors(idx, group, key).length > 0
-      ? `${base} border-red-400 bg-red-50 focus:border-red-500`
-      : `${base} border-gray-300 focus:border-blue-500`
-  }
-
-  function cellTitle(idx, group, key) {
-    const errs = cellErrors(idx, group, key)
-    return errs.length > 0 ? errs.map((e) => e.message).join('\n') : undefined
   }
 
   return (
     <div className="rounded border border-gray-200 bg-white p-4">
-      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-        <h2 className="text-lg font-medium text-gray-900">Materiais</h2>
+      <div className="mb-3 flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h2 className="text-lg font-medium text-gray-900">Materiais</h2>
+          {!disabled && (
+            <p className="mt-0.5 text-xs text-gray-400">
+              Clique numa célula e use as setas ↑↓←→ ou Enter pra navegar. Cole um bloco copiado do Excel em
+              qualquer célula (Ctrl+V) — linhas novas são criadas automaticamente se precisar. Use "Detalhes"
+              pra editar os campos de dados básicos com mais espaço.
+            </p>
+          )}
+        </div>
         {!disabled && (
           <div className="flex flex-wrap gap-2">
-            <button
-              type="button"
-              onClick={addRow}
-              className="rounded border border-gray-300 px-3 py-1 text-sm hover:bg-gray-100"
-            >
+            <button type="button" onClick={addRow} className="rounded border border-gray-300 px-3 py-1.5 text-sm hover:bg-gray-100">
               + Adicionar material
             </button>
             <button
               type="button"
-              onClick={() => setShowPaste((v) => !v)}
-              className="rounded border border-gray-300 px-3 py-1 text-sm hover:bg-gray-100"
+              onClick={() => setShowSapImport((v) => !v)}
+              className="rounded border border-gray-300 px-3 py-1.5 text-sm hover:bg-gray-100"
             >
-              Colar do SAP
+              Importar relatório do SAP
             </button>
             <FieldPicker
               schema={schema}
@@ -107,192 +234,104 @@ export default function MaterialGrid({ materiais, onChange, errors = [], disable
 
       {schemaError && <p className="mb-3 text-sm text-red-600">{schemaError}</p>}
 
-      {showPaste && !disabled && (
-        <SapPastePanel onParsed={addFromPaste} onClose={() => setShowPaste(false)} />
+      {showSapImport && !disabled && (
+        <SapImportPanel onParsed={addFromSapImport} onClose={() => setShowSapImport(false)} />
       )}
 
       {materiais.length === 0 && <p className="text-sm text-gray-500">Nenhum material adicionado ainda.</p>}
 
       {materiais.length > 0 && (
-        <div className="overflow-x-auto rounded border border-gray-100">
-          <table className="min-w-full border-collapse text-sm">
+        <div className="max-h-[75vh] overflow-auto rounded border border-gray-200">
+          {/* table-fixed é essencial aqui: com table-layout:auto (padrão), o navegador
+              encolhe colunas com pouco conteúdo (ex.: "#" com só "1"/"2") abaixo da largura
+              declarada, o que quebra a matemática do offset das colunas congeladas (a coluna
+              "Código" ficava sobrepondo "Descrição"). Com table-fixed, a largura do cabeçalho
+              manda de verdade. border-separate (não border-collapse) porque position:sticky
+              em <td>/<th> não funciona de forma confiável com border-collapse. */}
+          <table style={{ width: tableWidth }} className="table-fixed border-separate border-spacing-0 text-sm">
             <thead>
-              <tr className="bg-gray-50 text-left text-xs font-medium uppercase tracking-wide text-gray-500">
-                <th className="sticky left-0 z-10 bg-gray-50 px-3 py-2">#</th>
-                <th className="px-2 py-2">Código</th>
-                <th className="px-2 py-2">Descrição</th>
-                <th className="px-2 py-2">Centro</th>
-                <th className="px-2 py-2">Tipo Material</th>
-                <th className="px-2 py-2">Grupo Mercadorias (atual)</th>
-                <th className="px-2 py-2 text-center">Tem desenho</th>
-                <th className="px-2 py-2 text-center">Desenho aprovado</th>
-                <th className="px-2 py-2 text-center">NCM aprovado (fiscal)</th>
-                {visibleFields.map((campo) => (
-                  <th key={campo} colSpan={2} className="border-l border-gray-200 px-2 py-2 text-center">
-                    {schema?.dados_basicos.find((c) => c.key === campo)?.label || campo}
-                  </th>
-                ))}
-                {(schema?.impactos_operacionais || []).map((col) => (
-                  <th key={col.key} className="border-l border-gray-200 px-2 py-2 text-center">
+              <tr>
+                <th
+                  style={{ width: ROW_NUMBER_WIDTH }}
+                  className="sticky top-0 left-0 z-30 border border-gray-200 bg-gray-100 px-2 py-2.5 text-xs font-semibold text-gray-500"
+                >
+                  #
+                </th>
+                {columns.map((col, colIndex) => (
+                  <th
+                    key={colIndex}
+                    style={col.freeze ? { left: ROW_NUMBER_WIDTH } : undefined}
+                    className={`${CELL_WIDTHS[col.width || 'md']} sticky top-0 border border-gray-200 bg-gray-100 px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide ${
+                      col.variant === 'novo' ? 'text-red-600' : 'text-gray-600'
+                    } ${col.freeze ? 'z-30' : 'z-20'}`}
+                  >
                     {col.label}
+                    {col.required && <span className="text-red-500"> *</span>}
+                    {col.subLabel && (
+                      <span className={`block text-[10px] font-normal normal-case tracking-normal ${col.variant === 'novo' ? 'text-red-500' : 'text-gray-400'}`}>
+                        {col.subLabel}
+                      </span>
+                    )}
                   </th>
                 ))}
-                {IMPACTOS_CONDICIONAIS.map((col) => (
-                  <th key={col.key} className="px-2 py-2">
-                    {col.label}
+                {!disabled && (
+                  <th
+                    style={{ width: ACTIONS_WIDTH }}
+                    className="sticky top-0 z-20 border border-gray-200 bg-gray-100 px-3 py-2.5 text-center text-xs font-semibold text-gray-600"
+                  >
+                    Ações
                   </th>
-                ))}
-                {!disabled && <th className="px-2 py-2 text-center">Ações</th>}
+                )}
               </tr>
-              {visibleFields.length > 0 && (
-                <tr className="bg-gray-50 text-[10px] uppercase tracking-wide text-gray-400">
-                  <th className="sticky left-0 z-10 bg-gray-50" colSpan={9} />
-                  {visibleFields.map((campo) => (
-                    <Fragment key={campo}>
-                      <th className="border-l border-gray-200 px-2 py-1 font-normal">De</th>
-                      <th className="px-2 py-1 font-normal">Para</th>
-                    </Fragment>
-                  ))}
-                  <th colSpan={(schema?.impactos_operacionais.length || 0) + IMPACTOS_CONDICIONAIS.length + (disabled ? 0 : 1)} />
-                </tr>
-              )}
             </thead>
             <tbody>
-              {materiais.map((material, idx) => (
-                <tr key={idx} className="border-t border-gray-100 align-top hover:bg-gray-50/60">
-                  <td className="sticky left-0 z-10 bg-white px-3 py-1.5 text-xs text-gray-500">{idx + 1}</td>
-                  <td className="px-2 py-1.5">
-                    <input
-                      value={material.codigo_material || ''}
-                      disabled={disabled}
-                      onChange={(e) => updateRow(idx, (m) => ({ ...m, codigo_material: e.target.value }))}
-                      className={cellClass(idx, 'campo', 'codigo_material', 'md')}
-                      title={cellTitle(idx, 'campo', 'codigo_material')}
-                    />
+              {materiais.map((material, rowIndex) => (
+                <tr key={rowIndex} className={`group ${rowIndex % 2 === 1 ? 'bg-gray-50' : 'bg-white'} hover:bg-blue-50`}>
+                  <td
+                    style={{ width: ROW_NUMBER_WIDTH }}
+                    className="sticky left-0 z-10 border border-gray-200 bg-inherit px-2 py-2 text-center text-xs text-gray-400"
+                  >
+                    {rowIndex + 1}
                   </td>
-                  <td className="px-2 py-1.5">
-                    <input
-                      value={material.descricao_material || ''}
-                      disabled={disabled}
-                      onChange={(e) => updateRow(idx, (m) => ({ ...m, descricao_material: e.target.value }))}
-                      className={cellClass(idx, 'campo', 'descricao_material', 'lg')}
-                    />
-                  </td>
-                  <td className="px-2 py-1.5">
-                    <input
-                      value={material.centro || ''}
-                      disabled={disabled}
-                      onChange={(e) => updateRow(idx, (m) => ({ ...m, centro: e.target.value }))}
-                      className={cellClass(idx, 'campo', 'centro', 'sm')}
-                      title={cellTitle(idx, 'campo', 'centro')}
-                    />
-                  </td>
-                  <td className="px-2 py-1.5">
-                    <input
-                      value={material.tipo_material || ''}
-                      disabled={disabled}
-                      onChange={(e) => updateRow(idx, (m) => ({ ...m, tipo_material: e.target.value }))}
-                      className={cellClass(idx, 'campo', 'tipo_material', 'sm')}
-                      title={cellTitle(idx, 'campo', 'tipo_material')}
-                    />
-                  </td>
-                  <td className="px-2 py-1.5">
-                    <input
-                      value={material.grupo_mercadorias_atual || ''}
-                      disabled={disabled}
-                      onChange={(e) => updateRow(idx, (m) => ({ ...m, grupo_mercadorias_atual: e.target.value }))}
-                      className={cellClass(idx, 'campo', 'grupo_mercadorias_atual', 'md')}
-                    />
-                  </td>
-                  <td className="px-2 py-1.5 text-center">
-                    <input
-                      type="checkbox"
-                      checked={!!material.tem_desenho}
-                      disabled={disabled}
-                      onChange={(e) => updateRow(idx, (m) => ({ ...m, tem_desenho: e.target.checked }))}
-                    />
-                  </td>
-                  <td className="px-2 py-1.5 text-center">
-                    <input
-                      type="checkbox"
-                      checked={!!material.desenho_aprovado}
-                      disabled={disabled}
-                      onChange={(e) => updateRow(idx, (m) => ({ ...m, desenho_aprovado: e.target.checked }))}
-                      title={cellTitle(idx, 'campo', 'desenho_aprovado')}
-                    />
-                  </td>
-                  <td className="px-2 py-1.5 text-center">
-                    <input
-                      type="checkbox"
-                      checked={!!material.ncm_aprovado_fiscal}
-                      disabled={disabled}
-                      onChange={(e) => updateRow(idx, (m) => ({ ...m, ncm_aprovado_fiscal: e.target.checked }))}
-                      title={cellTitle(idx, 'campo', 'ncm_aprovado_fiscal')}
-                    />
-                  </td>
-
-                  {visibleFields.map((campo) => (
-                    <Fragment key={campo}>
-                      <td className="border-l border-gray-200 px-2 py-1.5">
-                        <input
-                          value={getDadosBasico(material, campo, 'de')}
-                          disabled={disabled}
-                          onChange={(e) => updateRow(idx, (m) => setDadosBasico(m, campo, 'de', e.target.value))}
-                          className={cellClass(idx, 'dados_basicos', campo, 'md')}
-                        />
-                      </td>
-                      <td className="px-2 py-1.5">
-                        <input
-                          value={getDadosBasico(material, campo, 'para')}
-                          disabled={disabled}
-                          onChange={(e) => updateRow(idx, (m) => setDadosBasico(m, campo, 'para', e.target.value))}
-                          className={cellClass(idx, 'dados_basicos', campo, 'md')}
-                          title={cellTitle(idx, 'dados_basicos', campo)}
-                        />
-                      </td>
-                    </Fragment>
-                  ))}
-
-                  {(schema?.impactos_operacionais || []).map((col) => (
-                    <td key={col.key} className="border-l border-gray-200 px-2 py-1.5">
-                      <select
-                        value={getImpacto(material, col.key) || '-'}
+                  {columns.map((col, colIndex) => {
+                    const errs = cellErrors(rowIndex, col)
+                    return (
+                      <GridCell
+                        key={colIndex}
+                        col={col}
+                        rowIndex={rowIndex}
+                        colIndex={colIndex}
+                        value={getCellValue(material, col)}
                         disabled={disabled}
-                        onChange={(e) => updateRow(idx, (m) => setImpacto(m, col.key, e.target.value))}
-                        className={cellClass(idx, 'impactos_operacionais', col.key, 'sm')}
-                        title={cellTitle(idx, 'impactos_operacionais', col.key)}
-                      >
-                        {col.options.map((opt) => (
-                          <option key={opt} value={opt}>
-                            {opt}
-                          </option>
-                        ))}
-                      </select>
-                    </td>
-                  ))}
-
-                  {IMPACTOS_CONDICIONAIS.map((col) => (
-                    <td key={col.key} className="px-2 py-1.5">
-                      <input
-                        value={getImpacto(material, col.key)}
-                        disabled={disabled}
-                        onChange={(e) => updateRow(idx, (m) => setImpacto(m, col.key, e.target.value))}
-                        className={cellClass(idx, 'impactos_operacionais', col.key, 'md')}
-                        title={cellTitle(idx, 'impactos_operacionais', col.key)}
-                        placeholder={getImpacto(material, 'est') === 'S' ? 'obrigatório (Est=S)' : ''}
+                        hasError={errs.length > 0}
+                        errorMessage={errs.length > 0 ? errs.map((e) => e.message).join('\n') : undefined}
+                        placeholder={col.dynamicPlaceholder ? col.dynamicPlaceholder(material) : undefined}
+                        registerRef={registerRef}
+                        onCellKeyDown={handleCellKeyDown}
+                        onCellPaste={handleCellPaste}
+                        onCommit={(value) => commitCell(rowIndex, col, value)}
+                        freezeOffset={col.freeze ? ROW_NUMBER_WIDTH : undefined}
                       />
-                    </td>
-                  ))}
-
+                    )
+                  })}
                   {!disabled && (
-                    <td className="px-2 py-1.5 text-center">
-                      <button
-                        type="button"
-                        onClick={() => removeRow(idx)}
-                        className="rounded border border-red-300 px-2 py-1 text-xs text-red-700 hover:bg-red-50"
-                      >
-                        Remover
-                      </button>
+                    <td style={{ width: ACTIONS_WIDTH }} className="border border-gray-200 bg-inherit px-2 py-2 text-center">
+                      <div className="flex justify-center gap-1.5">
+                        <button
+                          type="button"
+                          onClick={() => setDetailRowIndex(rowIndex)}
+                          className="rounded border border-gray-300 px-2 py-1 text-xs text-gray-700 hover:bg-gray-100"
+                        >
+                          Detalhes
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => removeRow(rowIndex)}
+                          className="rounded border border-red-300 px-2 py-1 text-xs text-red-700 hover:bg-red-50"
+                        >
+                          Remover
+                        </button>
+                      </div>
                     </td>
                   )}
                 </tr>
@@ -301,7 +340,89 @@ export default function MaterialGrid({ materiais, onChange, errors = [], disable
           </table>
         </div>
       )}
+
+      {detailRowIndex !== null && materiais[detailRowIndex] && (
+        <MaterialDetailModal
+          material={materiais[detailRowIndex]}
+          schema={schema}
+          errors={errors}
+          rowIndex={detailRowIndex}
+          disabled={disabled}
+          onChange={(atualizado) => onChange(materiais.map((m, i) => (i === detailRowIndex ? atualizado : m)))}
+          onClose={() => setDetailRowIndex(null)}
+        />
+      )}
     </div>
+  )
+}
+
+function GridCell({ col, rowIndex, colIndex, value, disabled, hasError, errorMessage, placeholder, registerRef, onCellKeyDown, onCellPaste, onCommit, freezeOffset }) {
+  // Erro de envio: borda vermelha sempre visível (não só bg sutil) + anel vermelho por
+  // cima do azul de foco -- precisa continuar óbvio mesmo quando a célula está selecionada.
+  const cellBg = hasError
+    ? 'border-red-400 bg-red-50 ring-1 ring-inset ring-red-400'
+    : 'border-gray-200 bg-inherit'
+  const inputClass = `h-full w-full bg-transparent px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-inset ${
+    hasError ? 'focus:ring-red-500' : 'focus:ring-blue-500'
+  } disabled:text-gray-400`
+  const stickyStyle = freezeOffset !== undefined ? { left: freezeOffset } : undefined
+  const stickyClass = freezeOffset !== undefined ? 'sticky z-10' : ''
+
+  if (col.type === 'checkbox') {
+    return (
+      <td style={stickyStyle} className={`${CELL_WIDTHS[col.width || 'md']} border p-0 text-center ${cellBg} ${stickyClass}`}>
+        <input
+          ref={(el) => registerRef(rowIndex, colIndex, el)}
+          type="checkbox"
+          checked={!!value}
+          disabled={disabled}
+          onChange={(e) => onCommit(e.target.checked)}
+          onKeyDown={(e) => onCellKeyDown(e, rowIndex, colIndex)}
+          onPaste={(e) => onCellPaste(e, rowIndex, colIndex)}
+          title={errorMessage}
+          className="h-4 w-4 my-2.5"
+        />
+      </td>
+    )
+  }
+
+  if (col.type === 'select') {
+    return (
+      <td style={stickyStyle} className={`${CELL_WIDTHS[col.width || 'md']} border p-0 ${cellBg} ${stickyClass}`}>
+        <select
+          ref={(el) => registerRef(rowIndex, colIndex, el)}
+          value={value || '-'}
+          disabled={disabled}
+          onChange={(e) => onCommit(e.target.value)}
+          onKeyDown={(e) => onCellKeyDown(e, rowIndex, colIndex)}
+          onPaste={(e) => onCellPaste(e, rowIndex, colIndex)}
+          title={errorMessage}
+          className={inputClass}
+        >
+          {col.options.map((opt) => (
+            <option key={opt} value={opt}>
+              {opt}
+            </option>
+          ))}
+        </select>
+      </td>
+    )
+  }
+
+  return (
+    <td style={stickyStyle} className={`${CELL_WIDTHS[col.width || 'md']} border p-0 ${cellBg} ${stickyClass}`}>
+      <input
+        ref={(el) => registerRef(rowIndex, colIndex, el)}
+        value={value || ''}
+        disabled={disabled}
+        onChange={(e) => onCommit(e.target.value)}
+        onKeyDown={(e) => onCellKeyDown(e, rowIndex, colIndex)}
+        onPaste={(e) => onCellPaste(e, rowIndex, colIndex)}
+        title={errorMessage}
+        placeholder={placeholder}
+        className={inputClass}
+      />
+    </td>
   )
 }
 
@@ -310,8 +431,7 @@ function FieldPicker({ schema, visibleFields, setVisibleFields, open, setOpen })
 
   const opcoes = useMemo(() => {
     if (!schema) return []
-    const termo = busca.toLowerCase()
-    return schema.dados_basicos.filter((c) => c.label.toLowerCase().includes(termo))
+    return schema.dados_basicos.filter((c) => matchesSearch(c.label, busca))
   }, [schema, busca])
 
   return (
@@ -319,14 +439,18 @@ function FieldPicker({ schema, visibleFields, setVisibleFields, open, setOpen })
       <button
         type="button"
         onClick={() => setOpen(!open)}
-        className="rounded border border-gray-300 px-3 py-1 text-sm hover:bg-gray-100"
+        className="rounded border border-gray-300 px-3 py-1.5 text-sm hover:bg-gray-100"
       >
-        Campos de dados básicos ({visibleFields.length})
+        Fixar campos na grade ({visibleFields.length})
       </button>
       {open && (
         <>
           <div className="fixed inset-0 z-10" onClick={() => setOpen(false)} />
-          <div className="absolute right-0 top-9 z-20 w-72 rounded border border-gray-200 bg-white p-3 shadow-lg">
+          <div className="absolute right-0 top-10 z-20 w-72 rounded border border-gray-200 bg-white p-3 shadow-lg">
+            <p className="mb-2 text-xs text-gray-500">
+              Campos de dados básicos mostrados como coluna na grade (útil pra colar em bloco). Pra editar
+              qualquer campo com mais espaço, use "Detalhes" na linha do material.
+            </p>
             <input
               value={busca}
               onChange={(e) => setBusca(e.target.value)}
@@ -369,7 +493,7 @@ function FieldPicker({ schema, visibleFields, setVisibleFields, open, setOpen })
   )
 }
 
-function SapPastePanel({ onParsed, onClose }) {
+function SapImportPanel({ onParsed, onClose }) {
   const [texto, setTexto] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
@@ -392,7 +516,9 @@ function SapPastePanel({ onParsed, onClose }) {
   return (
     <div className="mb-3 rounded border border-gray-200 bg-gray-50 p-3">
       <p className="mb-2 text-sm text-gray-600">
-        Cole aqui as linhas copiadas do SAP (ZBPP009 ou relatório equivalente). Cada linha vira um material novo.
+        Cole aqui as linhas copiadas do relatório do SAP (ZBPP009 ou equivalente). Cada linha vira um material
+        novo, com identificação e snapshot atual já preenchidos — diferente de colar direto numa célula do grid
+        (que edita o que já existe), isto sempre adiciona linhas novas.
       </p>
       <textarea
         value={texto}
@@ -411,7 +537,11 @@ function SapPastePanel({ onParsed, onClose }) {
         >
           {loading ? 'Processando...' : 'Adicionar materiais'}
         </button>
-        <button type="button" onClick={onClose} className="rounded border border-gray-300 px-3 py-1.5 text-sm hover:bg-gray-100">
+        <button
+          type="button"
+          onClick={onClose}
+          className="rounded border border-gray-300 px-3 py-1.5 text-sm hover:bg-gray-100"
+        >
           Cancelar
         </button>
       </div>

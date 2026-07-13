@@ -56,3 +56,34 @@ export function setImpacto(material, campo, valor) {
 export function materialFromSapPaste(parsed) {
   return { ...blankMaterial(), ...parsed }
 }
+
+// Interpreta texto colado (de uma célula tipo checkbox) do jeito que o Excel/SAP
+// normalmente representa booleano em texto -- usado só ao colar um bloco de células
+// (ver handleCellPaste em MaterialGrid.jsx); digitação normal usa o próprio <input type=checkbox>.
+export function coerceBoolean(value) {
+  if (typeof value === 'boolean') return value
+  const v = String(value ?? '').trim().toUpperCase()
+  return v === 'SIM' || v === 'TRUE' || v === 'X' || v === '1'
+}
+
+// Dispatch genérico get/set por coluna -- usado pela navegação por teclado e pelo colar
+// de bloco (estilo Excel) do grid, que precisam ler/escrever uma célula sem saber de
+// antemão se ela pertence a identificação/snapshot, dados_basicos ou impactos_operacionais.
+export function getCellValue(material, col) {
+  if (col.group === 'campo') {
+    return col.type === 'checkbox' ? !!material[col.field] : material[col.field] || ''
+  }
+  if (col.group === 'dados_basicos') return getDadosBasico(material, col.field, col.sub)
+  if (col.group === 'impactos_operacionais') return getImpacto(material, col.field)
+  return ''
+}
+
+export function setCellValue(material, col, value) {
+  if (col.group === 'campo') {
+    if (col.type === 'checkbox') return { ...material, [col.field]: coerceBoolean(value) }
+    return { ...material, [col.field]: value }
+  }
+  if (col.group === 'dados_basicos') return setDadosBasico(material, col.field, col.sub, value)
+  if (col.group === 'impactos_operacionais') return setImpacto(material, col.field, value)
+  return material
+}
