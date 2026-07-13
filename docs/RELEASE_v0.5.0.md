@@ -59,8 +59,9 @@ Release criado a partir da tag `v0.5.0`.
 
 ## Validação
 
-- **154 testes automatizados Python** (era 147 na v0.4.0): 8 novos cobrindo
-  `build_materiais_schema` e os 2 endpoints novos.
+- **158 testes automatizados Python** (era 147 na v0.4.0): cobrindo `build_materiais_schema`,
+  `build_checklist_schema` e os 3 endpoints novos (`/schema/materiais`, `/schema/checklist`,
+  `/parse-sap-paste`).
 - **Roteiro de 25 checagens via Playwright ad-hoc** (não faz parte da suíte automatizada),
   cobrindo login, edição básica, navegação por teclado, colunas congeladas, colar em bloco,
   importar SAP, colunas visíveis, painel de Detalhes, validação de envio (célula destacada
