@@ -45,7 +45,7 @@ export default function Login() {
             BITin - Sistema de manuseamento de BITins.
           </p>
           <p className="mt-3 text-sm text-white/70">
-            Sistema interno da Grain &amp; Protein Technologies - Central de Cadastro.
+            Sistema interno da Grain &amp; Protein Technologies.
           </p>
         </div>
 
@@ -137,7 +137,7 @@ export default function Login() {
           </form>
         </div>
 
-        <p className="mt-10 text-xs text-ink-faint">Grain &amp; Protein Technologies — sistema interno</p>
+        <p className="mt-10 text-xs text-ink-faint">Grain &amp; Protein Technologies — Central de Cadastro/Engenheria</p>
       </div>
     </div>
   )
