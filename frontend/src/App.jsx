@@ -1,9 +1,8 @@
-import { Navigate, Route, Routes } from 'react-router-dom'
+import { Route, Routes } from 'react-router-dom'
 import Layout from './components/Layout'
 import RequireAuth from './components/RequireAuth'
-import BitinDetail from './pages/BitinDetail'
+import Home from './pages/Home'
 import Login from './pages/Login'
-import MeusBitins from './pages/MeusBitins'
 
 function App() {
   return (
@@ -16,10 +15,7 @@ function App() {
           </RequireAuth>
         }
       >
-        <Route path="/bitins" element={<MeusBitins />} />
-        <Route path="/bitins/novo" element={<BitinDetail />} />
-        <Route path="/bitins/:id" element={<BitinDetail />} />
-        <Route path="/" element={<Navigate to="/bitins" replace />} />
+        <Route path="/" element={<Home />} />
       </Route>
     </Routes>
   )

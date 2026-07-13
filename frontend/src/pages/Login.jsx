@@ -17,7 +17,7 @@ export default function Login() {
     setSubmitting(true)
     try {
       await login(email, password)
-      const from = location.state?.from?.pathname || '/bitins'
+      const from = location.state?.from?.pathname || '/'
       navigate(from, { replace: true })
     } catch (err) {
       setError(err.response?.data?.detail || 'Não foi possível entrar. Confira e-mail e senha.')

@@ -4,6 +4,16 @@ All notable changes to this project will be documented in this file.
 
 ## [v0.5.0] - 2026-07-13
 
+### Removed
+- **Reset da tela de Bitins**: depois de 8 rodadas de ajuste visual (ver "Added" abaixo — todo
+  esse histórico fica registrado como referência do que já foi tentado), o resultado ainda
+  estava "muito confuso" — decisão explícita: apagar `BitinDetail.jsx`, `MeusBitins.jsx`,
+  `MaterialGrid.jsx`, `MaterialDetailModal.jsx`, `ChecklistEditor.jsx`,
+  `lib/bitinFields.js`/`bitinErrors.js`/`textSearch.js` e reconstruir do zero, incrementalmente
+  — login/autenticação primeiro, depois a parte de Bitins de novo, uma tela de cada vez. Lógica
+  de negócio do backend (`scripts/`, `backend/api/`) não foi tocada — só a UI que consumia esses
+  endpoints saiu. Ver `docs/FRONTEND.md`, seção "Reset da tela de Bitins".
+
 ### Added
 - **Tela de cadastro reconstruída como a aba "Template apresentação" real** (5ª rodada,
   correção de rota — as rodadas 1-4 tinham usado a aba `ZBPP009 + ALTERACAO`, mas o print

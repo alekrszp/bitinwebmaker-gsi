@@ -16,7 +16,7 @@ export default function Layout() {
     <div className="min-h-screen bg-app-bg">
       <header className="bg-brand-navy">
         <div className="flex items-center justify-between px-4 py-2">
-          <Link to="/bitins" className="flex items-center gap-2">
+          <Link to="/" className="flex items-center gap-2">
             {/* Fundo branco de propósito: a logo é um JPEG com fundo branco sólido (não
                 transparente) -- sem isso, apareceria uma caixa branca "solta" sobre o navy. */}
             <span className="flex items-center rounded bg-white px-2 py-1">
@@ -44,10 +44,8 @@ export default function Layout() {
           <div className="flex-1 bg-brand-orange" />
         </div>
       </header>
-      {/* Sem max-width aqui de propósito -- a tela de cadastro (BitinDetail) precisa usar a
-          tela inteira pra grade de materiais parecer uma planilha de verdade, não uma caixa
-          pequena. Páginas que querem largura limitada (Meus Bitins, cabeçalho do cadastro)
-          decidem isso sozinhas, dentro do próprio conteúdo. */}
+      {/* Sem max-width aqui de propósito -- páginas que querem largura limitada decidem isso
+          sozinhas, dentro do próprio conteúdo (ver docs/FRONTEND.md). */}
       <main className="px-4 py-6">
         <Outlet />
       </main>
