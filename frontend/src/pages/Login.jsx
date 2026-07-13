@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import ThemeToggle from '../components/ThemeToggle'
 import { useAuth } from '../context/AuthContext'
+import { version as appVersion } from '../../package.json'
 
 export default function Login() {
   const { login } = useAuth()
@@ -137,7 +138,7 @@ export default function Login() {
           </form>
         </div>
 
-        <p className="mt-10 text-xs text-ink-faint">Grain &amp; Protein Technologies — Central de Cadastro/Engenheria</p>
+        <p className="mt-10 text-xs text-ink-faint">v{appVersion}</p>
       </div>
     </div>
   )
