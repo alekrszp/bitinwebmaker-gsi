@@ -1,10 +1,9 @@
 import { Link, Outlet, useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
-import { useTheme } from '../context/ThemeContext'
+import ThemeToggle from './ThemeToggle'
 
 export default function Layout() {
   const { user, logout } = useAuth()
-  const { theme, toggleTheme } = useTheme()
   const navigate = useNavigate()
 
   function handleLogout() {
@@ -26,7 +25,7 @@ export default function Layout() {
           {user && (
             <div className="flex items-center gap-3 text-sm text-white/80">
               <span className="hidden sm:inline">{user.email}</span>
-              <ThemeToggle theme={theme} onToggle={toggleTheme} />
+              <ThemeToggle className="border border-white/25 text-white hover:bg-white/10" />
               <button
                 onClick={handleLogout}
                 className="rounded border border-white/25 px-3 py-1 text-white hover:bg-white/10"
@@ -50,28 +49,5 @@ export default function Layout() {
         <Outlet />
       </main>
     </div>
-  )
-}
-
-function ThemeToggle({ theme, onToggle }) {
-  const escuro = theme === 'dark'
-  return (
-    <button
-      onClick={onToggle}
-      title={escuro ? 'Mudar pro tema claro' : 'Mudar pro tema escuro'}
-      aria-label={escuro ? 'Mudar pro tema claro' : 'Mudar pro tema escuro'}
-      className="flex h-8 w-8 items-center justify-center rounded border border-white/25 text-white hover:bg-white/10"
-    >
-      {escuro ? (
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="h-4 w-4">
-          <circle cx="12" cy="12" r="4" />
-          <path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41" />
-        </svg>
-      ) : (
-        <svg viewBox="0 0 24 24" fill="currentColor" className="h-4 w-4">
-          <path d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 1020.354 15.354z" />
-        </svg>
-      )}
-    </button>
   )
 }

@@ -87,21 +87,51 @@ frontend/
     components/
       RequireAuth.jsx        - guarda de rota (redireciona pro /login sem token)
       Layout.jsx              - shell: cabeçalho (logo, e-mail, toggle de tema, sair)
+      ThemeToggle.jsx          - botão sol/lua (extraído de Layout.jsx pra reaproveitar no login)
     pages/
-      Login.jsx
+      Login.jsx                - tela de login (design completo, ver seção própria abaixo)
       Home.jsx                - placeholder da área autenticada (ver "Reset" acima)
     App.jsx                   - rotas
 ```
+
+## Tela de login (design completo, 2026-07-13)
+
+Primeira tela reconstruída depois do reset — pedido direto: "focar 100% no design UI/UX",
+usando o backend real (não mock) desde já, já que Postgres já está rodando e testado nesta
+máquina.
+
+- **Layout dividido** (`Login.jsx`): painel de marca à esquerda (`bg-brand-navy`, logo, título
+  "Boletim de Informações Técnicas Interno", subtítulo, faixa de 3 cores — mesma referência
+  visual do cabeçalho pós-login) + formulário à direita, só em telas médias+
+  (`hidden md:flex`). No celular o painel de marca colapsa pra só a logo centralizada acima do
+  formulário, em vez de gastar metade da tela vertical com algo decorativo.
+- **`ThemeToggle.jsx` extraído de `Layout.jsx`**: antes só existia dentro do cabeçalho
+  pós-login; agora é um componente próprio (`className` ajustável pra contraste claro/escuro
+  em fundos diferentes) — o login também tem o toggle (canto superior direito), porque a
+  escolha de tema deve valer antes de autenticar, não só depois.
+- **Campos com ícone + validação visual**: e-mail e senha com ícone à esquerda (SVG inline,
+  sem lib de ícones externa), foco com anel navy. Senha tem botão de mostrar/esconder (ícone
+  de olho) — comum em formulário de login, evita erro de digitação silencioso.
+- **Erro estruturado com ícone + `role="alert"`**: banner vermelho claro com ícone de alerta,
+  em vez de só texto vermelho solto — mais visível e acessível (leitor de tela anuncia).
+- **Estado de carregamento com spinner**: botão mostra um spinner SVG girando + "Entrando..."
+  enquanto a requisição está em voo, em vez de só trocar o texto.
+- **Sem "esqueci minha senha"/"criar conta" de propósito**: o backend só tem `POST
+  /auth/login` e `POST /auth/register` — não existe fluxo de reset de senha. Não construí um
+  link que levaria a lugar nenhum; registro de usuário é decisão de admin/bootstrap, não
+  self-service (ver `docs/BACKEND.md`, seção "Autenticação"), então também não tem link aqui.
 
 ## O que já funciona
 
 Validado com Playwright ad-hoc contra o backend real nesta máquina (sem MongoDB real, ver
 "Rodando localmente" abaixo).
 
-- Login (`POST /auth/login`) → redireciona pra `/`.
+- Login (`POST /auth/login`) → redireciona pra `/`, com validação visual de erro (credencial
+  errada) e estado de carregamento.
 - Rota protegida: sem token, qualquer rota redireciona pro login.
 - Logout: volta pro login.
-- Tema claro/escuro (toggle no cabeçalho, padrão claro, escolha persiste no navegador).
+- Tema claro/escuro (toggle no cabeçalho pós-login E na tela de login, padrão claro, escolha
+  persiste no navegador) — testado nos dois temas, desktop e mobile.
 
 ## O que NÃO está nesta fatia ainda (próximos incrementos)
 
