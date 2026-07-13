@@ -42,10 +42,10 @@ export default function Login() {
           </span>
 
           <p className="text-2xl font-semibold leading-snug text-balance">
-            BitinMaker -  Sistema de manuseamento de BITins.
+            BITin - Sistema de manuseamento de BITins.
           </p>
           <p className="mt-3 text-sm text-white/70">
-            Sistema interno da Grain &amp; Protein Technologies de manuseamento de BITins.
+            Sistema interno da Grain &amp; Protein Technologies - Central de Cadastro.
           </p>
         </div>
 
