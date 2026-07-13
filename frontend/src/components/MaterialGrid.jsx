@@ -5,11 +5,6 @@ import { buildErrorIndex, cellKey } from '../lib/bitinErrors'
 import { matchesSearch } from '../lib/textSearch'
 import MaterialDetailModal from './MaterialDetailModal'
 
-const IMPACTOS_CONDICIONAIS = [
-  { key: 'centro_custo', label: 'Centro de custo' },
-  { key: 'conta_razao', label: 'Conta razão' },
-]
-
 // Larguras em px -- aumentadas de novo (feedback repetido: "tá muito pequeno"). Uma única
 // fonte de verdade (não duas listas paralelas como antes) -- a classe Tailwind é derivada do
 // número via `widthClass()`, então não tem como as duas divergirem.
@@ -20,15 +15,15 @@ function widthClass(key) {
 const ROW_NUMBER_WIDTH = 56 // px -- usado pra calcular o offset da 2ª coluna congelada
 const ACTIONS_WIDTH = 220 // px -- table-fixed exige largura explícita em toda coluna
 
+// A print real mandada pelo usuário ("Template apresentação") mostra só 3 colunas de
+// identificação antes dos 7 impactos (10 no total) -- não os ~8 campos que a grade mostrava
+// antes. Os outros campos de identificação (Tipo Material, Grupo Mercadorias, os 3 checkboxes
+// de snapshot) continuam editáveis, só que agora só pelo painel de "Detalhes"
+// (MaterialDetailModal, seção "Identificação") -- ver MODAL_ONLY_FIELDS abaixo.
 const FIXED_COLUMNS = [
   { group: 'campo', field: 'codigo_material', label: 'Código', type: 'text', width: 'md', required: true, freeze: true },
   { group: 'campo', field: 'descricao_material', label: 'Descrição', type: 'text', width: 'lg' },
   { group: 'campo', field: 'centro', label: 'Centro', type: 'text', width: 'sm', required: true },
-  { group: 'campo', field: 'tipo_material', label: 'Tipo Material', type: 'text', width: 'sm', required: true },
-  { group: 'campo', field: 'grupo_mercadorias_atual', label: 'Grupo Mercadorias (atual)', type: 'text', width: 'md' },
-  { group: 'campo', field: 'tem_desenho', label: 'Tem desenho', type: 'checkbox' },
-  { group: 'campo', field: 'desenho_aprovado', label: 'Desenho aprovado', type: 'checkbox' },
-  { group: 'campo', field: 'ncm_aprovado_fiscal', label: 'NCM aprovado (fiscal)', type: 'checkbox' },
 ]
 
 // Uma lista única e "achatada" de colunas (em vez de identificação/dados_basicos/impactos
@@ -55,16 +50,11 @@ function buildColumns(schema, visibleFields) {
     options: col.options,
     width: 'sm',
   }))
-  const impactosCondicionaisCols = IMPACTOS_CONDICIONAIS.map((col) => ({
-    group: 'impactos_operacionais',
-    field: col.key,
-    label: col.label,
-    type: 'text',
-    width: 'md',
-    dynamicPlaceholder: (material) => (getCellValue(material, impactosCols.find((c) => c.field === 'est')) === 'S' ? 'obrigatório (Est=S)' : ''),
-  }))
 
-  return [...FIXED_COLUMNS, ...dadosBasicosCols, ...impactosCols, ...impactosCondicionaisCols]
+  // "Centro de custo"/"Conta razão" (condicionais a Est=S) ficaram de fora -- a print real só
+  // tem 10 colunas (identificação + os 7 impactos fixos). Continuam editáveis via painel de
+  // Detalhes (MaterialDetailModal já mostra os dois, com o "*" condicional quando Est=S).
+  return [...FIXED_COLUMNS, ...dadosBasicosCols, ...impactosCols]
 }
 
 // Grid de materiais em formato planilha -- pedido direto: igual à planilha real do BITin
@@ -84,11 +74,11 @@ export default function MaterialGrid({ materiais, onChange, errors = [], disable
   const [detailRowIndex, setDetailRowIndex] = useState(null)
   const cellRefs = useRef({})
 
-  // Todas as colunas de dados_basicos ficam visíveis por padrão -- pedido direto: a tela de
-  // cadastro precisa ser igual à planilha real do BITin ("ZBPP009 + ALTERACAO"), não uma
-  // versão resumida com campos escondidos atrás de um seletor. "Colunas visíveis" abaixo
-  // continua existindo só como forma opcional de ESCONDER colunas que não interessam agora,
-  // não como porta de entrada obrigatória pra mostrar alguma.
+  // Colunas de dados_basicos ficam ESCONDIDAS por padrão -- correção de rota (a print real da
+  // aba "Template apresentação" mostra só 10 colunas: identificação + os 7 impactos
+  // operacionais, não os ~30 pares De/Novo de dados_basicos). "Colunas visíveis" abaixo
+  // continua disponível pra quem quiser trazer algum campo de dados_basicos de volta pra
+  // grade sem precisar abrir o painel de Detalhes a cada material.
   useEffect(() => {
     let cancelado = false
     api
@@ -96,7 +86,6 @@ export default function MaterialGrid({ materiais, onChange, errors = [], disable
       .then((resp) => {
         if (cancelado) return
         setSchema(resp.data)
-        setVisibleFields(resp.data.dados_basicos.map((c) => c.key))
       })
       .catch(() => {
         if (!cancelado) setSchemaError('Não foi possível carregar as colunas de materiais.')
@@ -208,17 +197,11 @@ export default function MaterialGrid({ materiais, onChange, errors = [], disable
     // BitinDetail.jsx, que já cancela o padding lateral do <main>, então esta seção vai de
     // ponta a ponta da tela, não fica dentro de uma caixinha.
     <div className="bg-surface">
+      {/* Sem texto explicativo de propósito -- pedido direto: "não precisa de textinho
+          explicando", deve ser igual ao Excel (a barra de ferramentas acima da tabela já
+          basta). */}
       <div className="mb-3 flex flex-wrap items-start justify-between gap-3 px-4">
-        <div>
-          <h2 className="text-xl font-medium text-ink">Materiais</h2>
-          {!disabled && (
-            <p className="mt-0.5 text-sm text-ink-faint">
-              Mesma estrutura da planilha "ZBPP009 + ALTERACAO". Clique numa célula e use as setas ↑↓←→ ou
-              Enter pra navegar. Cole um bloco copiado do Excel em qualquer célula (Ctrl+V) — linhas novas são
-              criadas automaticamente se precisar.
-            </p>
-          )}
-        </div>
+        <h2 className="text-xl font-medium text-ink">Materiais</h2>
         {!disabled && (
           <div className="flex flex-wrap gap-2">
             <button type="button" onClick={addRow} className="rounded border border-line px-4 py-2 text-sm text-ink hover:bg-surface-alt">
@@ -460,8 +443,8 @@ function FieldPicker({ schema, visibleFields, setVisibleFields, open, setOpen })
           <div className="fixed inset-0 z-10" onClick={() => setOpen(false)} />
           <div className="absolute right-0 top-10 z-20 w-72 rounded border border-line bg-surface p-3 shadow-lg">
             <p className="mb-2 text-xs text-ink-muted">
-              Todos os campos de dados básicos aparecem na grade por padrão, igual à planilha real. Desmarque
-              aqui só pra esconder o que não interessa agora.
+              A grade mostra só identificação + impactos por padrão. Marque aqui pra trazer algum campo de
+              dados básicos (De/Novo) direto pra grade -- todos continuam editáveis em "Detalhes" de qualquer jeito.
             </p>
             <input
               value={busca}

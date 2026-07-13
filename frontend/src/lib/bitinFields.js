@@ -16,6 +16,28 @@ export function blankMaterial() {
   }
 }
 
+// Um material "tem conteúdo" quando o código foi preenchido -- critério usado pra filtrar as
+// linhas em branco da grade (ver MaterialGrid.jsx, "tabela pré-feita" com 300 linhas) antes de
+// salvar/enviar, já que o backend valida codigo_material/centro/tipo_material como obrigatórios
+// em TODA linha de materiais[] sem distinguir linha em branco de linha real preenchida
+// (scripts/bitin_model.py, REQUIRED_MATERIAL_FIELDS) -- sem esse filtro, 300 linhas em branco
+// virariam ~900 erros de campo obrigatório vazio no envio.
+export function hasContent(material) {
+  return !!material.codigo_material?.trim()
+}
+
+// Campos de identificação que a grade (MaterialGrid) não mostra por padrão (a print real da
+// aba "Template apresentação" só tem 10 colunas: 3 de identificação + os 7 impactos) mas que
+// continuam editáveis pelo painel de Detalhes (MaterialDetailModal, seção "Identificação"),
+// reaproveitando getCellValue/setCellValue abaixo.
+export const MODAL_ONLY_FIELDS = [
+  { group: 'campo', field: 'tipo_material', label: 'Tipo Material', type: 'text', required: true },
+  { group: 'campo', field: 'grupo_mercadorias_atual', label: 'Grupo Mercadorias (atual)', type: 'text' },
+  { group: 'campo', field: 'tem_desenho', label: 'Tem desenho', type: 'checkbox' },
+  { group: 'campo', field: 'desenho_aprovado', label: 'Desenho aprovado', type: 'checkbox' },
+  { group: 'campo', field: 'ncm_aprovado_fiscal', label: 'NCM aprovado (fiscal)', type: 'checkbox' },
+]
+
 export function getDadosBasico(material, campo, sub) {
   return material.alteracoes?.dados_basicos?.[campo]?.[sub] ?? ''
 }

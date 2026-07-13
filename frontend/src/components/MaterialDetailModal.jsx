@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { getDadosBasico, getImpacto, setDadosBasico, setImpacto } from '../lib/bitinFields'
+import { MODAL_ONLY_FIELDS, getCellValue, getDadosBasico, getImpacto, setCellValue, setDadosBasico, setImpacto } from '../lib/bitinFields'
 import { buildErrorIndex, cellKey } from '../lib/bitinErrors'
 import { matchesSearch } from '../lib/textSearch'
 
@@ -66,6 +66,45 @@ export default function MaterialDetailModal({ material, schema, errors = [], row
         </div>
 
         <div className="flex-1 overflow-y-auto px-6 py-5">
+          <section className="mb-8">
+            <h4 className="mb-3 text-sm font-semibold uppercase tracking-wide text-ink-muted">Identificação</h4>
+            <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-5">
+              {MODAL_ONLY_FIELDS.map((col) => {
+                const errMsg = errorMessageFor('campo', col.field)
+                if (col.type === 'checkbox') {
+                  return (
+                    <label key={col.field} className="flex items-center gap-2 pt-5">
+                      <input
+                        type="checkbox"
+                        checked={!!getCellValue(material, col)}
+                        disabled={disabled}
+                        onChange={(e) => onChange(setCellValue(material, col, e.target.checked))}
+                        className="h-4 w-4"
+                      />
+                      <span className="text-sm text-ink">{col.label}</span>
+                    </label>
+                  )
+                }
+                return (
+                  <label key={col.field} className="block">
+                    <span className="mb-1 block text-xs font-medium text-ink-muted">
+                      {col.label}
+                      {col.required && <span className="text-red-500"> *</span>}
+                    </span>
+                    <input
+                      value={getCellValue(material, col)}
+                      disabled={disabled}
+                      onChange={(e) => onChange(setCellValue(material, col, e.target.value))}
+                      className={fieldClass(errMsg)}
+                      title={errMsg || undefined}
+                    />
+                    {errMsg && <p className="mt-1 text-xs text-red-600">{errMsg}</p>}
+                  </label>
+                )
+              })}
+            </div>
+          </section>
+
           <section className="mb-8">
             <h4 className="mb-3 text-sm font-semibold uppercase tracking-wide text-ink-muted">Impactos operacionais</h4>
             <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">

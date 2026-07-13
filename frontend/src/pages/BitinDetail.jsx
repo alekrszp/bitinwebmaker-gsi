@@ -3,6 +3,15 @@ import { useNavigate, useParams } from 'react-router-dom'
 import ChecklistEditor from '../components/ChecklistEditor'
 import MaterialGrid from '../components/MaterialGrid'
 import { api } from '../lib/api'
+import { blankMaterial, hasContent } from '../lib/bitinFields'
+import { remapMaterialErrorIndices } from '../lib/bitinErrors'
+
+// "Tabela pré-feita em branco" -- pedido direto: o engenheiro deve encontrar 300 linhas
+// prontas pra digitar, igual abrir uma planilha nova do Excel, não uma grade que cresce uma
+// linha de cada vez. Ver padStartingRows/compactMateriais abaixo pro porquê disso não gerar
+// ~900 erros de campo obrigatório vazio no envio (backend valida toda linha de materiais[]
+// sem distinguir linha em branco de preenchida).
+const LINHAS_INICIAIS = 300
 
 function blankForm() {
   return {
@@ -13,8 +22,34 @@ function blankForm() {
     data_solicitacao: '',
     bitex: 'NÃO',
     checklist: [],
-    materiais: [],
+    materiais: Array.from({ length: LINHAS_INICIAIS }, blankMaterial),
   }
+}
+
+// Completa até ter pelo menos 300 linhas (sem mexer na ordem das que já existem) -- usado ao
+// reabrir um rascunho salvo, cujo materiais[] só guarda as linhas preenchidas (ver
+// compactMateriais).
+function padStartingRows(materiais) {
+  if (materiais.length >= LINHAS_INICIAIS) return materiais
+  return [...materiais, ...Array.from({ length: LINHAS_INICIAIS - materiais.length }, blankMaterial)]
+}
+
+// Filtra as linhas em branco antes de mandar pro backend -- salvar/enviar 300 linhas quase
+// todas vazias seria armazenamento desperdiçado e, pior, o backend rejeitaria cada uma delas
+// no envio (codigo_material/centro/tipo_material obrigatórios em toda linha, sem exceção pra
+// linha em branco). `indexMap[i]` guarda em que posição da grade a i-ésima linha filtrada
+// estava, pra poder traduzir de volta os erros do envio (que vêm indexados no array filtrado)
+// pra posição real na grade de 300 linhas (ver handleEnviar).
+function compactMateriais(materiais) {
+  const filtered = []
+  const indexMap = []
+  materiais.forEach((material, i) => {
+    if (hasContent(material)) {
+      filtered.push(material)
+      indexMap.push(i)
+    }
+  })
+  return { filtered, indexMap }
 }
 
 const SETORES = ['Proteína Animal', 'Armazenagem de Grãos']
@@ -33,6 +68,10 @@ export default function BitinDetail() {
   const [saving, setSaving] = useState(false)
   const [enviarErrors, setEnviarErrors] = useState([])
   const [saveMessage, setSaveMessage] = useState(null)
+  // Posição (na grade de 300 linhas) de cada linha que foi de fato enviada ao backend na
+  // última vez que salvou -- necessário pra traduzir os índices dos erros do envio de volta
+  // pra célula certa na grade (ver compactMateriais/handleEnviar).
+  const [savedIndexMap, setSavedIndexMap] = useState(null)
 
   useEffect(() => {
     if (isNew) return
@@ -43,7 +82,9 @@ export default function BitinDetail() {
         if (cancelado) return
         setStatus(resp.data.status)
         setCodigo(resp.data.codigo)
-        setForm({ ...blankForm(), ...resp.data.content })
+        const materiaisSalvos = resp.data.content?.materiais || []
+        setForm({ ...blankForm(), ...resp.data.content, materiais: padStartingRows(materiaisSalvos) })
+        setSavedIndexMap(materiaisSalvos.map((_, i) => i))
         if (resp.data.status === 'enviado') {
           return api.get(`/bitins/${id}/resumo`).then((r) => setResumo(r.data))
         }
@@ -69,11 +110,13 @@ export default function BitinDetail() {
   async function handleSalvar() {
     setSaving(true)
     setSaveMessage(null)
+    const { filtered, indexMap } = compactMateriais(form.materiais)
     try {
       const resp = await api.post('/bitins/draft', {
         mongo_id: mongoId || undefined,
-        content: form,
+        content: { ...form, materiais: filtered },
       })
+      setSavedIndexMap(indexMap)
       setMongoId(resp.data.mongo_id)
       setSaveMessage('Rascunho salvo.')
       if (isNew) navigate(`/bitins/${resp.data.mongo_id}`, { replace: true })
@@ -97,7 +140,9 @@ export default function BitinDetail() {
         navigate(`/bitins/${mongoId}`, { replace: true })
         window.location.reload() // recarrega em modo visualização (enviado)
       } else {
-        setEnviarErrors(resp.data.errors)
+        // Erros do envio vêm indexados nas linhas de fato salvas (sem as em branco) -- traduz
+        // de volta pra posição na grade de 300 linhas antes de destacar a célula.
+        setEnviarErrors(remapMaterialErrorIndices(resp.data.errors, savedIndexMap))
       }
     } catch {
       setEnviarErrors([{ field: '', message: 'Erro inesperado ao enviar.' }])

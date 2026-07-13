@@ -315,6 +315,54 @@ códigos devem ocupar a largura inteira da tela, e o checklist precisa ficar com
   checklist por `table.nth(0)` precisaram ser reescritos (checklist agora localizado por texto
   do banner "Check list" + `following-sibling`). Sem impacto em código de produção.
 
+### Checklist volta a ser tabela even, grade de materiais vira "10 colunas + 300 linhas prontas" (8ª rodada, correção de rota sobre o Figma)
+
+O usuário mandou a print real da aba "Template apresentação" de novo (a mesma referência da
+5ª rodada), agora reclamando de duas coisas concretas: (1) a grade de colunas do checklist (7ª
+rodada) ficava "desigual" -- o Observação condicional deixava cada item com altura diferente,
+e 22 itens não divididos igualmente por 3-4 colunas deixava a última linha capenga; (2) a
+grade de materiais devia ser "uma tabela pré-feita em branco" com 300 linhas e só 10 colunas
+(identificação + os 7 impactos ALT/EST/ESP/LP/PRE/OC/OF), sem texto explicativo em cima, só
+uma barra de ferramentas com as opções de importar -- igual a abrir uma planilha nova do
+Excel.
+
+- **Checklist voltou a ser uma `<table>` de verdade** (`ChecklistEditor.jsx`): reverte a grade
+  de cards da 7ª rodada. Uma `<table>` garante linhas com a mesma altura "de graça" -- o que a
+  grade de cards quebrava por causa do campo Observação aparecer só condicionalmente. 22
+  linhas, 3 colunas (Documento/Afeta/Observação), igual à print.
+- **Grade de materiais reduzida a 10 colunas por padrão** (`MaterialGrid.jsx`): `FIXED_COLUMNS`
+  caiu de 8 pra 3 (Código, Descrição, Centro) e `dados_basicos` passou a vir **escondido** por
+  padrão (inverte a decisão da 4ª rodada, "grade completa por padrão" -- a print real desta
+  tela mostra só 10 colunas, não ~70; o modo "planilha gigante" com todos os campos continua
+  disponível, só que agora é opt-in via "Colunas visíveis", não o padrão). Os 7 impactos
+  (`impactos_operacionais`) continuam sempre visíveis; os 2 campos condicionais (Centro de
+  custo/Conta razão) saíram da grade -- só ficam nos 10 slots quem tem uso quase sempre
+  (Alt/Est/Esp/LP/Pré/OC/OF).
+- **Tipo Material, Grupo Mercadorias e os 3 checkboxes de snapshot saíram da grade**, mas
+  continuam editáveis -- foram pro painel de Detalhes (`MaterialDetailModal.jsx`), nova seção
+  "Identificação" no topo (antes de "Impactos operacionais"). Reaproveita
+  `getCellValue`/`setCellValue` (`lib/bitinFields.js`), os mesmos helpers genéricos que a grade
+  usa pra ler/escrever célula sem saber o grupo de antemão -- exportados como
+  `MODAL_ONLY_FIELDS` pra não duplicar a definição das colunas em dois arquivos.
+- **300 linhas em branco desde o início** (`BitinDetail.jsx`): rascunho novo já nasce com
+  `materiais` preenchido por 300 `blankMaterial()` (constante `LINHAS_INICIAIS`), não um array
+  vazio que cresce uma linha de cada vez. Reabrir um rascunho salvo completa até 300 linhas
+  (`padStartingRows`) sem mexer na ordem das que já existem.
+- **Linhas em branco nunca chegam no backend** (`compactMateriais` em `BitinDetail.jsx`): o
+  backend valida `codigo_material`/`centro`/`tipo_material` como obrigatórios em **toda** linha
+  de `materiais[]`, sem distinguir linha em branco de preenchida (`scripts/bitin_model.py`,
+  `REQUIRED_MATERIAL_FIELDS`) -- confirmado lendo o código antes de implementar, não assumido.
+  Sem filtro, 300 linhas em branco viram ~900 erros de campo obrigatório no envio. `Salvar
+  rascunho` e `Enviar` mandam só as linhas com `codigo_material` preenchido
+  (`hasContent`, `lib/bitinFields.js`); a grade continua mostrando as 300 pra digitação livre.
+  Como os erros do envio vêm indexados no array compactado (não na posição real da grade),
+  `remapMaterialErrorIndices` (`lib/bitinErrors.js`) traduz o índice de volta usando o mapa de
+  posições guardado no último `Salvar` (`savedIndexMap`) -- sem isso, o destaque de célula
+  apontaria pra linha errada sempre que existisse alguma linha em branco antes da com erro.
+- **Texto explicativo removido de cima da grade** (`MaterialGrid.jsx`): só ficou a barra de
+  ferramentas ("+ Adicionar material", "Importar relatório do SAP", "Colunas visíveis") --
+  pedido direto, "não precisa de textinho explicando".
+
 ## O que já funciona
 
 Validado com Playwright ad-hoc contra o backend real nesta máquina (sem MongoDB real, ver
@@ -327,10 +375,13 @@ Validado com Playwright ad-hoc contra o backend real nesta máquina (sem MongoDB
   agora não oferece a ação — RBAC visível, adicionado em 2026-07-13).
 - Criar rascunho: cabeçalho em faixas (logo/título/BITex/Setor + Produto/Solicitante +
   Motivo/Data, ver "Tela de cadastro = aba Template apresentação" acima) + **checklist
-  editável** (`ChecklistEditor.jsx`, 22 itens) + **grid de materiais** (`MaterialGrid.jsx`) —
-  identificação, snapshot atual, os 30 pares De/Novo de `dados_basicos` (todos visíveis por
-  padrão) e `impactos_operacionais` (Alt/Est/Esp/LP/Pré/OC/OF com as opções válidas do POP) —
-  salva com `POST /bitins/draft`.
+  editável** (`ChecklistEditor.jsx`, tabela de 22 itens) + **grid de materiais**
+  (`MaterialGrid.jsx`) já com 300 linhas em branco prontas pra digitar, 10 colunas por padrão
+  (Código/Descrição/Centro + `impactos_operacionais`: Alt/Est/Esp/LP/Pré/OC/OF) — os ~30 pares
+  De/Novo de `dados_basicos` e os demais campos de identificação/snapshot continuam acessíveis
+  via "Colunas visíveis" ou pelo painel de Detalhes (`MaterialDetailModal.jsx`) — salva com
+  `POST /bitins/draft` (linhas em branco são filtradas antes de enviar, ver "Checklist volta a
+  ser tabela even..." acima).
 - Reabrir rascunho: confirma que o conteúdo persistiu (cabeçalho, checklist e materiais).
 - Navegação por teclado nas 4 setas + `Enter`, colar em qualquer célula (`Ctrl+V`, bloco
   copiado do Excel ou de outra parte do grid), colunas "#"/"Código" congeladas ao rolar, e

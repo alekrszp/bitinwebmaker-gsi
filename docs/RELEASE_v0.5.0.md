@@ -24,10 +24,17 @@ Release criado a partir da tag `v0.5.0`.
     de 2-4 colunas (não lista de 22 linhas empilhadas, com Observação só visível quando o item
     afeta), e cabeçalho+checklist passaram a compartilhar a mesma largura total que só a grade
     de materiais tinha — as 3 faixas da tela agora encostam nas bordas reais da tela.
-- Status: cadastro completo (cabeçalho + checklist compacto + grid de materiais, as 3 faixas em
-  largura total, com logo real); `ordem_cliente[]`, `lista_tecnica[]` e auto-cálculo do
-  checklist a partir dos materiais continuam sem UI/não implementados (próximo incremento).
-  Aguardando telas do Figma do usuário pra próxima rodada de ajuste visual.
+  - **v8 (correção de rota)**: a print real mostrou que a grade de cards do checklist (v7)
+    ficava desigual (altura variável) — voltou a ser uma `<table>`. A grade de materiais
+    reduziu de ~70 pra 10 colunas por padrão (identificação + os 7 impactos, igual à print) e
+    passou a nascer com 300 linhas em branco prontas pra digitar, como uma planilha nova do
+    Excel — os campos que saíram da grade (Tipo Material, Grupo Mercadorias, snapshot) foram
+    pro painel de Detalhes.
+- Status: cadastro completo (cabeçalho + checklist em tabela even + grid de materiais de 10
+  colunas com 300 linhas prontas, as 3 faixas em largura total, com logo real);
+  `ordem_cliente[]`, `lista_tecnica[]` e auto-cálculo do checklist a partir dos materiais
+  continuam sem UI/não implementados (próximo incremento). Aguardando telas do Figma do
+  usuário pra próxima rodada de ajuste visual.
 
 ## Principais adições
 
@@ -41,13 +48,17 @@ Release criado a partir da tag `v0.5.0`.
   duplicá-la em JavaScript.
 - **`MaterialGrid.jsx`**: navegação por teclado nas 4 setas (não Tab) + Enter, colar em
   qualquer célula (bloco copiado do Excel, cria linha nova se precisar), colunas "#"/"Código"
-  congeladas, todos os ~30 pares De/Novo de `dados_basicos` visíveis por padrão (rótulos fiéis
-  ao texto do Plan2 real), cabeçalho amarelo/dourado com "Novo" em vermelho (igual ao Excel
-  real), `<select>` de `impactos_operacionais` com as opções válidas do POP, e destaque de
-  célula exata quando o envio falha.
-- **`MaterialDetailModal.jsx`**: painel de edição por material com todos os campos de
-  `dados_basicos` num layout espaçoso (com busca) — atalho opcional pra revisar um material
-  sem rolar a grade inteira.
+  congeladas, 300 linhas em branco desde o início, 10 colunas visíveis por padrão
+  (identificação + os 7 impactos operacionais, igual à print real) — os ~30 pares De/Novo de
+  `dados_basicos` continuam disponíveis via "Colunas visíveis" ou pelo painel de Detalhes,
+  cabeçalho amarelo/dourado com "Novo" em vermelho (igual ao Excel real), `<select>` de
+  `impactos_operacionais` com as opções válidas do POP, e destaque de célula exata quando o
+  envio falha (mesmo em linhas em branco filtradas antes de enviar, ver `compactMateriais`/
+  `remapMaterialErrorIndices` em `docs/FRONTEND.md`).
+- **`MaterialDetailModal.jsx`**: painel de edição por material com seções "Identificação"
+  (Tipo Material, Grupo Mercadorias, snapshot — campos que saíram da grade principal),
+  "Impactos operacionais" e todos os campos de `dados_basicos` num layout espaçoso (com busca)
+  — atalho opcional pra revisar um material sem rolar a grade inteira.
 - **Identidade visual + tema claro/escuro**: paleta da marca (Grain & Protein Technologies)
   como tokens Tailwind, cabeçalho navy com faixa de 3 cores, toggle claro/escuro (padrão
   claro, persiste no navegador), logo real (`frontend/public/logo.svg`) no cabeçalho, login e
@@ -57,10 +68,15 @@ Release criado a partir da tag `v0.5.0`.
   (`-mx-4`) e perdeu borda/cantos arredondados/padding do wrapper — encosta nas bordas reais da
   tela. Células, cabeçalho e botões de ação maiores; largura de coluna calculada por um único
   helper (antes havia dois mapas duplicados).
-- **Checklist compacto em grade de colunas, 3 faixas em largura total**: `ChecklistEditor.jsx`
-  trocou a lista de 22 linhas empilhadas por uma grade de 2-4 colunas (Observação só aparece
-  quando o item afeta), caindo de ~750px pra ~280px de altura. Cabeçalho e checklist passaram
-  a compartilhar o mesmo `-mx-4` de largura total que só a grade de materiais tinha.
+- **3 faixas (cabeçalho, checklist, grade) em largura total**: cabeçalho e checklist passaram
+  a compartilhar o mesmo `-mx-4` de largura total que só a grade de materiais tinha, encostando
+  nas bordas reais da tela.
+- **Checklist como tabela even + grade de materiais como "10 colunas + 300 linhas prontas"**
+  (correção de rota, v8): o checklist voltou a ser `<table>` (22 linhas parelhas, não a grade
+  de cards de altura desigual da v7); a grade de materiais reduziu pra 10 colunas por padrão e
+  nasce com 300 linhas em branco (`BitinDetail.jsx`, `LINHAS_INICIAIS`) — linhas em branco
+  nunca chegam no backend (`hasContent`/`compactMateriais`), já que `codigo_material`/`centro`/
+  `tipo_material` são obrigatórios em toda linha de `materiais[]` sem exceção.
 - **RBAC visível em "Meus Bitins"**: botão "Excluir" some quando o usuário não é dono nem
   admin.
 - **Busca insensível a acento** (`lib/textSearch.js`) no seletor de campos e no painel de
@@ -70,13 +86,14 @@ Release criado a partir da tag `v0.5.0`.
 
 - **158 testes automatizados Python** (era 147 na v0.4.0): cobrindo `build_materiais_schema`,
   `build_checklist_schema` e os 3 endpoints novos (`/schema/materiais`, `/schema/checklist`,
-  `/parse-sap-paste`).
-- **Roteiro de 25 checagens via Playwright ad-hoc** (não faz parte da suíte automatizada),
+  `/parse-sap-paste`). Sem mudança nesta última rodada (só frontend).
+- **Roteiro de 27 checagens via Playwright ad-hoc** (não faz parte da suíte automatizada),
   cobrindo login, edição básica, navegação por teclado, colunas congeladas, colar em bloco,
-  importar SAP, colunas visíveis, painel de Detalhes, validação de envio (célula destacada
-  tanto na grade quanto no painel, dependendo de onde o campo com erro está) e tema
-  claro/escuro (padrão, toggle, persistência). 25/25 passaram nesta rodada; zero erro de
-  console.
+  importar SAP, colunas visíveis (agora testando "marcar traz a coluna de volta", já que o
+  padrão inverteu pra escondido), painel de Detalhes (incluindo a nova seção "Identificação"),
+  validação de envio (célula destacada tanto na grade quanto no painel) e tema claro/escuro. +
+  6 checagens dedicadas ao checklist (`drive_checklist.js`), incluindo confirmar que o payload
+  salvo não inclui as 300 linhas em branco. Tudo passou; zero erro de console.
 
 ## Achados durante o teste (corrigidos antes de fechar)
 

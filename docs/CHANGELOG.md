@@ -56,6 +56,20 @@ All notable changes to this project will be documented in this file.
   de ~750px pra ~280px de altura. Cabeçalho e checklist passaram a compartilhar o mesmo
   `-mx-4` de largura total que só a grade de materiais tinha, então as 3 faixas (cabeçalho,
   checklist, tabela) encostam nas bordas reais da tela.
+- **Checklist volta a ser tabela even; grade de materiais vira "10 colunas + 300 linhas
+  prontas"** (8ª rodada, correção de rota sobre a print real): a grade de cards da 7ª rodada
+  deixava os 22 itens do checklist com altura desigual (Observação condicional) — voltou a ser
+  uma `<table>` de verdade, que garante linhas parelhas de graça. A grade de materiais reduziu
+  de ~70 colunas visíveis por padrão pra 10 (Código/Descrição/Centro + os 7 impactos
+  operacionais, igual à print da aba "Template apresentação") — Tipo Material, Grupo
+  Mercadorias e os 3 checkboxes de snapshot saíram da grade, mas continuam editáveis via novo
+  painel "Identificação" em `MaterialDetailModal.jsx`. A grade nasce com 300 linhas em branco
+  (`BitinDetail.jsx`), como uma planilha nova do Excel; linhas em branco são filtradas antes de
+  salvar/enviar (`compactMateriais`/`hasContent`) já que o backend valida
+  código/centro/tipo_material como obrigatórios em toda linha de `materiais[]`, sem exceção —
+  os índices de erro do envio são traduzidos de volta pra célula certa da grade
+  (`remapMaterialErrorIndices`). Texto explicativo acima da grade removido, só a barra de
+  ferramentas.
   - Busca insensível a acento (`lib/textSearch.js`) no seletor de campos e no painel de
     Detalhes — achado testando: buscar "liquido" não encontrava "Peso Líquido".
 - **Identidade visual da marca (Grain & Protein Technologies) + tema claro/escuro**
