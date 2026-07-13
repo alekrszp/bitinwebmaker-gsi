@@ -1,29 +1,63 @@
 @import "tailwindcss";
 
-/* Paleta da marca (Grain & Protein Technologies) -- extraída do logo (hexágonos
-   frango/grão/porco em volta do texto "GRAIN & PROTEIN TECHNOLOGIES"). Navy é usado pra
-   qualquer texto/superfície que precise de bom contraste (cabeçalho, botões primários, foco);
-   dourado é só decorativo (texto sobre dourado tem contraste ruim, evitado de propósito) --
-   ver docs/FRONTEND.md, "Identidade visual". */
+/* Dark mode via classe (.dark na raiz), não media query -- tema padrão é claro, o usuário
+   escolhe explicitamente (ver ThemeContext.jsx). */
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* Paleta da marca (Grain & Protein Technologies) -- hexágonos frango/grão/porco em volta do
+   texto "GRAIN & PROTEIN TECHNOLOGIES". Navy é usado pra qualquer texto/superfície que
+   precise de bom contraste (cabeçalho, botões primários, foco); dourado é só decorativo
+   (texto sobre dourado tem contraste ruim, evitado de propósito) -- ver docs/FRONTEND.md,
+   "Identidade visual". Cores da marca não mudam entre os temas -- os tokens semânticos
+   abaixo (bg/surface/line/ink) é que se adaptam. */
 @theme {
   --color-brand-navy: #17323c;
   --color-brand-navy-dark: #0e2229;
   --color-brand-navy-light: #2b5462;
-  /* Tom sólido (não translúcido) de propósito -- usado em cabeçalhos de tabela com colunas
-     congeladas (position: sticky), onde uma cor com opacidade deixaria o conteúdo rolando por
-     baixo vazar visualmente (mesmo bug já corrigido no grid de materiais, ver docs/FRONTEND.md). */
-  --color-brand-navy-50: #eef2f3;
   --color-brand-gold: #f0c239;
   --color-brand-green: #6fa032;
   --color-brand-orange: #e2761e;
+
+  /* Tokens semânticos -- todo componente usa estes nomes (bg-app, bg-surface, border-line,
+     text-ink, etc.), nunca gray-* direto, pra que os dois temas fiquem consistentes num só
+     lugar (redefinidos abaixo sob .dark). São gerados como variáveis CSS de verdade pelo
+     Tailwind, então a redefinição sob .dark propaga sem precisar de "dark:" em cada classe. */
+  --color-app-bg: #f7f8fa;
+  --color-surface: #ffffff;
+  --color-surface-alt: #f5f6f8;
+  /* Tom sólido (não translúcido) de propósito -- usado em cabeçalhos de tabela com colunas
+     congeladas (position: sticky), onde uma cor com opacidade deixaria o conteúdo rolando por
+     baixo vazar visualmente (bug já corrigido no grid de materiais, ver docs/FRONTEND.md). */
+  --color-surface-header: #eef2f3;
+  --color-line: #dfe3e8;
+  --color-ink: #16212a;
+  --color-ink-muted: #5b6b74;
+  --color-ink-faint: #8a97a0;
+}
+
+.dark {
+  --color-app-bg: #0f1417;
+  --color-surface: #182025;
+  --color-surface-alt: #131a1e;
+  --color-surface-header: #202a30;
+  --color-line: #2b353c;
+  --color-ink: #e7edf0;
+  --color-ink-muted: #a3afb6;
+  --color-ink-faint: #737f87;
 }
 
 body {
   margin: 0;
+  background-color: var(--color-app-bg);
+  color-scheme: light;
 }
 
-/* Checkbox/radio nativos usam a cor de destaque do sistema (geralmente azul) por padrão --
-   alinhado à marca aqui pra não destoar dos botões/foco, que já usam brand-navy. */
+.dark body {
+  color-scheme: dark;
+}
+
+/* Checkbox/radio/select nativos usam a cor de destaque do sistema (geralmente azul) por
+   padrão -- alinhado à marca aqui pra não destoar dos botões/foco, que já usam brand-navy. */
 input,
 select {
   accent-color: var(--color-brand-navy);

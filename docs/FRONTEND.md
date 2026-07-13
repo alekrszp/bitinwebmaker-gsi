@@ -19,22 +19,47 @@ benefício claro nesse estágio.
 e isso gerou um bug real de rota lá). Aqui, `/bitins/novo` e `/bitins/:id` reaproveitam o
 mesmo componente.
 
-## Identidade visual (adicionado em 2026-07-13)
+## Identidade visual (adicionado em 2026-07-13, revisado no mesmo dia — tema claro/escuro)
 
 Paleta extraída do logo da empresa (Grain & Protein Technologies — hexágonos
 frango/grão/porco em volta do texto, cada um numa cor), definida como tokens Tailwind v4
-(`@theme` em `frontend/src/index.css`, não hardcoded em cada componente):
+(`@theme` em `frontend/src/index.css`, não hardcoded em cada componente). Dois grupos de
+token:
+
+**Marca** (não mudam entre os temas claro/escuro):
 
 | Token | Uso |
 |---|---|
 | `brand-navy` / `brand-navy-dark` | Cor primária — cabeçalho do app, botões primários, links, foco de campo, `accent-color` de checkbox/select. Escolhida pra tudo que precisa de bom contraste (é escura). |
-| `brand-navy-50` | Tom sólido (não translúcido) claro de navy — fundo de cabeçalho de tabela/linha em hover. Precisa ser sólido, não com opacidade, porque cabeçalhos com coluna congelada (`position: sticky`) já tiveram bug de conteúdo vazando por trás de fundo translúcido (ver seção do grid). |
-| `brand-gold` | Só decorativo (faixa de 3 cores no cabeçalho, acento no wordmark "BITin") — **nunca como cor de texto**, contraste ruim pra leitura. |
+| `brand-gold` | Só decorativo (faixa de 3 cores no cabeçalho) — **nunca como cor de texto**: contraste ruim contra fundo claro E contra fundo escuro (é uma cor clara). |
 | `brand-green` | Faixa decorativa do cabeçalho; status "positivo" continua usando os tons semânticos do Tailwind (`green-700` etc.) onde precisa de contraste de texto pequeno. |
-| `brand-orange` | Indicador "Novo"/coluna editável no grid de materiais e no painel de Detalhes (ver abaixo) — deliberadamente **não** vermelho (que já é usado pra erro de validação na mesma tela; usar as duas cores evita confundir "isto você edita" com "isto está errado"). |
+| `brand-orange` | Acento no wordmark "BITin" (sobre fundo claro, onde dourado não teria contraste) e indicador "Novo"/coluna editável no grid de materiais e no painel de Detalhes — deliberadamente **não** vermelho (que já é usado pra erro de validação na mesma tela; usar as duas cores evita confundir "isto você edita" com "isto está errado"). |
+
+**Semânticos** (mudam entre os temas — todo componente usa estes nomes, nunca `gray-*`
+direto, pra que os dois temas fiquem consistentes num só lugar):
+
+| Token | Uso |
+|---|---|
+| `app-bg` | Fundo da página (fora dos cards). |
+| `surface` / `surface-alt` | Fundo de card/tabela/modal / fundo de zebra e painéis sutis. |
+| `surface-header` | Tom sólido (não translúcido) — cabeçalho de tabela e hover de linha. Precisa ser sólido, não com opacidade, porque cabeçalhos com coluna congelada (`position: sticky`) já tiveram bug de conteúdo vazando por trás de fundo translúcido (ver "Achado técnico registrado" abaixo). |
+| `line` | Toda borda/divisória. |
+| `ink` / `ink-muted` / `ink-faint` | Texto primário / secundário / terciário-desabilitado. |
 
 Erros de validação continuam em vermelho puro (Tailwind `red-*`) — cor semântica de erro não
-muda com a marca, em nenhuma tela.
+muda com a marca nem com o tema, em nenhuma tela.
+
+**Tema claro/escuro** (`ThemeContext.jsx`, adicionado em 2026-07-13): toggle no cabeçalho
+(ícone sol/lua), classe `.dark` na raiz (`@custom-variant dark` em `index.css`, não
+`prefers-color-scheme` — decisão explícita: **padrão é sempre claro**, não detecta o tema do
+sistema operacional). Escolha do usuário persiste em `localStorage`. Os tokens semânticos
+acima são redefinidos sob `.dark` — como o Tailwind gera variáveis CSS de verdade a partir de
+`@theme`, a troca de tema não precisa de `dark:` em cada classe usada nos componentes.
+
+**Logo**: ainda usando um wordmark em texto ("BIT**in**", com acento dourado/laranja) como
+placeholder — o arquivo de verdade da logo (Grain & Protein Technologies) ainda não está no
+repositório. Local reservado pra trocar: `Layout.jsx` (cabeçalho) e `Login.jsx` (tela de
+login), ambos com comentário `TODO` no código apontando onde entra o `<img>`.
 
 ## Estrutura
 
@@ -143,12 +168,13 @@ excel de bitin que temos". Fomos direto na fonte — `examples/bitin teste 2.xls
 `ZBPP009 + ALTERACAO` (a mesma que `Plan2`/`plan2_column_headers` em `config/vba_mapping.json`
 já modelava) — e inspecionamos a formatação real via `openpyxl` (não só os dados):
 
-- **Cabeçalho "Novo" em vermelho**: no Excel real, todo cabeçalho de coluna editável/"valor
+- **Cabeçalho "Novo" destacado**: no Excel real, todo cabeçalho de coluna editável/"valor
   novo" tem o texto em vermelho negrito, diferente das colunas de valor atual (pretas). Essa é
   a única cor semântica usada no cabeçalho real (sem preenchimento por célula — dado em si não
-  tem highlight, só o rótulo da coluna). Replicado: `MaterialGrid.jsx` (colunas De/Para viram
-  duas colunas "Atual"/"Novo", com "Novo" em vermelho) e `MaterialDetailModal.jsx` (mesma
-  convenção no cabeçalho da tabela "Dados básicos").
+  tem highlight, só o rótulo da coluna). Replicado em `MaterialGrid.jsx`/`MaterialDetailModal.jsx`
+  (colunas De/Para viram duas colunas "Atual"/"Novo") — mas em **laranja da marca**, não
+  vermelho, porque vermelho já é usado pra erro de validação nas mesmas telas (ver "Identidade
+  visual" acima).
 - **O que não foi copiado de propósito**: `freeze_panes` do arquivo real está em `BV1` (colunas
   A–BU congeladas, ~73 colunas) — claramente um acidente de uso manual (alguém rolou até ali e
   ativou "Congelar painéis" sem querer), não uma escolha de design. Mantido o congelamento
@@ -171,6 +197,30 @@ cada célula (a coluna "#" de 48px renderizava a ~25px) — o que quebra a matem
 das colunas congeladas. A largura total agora é somada em JS (`tableWidth` em
 `MaterialGrid.jsx`) a partir da largura de cada coluna e aplicada como `width` da `<table>`.
 
+### Grade completa por padrão, não escondida (4ª rodada, mesmo dia)
+
+Feedback direto: "a tela deve ser um excel enorme, com a mesma estrutura" — a 3ª rodada já
+tinha a estrutura certa (colunas De/Novo, rótulos fiéis ao Plan2), mas ainda escondia os ~30
+campos de `dados_basicos` até o usuário escolher quais fixar como coluna (ver "Navegação e
+colar estilo Excel" acima). Isso contrariava o pedido: não é resumo, é cópia.
+
+- **Todos os 30 campos aparecem como coluna desde o carregamento** (`visibleFields` inicia com
+  `schema.dados_basicos.map(c => c.key)` assim que o schema chega, não `[]`) — a grade é
+  literalmente enorme (~70 colunas contando identificação/snapshot/impactos), com rolagem
+  horizontal, exatamente como abrir a planilha real.
+- **"Colunas visíveis" continua existindo, mas inverteu de papel**: antes era a única forma de
+  *mostrar* um campo (porta de entrada obrigatória); agora é só uma forma opcional de
+  *esconder* o que não interessa no momento — texto do botão e do painel atualizados pra
+  deixar isso claro.
+- **Rótulos das colunas De/Novo ajustados pra bater literalmente com o texto do Plan2 real**
+  (`DADOS_BASICOS_LABELS` em `scripts/bitin_model.py`) — ex.: "Unidade Peso" (não "Unidade de
+  Peso"), "Resp. Crtrl. Produção" (não "Responsável Controle de Produção"), "Depósito Sup.
+  Externo" (não "Depósito de Suprimento Externo"). O `uppercase` do CSS já deixa maiúsculo de
+  qualquer forma — a fidelidade que importa aqui é a *palavra*, não a caixa.
+- O painel de "Detalhes" continua existindo como atalho opcional (revisar/editar um material
+  sem rolar a grade inteira), não como o lugar "certo" de editar dados básicos — a grade em si
+  já é suficiente, igual à planilha original.
+
 ## O que já funciona
 
 Validado com Playwright ad-hoc contra o backend real nesta máquina (sem MongoDB real, ver
@@ -182,21 +232,21 @@ Validado com Playwright ad-hoc contra o backend real nesta máquina (sem MongoDB
   "Excluir" some quando o usuário não é dono nem admin (o backend já recusava com `403`, a UI
   agora não oferece a ação — RBAC visível, adicionado em 2026-07-13).
 - Criar rascunho: cabeçalho (setor/produto/motivo/solicitante/data) + **grid de materiais**
-  (`MaterialGrid.jsx`, ver seção acima) — identificação, snapshot atual, `dados_basicos`
-  De/Para (colunas fixadas pelo usuário ou editadas via painel de Detalhes) e
-  `impactos_operacionais` (Alt/Est/Esp/LP/Pré/OC/OF com as opções válidas do POP) — salva com
-  `POST /bitins/draft`.
+  (`MaterialGrid.jsx`, ver seção acima) — identificação, snapshot atual, os 30 pares De/Novo
+  de `dados_basicos` (todos visíveis por padrão) e `impactos_operacionais` (Alt/Est/Esp/LP/
+  Pré/OC/OF com as opções válidas do POP) — salva com `POST /bitins/draft`.
 - Reabrir rascunho: confirma que o conteúdo persistiu.
 - Navegação por teclado nas 4 setas + `Enter`, colar em qualquer célula (`Ctrl+V`, bloco
   copiado do Excel ou de outra parte do grid), colunas "#"/"Código" congeladas ao rolar, e
-  painel de "Detalhes" por material com todos os campos — ver "Navegação e colar estilo Excel"
-  acima.
+  painel de "Detalhes" por material (atalho opcional) — ver "Navegação e colar estilo Excel" e
+  "Grade completa por padrão" acima.
 - Importar relatório do SAP: linhas coladas viram materiais novos no grid via
   `POST /bitins/parse-sap-paste`.
 - Enviar (`POST /bitins/{id}/enviar`): se falhar, destaca a célula exata do grid pra cada erro
   associado a um material (via `field`) e mostra a lista completa de erros estruturados
   (`{field, code, message}`) sem travar nada; se passar, mostra o número gerado e a tela de
   resumo travada (materiais + checklist de 22 itens).
+- Tema claro/escuro (toggle no cabeçalho, padrão claro, escolha persiste no navegador).
 
 ## O que NÃO está nesta fatia ainda (próximos incrementos)
 
@@ -214,6 +264,9 @@ Validado com Playwright ad-hoc contra o backend real nesta máquina (sem MongoDB
 - **Sem seleção de intervalo (múltiplas células)** — copiar um bloco de dentro do próprio grid
   (Ctrl+C de várias células) e clique-arraste pra selecionar um retângulo não existem ainda;
   colar (a partir do clipboard do sistema, incluindo do Excel) já funciona em qualquer célula.
+- **Logo real ainda não está no repositório** — cabeçalho e tela de login usam um wordmark em
+  texto como placeholder (ver "Identidade visual" acima). Trocar assim que o arquivo (PNG/SVG)
+  estiver disponível.
 - **Checklist manual** (itens não cobertos por regra automática) — hoje só visualização, sem
   edição.
 - **RBAC visível na UI** (esconder ações que o backend recusaria por permissão) — o backend já

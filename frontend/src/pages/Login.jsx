@@ -27,38 +27,47 @@ export default function Login() {
   }
 
   return (
-    <div className="mx-auto mt-16 max-w-sm">
-      <h1 className="mb-6 text-2xl font-semibold text-gray-900">Entrar</h1>
-      <form onSubmit={handleSubmit} className="space-y-4">
-        <div>
-          <label className="mb-1 block text-sm font-medium text-gray-700">E-mail</label>
-          <input
-            type="email"
-            required
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            className="w-full rounded border border-gray-300 px-3 py-2 focus:border-brand-navy focus:outline-none"
-          />
+    <div className="flex min-h-screen flex-col bg-app-bg">
+      <div className="flex flex-1 flex-col items-center justify-center px-4">
+        <div className="mb-6 flex items-center gap-2 text-2xl font-bold tracking-tight text-brand-navy">
+          {/* TODO: trocar por <img src="/logo.png" className="h-10" alt="Grain & Protein Technologies" /> */}
+          BIT<span className="text-brand-orange">in</span>
         </div>
-        <div>
-          <label className="mb-1 block text-sm font-medium text-gray-700">Senha</label>
-          <input
-            type="password"
-            required
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            className="w-full rounded border border-gray-300 px-3 py-2 focus:border-brand-navy focus:outline-none"
-          />
+        <div className="w-full max-w-sm rounded-lg border border-line bg-surface p-6 shadow-sm">
+          <h1 className="mb-1 text-lg font-semibold text-ink">Entrar</h1>
+          <p className="mb-5 text-sm text-ink-muted">Boletim de Informações Técnicas — Grain &amp; Protein Technologies</p>
+          <form onSubmit={handleSubmit} className="space-y-4">
+            <div>
+              <label className="mb-1 block text-sm font-medium text-ink-muted">E-mail</label>
+              <input
+                type="email"
+                required
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                className="w-full rounded border border-line bg-surface px-3 py-2 text-ink focus:border-brand-navy focus:outline-none"
+              />
+            </div>
+            <div>
+              <label className="mb-1 block text-sm font-medium text-ink-muted">Senha</label>
+              <input
+                type="password"
+                required
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                className="w-full rounded border border-line bg-surface px-3 py-2 text-ink focus:border-brand-navy focus:outline-none"
+              />
+            </div>
+            {error && <p className="text-sm text-red-600">{error}</p>}
+            <button
+              type="submit"
+              disabled={submitting}
+              className="w-full rounded bg-brand-navy px-4 py-2 font-medium text-white hover:bg-brand-navy-dark disabled:opacity-50"
+            >
+              {submitting ? 'Entrando...' : 'Entrar'}
+            </button>
+          </form>
         </div>
-        {error && <p className="text-sm text-red-600">{error}</p>}
-        <button
-          type="submit"
-          disabled={submitting}
-          className="w-full rounded bg-brand-navy px-4 py-2 font-medium text-white hover:bg-brand-navy-dark disabled:opacity-50"
-        >
-          {submitting ? 'Entrando...' : 'Entrar'}
-        </button>
-      </form>
+      </div>
     </div>
   )
 }

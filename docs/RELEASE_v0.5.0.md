@@ -10,10 +10,11 @@ Release criado a partir da tag `v0.5.0`.
   de verdade — navegação por teclado, colar de blocos, colunas congeladas — inspirado
   diretamente na planilha Excel real que o time já usa (`ZBPP009 + ALTERACAO`), não só numa
   ideia genérica de "grid".
-- Passou por 3 rodadas de feedback direto até chegar nesse ponto: v1 (colunas dirigidas por
+- Passou por 4 rodadas de feedback direto até chegar nesse ponto: v1 (colunas dirigidas por
   schema, sem navegação alguma) → v2 (navegação/colar estilo Excel, mas "muito ruim" pra
   usar) → v3 (setas completas, painel de Detalhes, e fidelidade visual com o Excel real do
-  BITin).
+  BITin) → v4 (todos os ~30 campos visíveis por padrão — "a tela deve ser um excel enorme" —
+  identidade visual da marca e tema claro/escuro).
 - Status: grid de materiais completo (identificação + snapshot + `dados_basicos` +
   `impactos_operacionais`); `ordem_cliente[]`, `lista_tecnica[]` e checklist editável
   continuam sem UI (próximo incremento).
@@ -26,11 +27,16 @@ Release criado a partir da tag `v0.5.0`.
   duplicá-la em JavaScript.
 - **`MaterialGrid.jsx`**: navegação por teclado nas 4 setas (não Tab) + Enter, colar em
   qualquer célula (bloco copiado do Excel, cria linha nova se precisar), colunas "#"/"Código"
-  congeladas, cabeçalho "Novo" em vermelho (convenção extraída do Excel real do BITin via
-  `openpyxl`), `<select>` de `impactos_operacionais` com as opções válidas do POP, e destaque
-  de célula exata quando o envio falha.
-- **`MaterialDetailModal.jsx`**: painel de edição por material com todos os ~30 campos de
-  `dados_basicos` (De/Novo, com busca) — resposta a "muitos campos, pouco espaço" na grade.
+  congeladas, todos os ~30 pares De/Novo de `dados_basicos` visíveis por padrão (rótulos fiéis
+  ao texto do Plan2 real) com cabeçalho "Novo" destacado em laranja da marca, `<select>` de
+  `impactos_operacionais` com as opções válidas do POP, e destaque de célula exata quando o
+  envio falha.
+- **`MaterialDetailModal.jsx`**: painel de edição por material com todos os campos de
+  `dados_basicos` num layout espaçoso (com busca) — atalho opcional pra revisar um material
+  sem rolar a grade inteira.
+- **Identidade visual + tema claro/escuro**: paleta da marca (Grain & Protein Technologies)
+  como tokens Tailwind, cabeçalho navy com faixa de 3 cores, toggle claro/escuro (padrão
+  claro, persiste no navegador). Logo real ainda pendente (wordmark em texto por enquanto).
 - **RBAC visível em "Meus Bitins"**: botão "Excluir" some quando o usuário não é dono nem
   admin.
 - **Busca insensível a acento** (`lib/textSearch.js`) no seletor de campos e no painel de
@@ -40,11 +46,12 @@ Release criado a partir da tag `v0.5.0`.
 
 - **154 testes automatizados Python** (era 147 na v0.4.0): 8 novos cobrindo
   `build_materiais_schema` e os 2 endpoints novos.
-- **Roteiro de 24 checagens via Playwright ad-hoc** (não faz parte da suíte automatizada),
+- **Roteiro de 25 checagens via Playwright ad-hoc** (não faz parte da suíte automatizada),
   cobrindo login, edição básica, navegação por teclado, colunas congeladas, colar em bloco,
-  importar SAP, fixar campos, painel de Detalhes e validação de envio (célula destacada tanto
-  na grade quanto no painel, dependendo de onde o campo com erro está). 24/24 passaram nesta
-  rodada; zero erro de console.
+  importar SAP, colunas visíveis, painel de Detalhes, validação de envio (célula destacada
+  tanto na grade quanto no painel, dependendo de onde o campo com erro está) e tema
+  claro/escuro (padrão, toggle, persistência). 25/25 passaram nesta rodada; zero erro de
+  console.
 
 ## Achados durante o teste (corrigidos antes de fechar)
 

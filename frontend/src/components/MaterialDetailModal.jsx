@@ -5,11 +5,10 @@ import { matchesSearch } from '../lib/textSearch'
 
 const IMPACTOS_ORDEM = ['alt', 'est', 'esp', 'lp', 'pre', 'oc', 'of']
 
-// Painel de detalhes de um material -- existe porque a grade (MaterialGrid) fica
-// impraticável se tentar mostrar os ~30 campos de dados_basicos ao mesmo tempo (célula de
-// planilha é ruim pra texto longo e rótulo). Aqui cada campo tem uma linha inteira, com
-// espaço de sobra -- é o lugar recomendado pra edição cuidadosa; a grade continua útil pra
-// visão geral e colar em bloco dos campos que o usuário decidir fixar como coluna.
+// Painel de detalhes de um material -- atalho opcional, não obrigatório: a grade
+// (MaterialGrid) já mostra todos os ~30 campos de dados_basicos como coluna por padrão (igual
+// à planilha real do BITin). Aqui cada campo vira uma linha inteira com espaço de sobra e
+// busca, útil pra revisar/editar um material sem precisar rolar a grade inteira.
 export default function MaterialDetailModal({ material, schema, errors = [], rowIndex, onChange, onClose, disabled = false }) {
   const [busca, setBusca] = useState('')
 
@@ -34,32 +33,32 @@ export default function MaterialDetailModal({ material, schema, errors = [], row
   }, [schema])
 
   const inputClass =
-    'w-full rounded border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-inset disabled:bg-gray-50 disabled:text-gray-400'
+    'w-full rounded border bg-surface px-3 py-2 text-sm text-ink focus:outline-none focus:ring-2 focus:ring-inset disabled:bg-surface-alt disabled:text-ink-faint'
 
   function fieldClass(errMsg) {
-    return errMsg ? `${inputClass} border-red-400 bg-red-50 focus:ring-red-500` : `${inputClass} border-gray-300 focus:ring-brand-navy`
+    return errMsg ? `${inputClass} border-red-400 bg-red-50 focus:ring-red-500` : `${inputClass} border-line focus:ring-brand-navy`
   }
 
   return (
-    <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/40 p-4" onClick={onClose}>
+    <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/50 p-4" onClick={onClose}>
       <div
-        className="flex max-h-[90vh] w-full max-w-4xl flex-col rounded-lg bg-white shadow-2xl"
+        className="flex max-h-[90vh] w-full max-w-4xl flex-col rounded-lg bg-surface shadow-2xl"
         onClick={(e) => e.stopPropagation()}
         role="dialog"
         aria-modal="true"
       >
-        <div className="flex items-start justify-between border-b border-gray-200 px-6 py-4">
+        <div className="flex items-start justify-between border-b border-line px-6 py-4">
           <div>
-            <p className="text-xs font-medium uppercase tracking-wide text-gray-400">Detalhes do material {rowIndex + 1}</p>
-            <h3 className="text-lg font-semibold text-gray-900">
+            <p className="text-xs font-medium uppercase tracking-wide text-ink-faint">Detalhes do material {rowIndex + 1}</p>
+            <h3 className="text-lg font-semibold text-ink">
               {material.codigo_material || '(sem código)'}
-              {material.descricao_material && <span className="font-normal text-gray-500"> — {material.descricao_material}</span>}
+              {material.descricao_material && <span className="font-normal text-ink-muted"> — {material.descricao_material}</span>}
             </h3>
           </div>
           <button
             type="button"
             onClick={onClose}
-            className="rounded p-1.5 text-gray-400 hover:bg-gray-100 hover:text-gray-700"
+            className="rounded p-1.5 text-ink-faint hover:bg-surface-alt hover:text-ink"
             aria-label="Fechar"
           >
             ✕
@@ -68,7 +67,7 @@ export default function MaterialDetailModal({ material, schema, errors = [], row
 
         <div className="flex-1 overflow-y-auto px-6 py-5">
           <section className="mb-8">
-            <h4 className="mb-3 text-sm font-semibold uppercase tracking-wide text-gray-500">Impactos operacionais</h4>
+            <h4 className="mb-3 text-sm font-semibold uppercase tracking-wide text-ink-muted">Impactos operacionais</h4>
             <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
               {IMPACTOS_ORDEM.map((key) => {
                 const col = impactosPorChave[key]
@@ -76,7 +75,7 @@ export default function MaterialDetailModal({ material, schema, errors = [], row
                 const errMsg = errorMessageFor('impactos_operacionais', key)
                 return (
                   <label key={key} className="block">
-                    <span className="mb-1 block text-xs font-medium text-gray-600">{col.label}</span>
+                    <span className="mb-1 block text-xs font-medium text-ink-muted">{col.label}</span>
                     <select
                       value={getImpacto(material, key) || '-'}
                       disabled={disabled}
@@ -98,7 +97,7 @@ export default function MaterialDetailModal({ material, schema, errors = [], row
                 const errMsg = errorMessageFor('impactos_operacionais', key)
                 return (
                   <label key={key} className="block">
-                    <span className="mb-1 block text-xs font-medium text-gray-600">
+                    <span className="mb-1 block text-xs font-medium text-ink-muted">
                       {key === 'centro_custo' ? 'Centro de custo' : 'Conta razão'}
                       {getImpacto(material, 'est') === 'S' && <span className="text-red-500"> *</span>}
                     </span>
@@ -118,29 +117,29 @@ export default function MaterialDetailModal({ material, schema, errors = [], row
 
           <section>
             <div className="mb-3 flex items-center justify-between gap-3">
-              <h4 className="text-sm font-semibold uppercase tracking-wide text-gray-500">Dados básicos (De → Para)</h4>
+              <h4 className="text-sm font-semibold uppercase tracking-wide text-ink-muted">Dados básicos (Atual → Novo)</h4>
               <input
                 value={busca}
                 onChange={(e) => setBusca(e.target.value)}
                 placeholder="Buscar campo..."
-                className="w-56 rounded border border-gray-300 px-2 py-1.5 text-sm focus:border-brand-navy focus:outline-none"
+                className="w-56 rounded border border-line bg-surface px-2 py-1.5 text-sm text-ink focus:border-brand-navy focus:outline-none"
               />
             </div>
-            <div className="overflow-hidden rounded border border-gray-200">
+            <div className="overflow-hidden rounded border border-line">
               {/* "Novo"/Para em laranja da marca -- mesma ideia da planilha real do BITin (aba
                   "ZBPP009 + ALTERACAO", onde é vermelho), mas laranja aqui pra não se confundir
                   com o vermelho de erro de validação usado nesta mesma tela. */}
-              <div className="grid grid-cols-[1.2fr_1fr_1fr] gap-3 bg-brand-navy-50 px-3 py-2 text-xs font-medium uppercase tracking-wide">
-                <span className="text-brand-navy/60">Campo</span>
-                <span className="text-brand-navy/60">Atual</span>
+              <div className="grid grid-cols-[1.2fr_1fr_1fr] gap-3 bg-surface-header px-3 py-2 text-xs font-medium uppercase tracking-wide">
+                <span className="text-ink-muted">Campo</span>
+                <span className="text-ink-muted">Atual</span>
                 <span className="text-brand-orange">Novo</span>
               </div>
-              <div className="divide-y divide-gray-100">
+              <div className="divide-y divide-line">
                 {camposFiltrados.map((campo) => {
                   const errMsg = errorMessageFor('dados_basicos', campo.key)
                   return (
                     <div key={campo.key} className={`grid grid-cols-[1.2fr_1fr_1fr] items-center gap-3 px-3 py-2 ${errMsg ? 'bg-red-50' : ''}`}>
-                      <span className="text-sm text-gray-700">{campo.label}</span>
+                      <span className="text-sm text-ink">{campo.label}</span>
                       <input
                         value={getDadosBasico(material, campo.key, 'de')}
                         disabled={disabled}
@@ -158,13 +157,13 @@ export default function MaterialDetailModal({ material, schema, errors = [], row
                     </div>
                   )
                 })}
-                {camposFiltrados.length === 0 && <p className="px-3 py-4 text-sm text-gray-400">Nenhum campo encontrado.</p>}
+                {camposFiltrados.length === 0 && <p className="px-3 py-4 text-sm text-ink-faint">Nenhum campo encontrado.</p>}
               </div>
             </div>
           </section>
         </div>
 
-        <div className="flex justify-end border-t border-gray-200 px-6 py-3">
+        <div className="flex justify-end border-t border-line px-6 py-3">
           <button
             type="button"
             onClick={onClose}

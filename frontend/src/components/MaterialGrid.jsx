@@ -70,12 +70,14 @@ function buildColumns(schema, visibleFields) {
   return [...FIXED_COLUMNS, ...dadosBasicosCols, ...impactosCols, ...impactosCondicionaisCols]
 }
 
-// Grid de materiais em formato planilha -- ver docs/FRONTEND.md, "Grid de materiais". Navega
-// como Excel nas 4 setas (não depende de Tab, que pula pros botões de ação no fim da linha),
-// Enter confirma e desce, e aceita colar um bloco de células a partir de qualquer célula. Os
-// ~30 campos de dados_basicos ficam ocultos da grade por padrão (pouco espaço útil numa
-// célula de planilha pra rótulo+valor) -- o botão "Detalhes" por linha abre um painel grande
-// com todos eles, um por linha, pra edição sem aperto.
+// Grid de materiais em formato planilha -- pedido direto: igual à planilha real do BITin
+// ("ZBPP009 + ALTERACAO"), não uma versão resumida. Todos os ~30 campos de dados_basicos
+// aparecem como coluna por padrão (ver docs/FRONTEND.md, "Grid de materiais") -- é
+// deliberadamente uma grade enorme, com rolagem horizontal. Navega como Excel nas 4 setas
+// (não depende de Tab, que pula pros botões de ação no fim da linha), Enter confirma e desce,
+// e aceita colar um bloco de células a partir de qualquer célula. O botão "Detalhes" por
+// linha continua disponível como atalho pra editar/revisar um material só, com mais espaço
+// e busca, sem precisar rolar a grade inteira.
 export default function MaterialGrid({ materiais, onChange, errors = [], disabled = false }) {
   const [schema, setSchema] = useState(null)
   const [schemaError, setSchemaError] = useState(null)
@@ -85,12 +87,19 @@ export default function MaterialGrid({ materiais, onChange, errors = [], disable
   const [detailRowIndex, setDetailRowIndex] = useState(null)
   const cellRefs = useRef({})
 
+  // Todas as colunas de dados_basicos ficam visíveis por padrão -- pedido direto: a tela de
+  // cadastro precisa ser igual à planilha real do BITin ("ZBPP009 + ALTERACAO"), não uma
+  // versão resumida com campos escondidos atrás de um seletor. "Colunas visíveis" abaixo
+  // continua existindo só como forma opcional de ESCONDER colunas que não interessam agora,
+  // não como porta de entrada obrigatória pra mostrar alguma.
   useEffect(() => {
     let cancelado = false
     api
       .get('/bitins/schema/materiais')
       .then((resp) => {
-        if (!cancelado) setSchema(resp.data)
+        if (cancelado) return
+        setSchema(resp.data)
+        setVisibleFields(resp.data.dados_basicos.map((c) => c.key))
       })
       .catch(() => {
         if (!cancelado) setSchemaError('Não foi possível carregar as colunas de materiais.')
@@ -197,27 +206,27 @@ export default function MaterialGrid({ materiais, onChange, errors = [], disable
   }
 
   return (
-    <div className="rounded border border-gray-200 bg-white p-4">
+    <div className="rounded border border-line bg-surface p-4">
       <div className="mb-3 flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h2 className="text-lg font-medium text-gray-900">Materiais</h2>
+          <h2 className="text-lg font-medium text-ink">Materiais</h2>
           {!disabled && (
-            <p className="mt-0.5 text-xs text-gray-400">
-              Clique numa célula e use as setas ↑↓←→ ou Enter pra navegar. Cole um bloco copiado do Excel em
-              qualquer célula (Ctrl+V) — linhas novas são criadas automaticamente se precisar. Use "Detalhes"
-              pra editar os campos de dados básicos com mais espaço.
+            <p className="mt-0.5 text-xs text-ink-faint">
+              Mesma estrutura da planilha "ZBPP009 + ALTERACAO". Clique numa célula e use as setas ↑↓←→ ou
+              Enter pra navegar. Cole um bloco copiado do Excel em qualquer célula (Ctrl+V) — linhas novas são
+              criadas automaticamente se precisar.
             </p>
           )}
         </div>
         {!disabled && (
           <div className="flex flex-wrap gap-2">
-            <button type="button" onClick={addRow} className="rounded border border-gray-300 px-3 py-1.5 text-sm hover:bg-gray-100">
+            <button type="button" onClick={addRow} className="rounded border border-line px-3 py-1.5 text-sm text-ink hover:bg-surface-alt">
               + Adicionar material
             </button>
             <button
               type="button"
               onClick={() => setShowSapImport((v) => !v)}
-              className="rounded border border-gray-300 px-3 py-1.5 text-sm hover:bg-gray-100"
+              className="rounded border border-line px-3 py-1.5 text-sm text-ink hover:bg-surface-alt"
             >
               Importar relatório do SAP
             </button>
@@ -238,10 +247,10 @@ export default function MaterialGrid({ materiais, onChange, errors = [], disable
         <SapImportPanel onParsed={addFromSapImport} onClose={() => setShowSapImport(false)} />
       )}
 
-      {materiais.length === 0 && <p className="text-sm text-gray-500">Nenhum material adicionado ainda.</p>}
+      {materiais.length === 0 && <p className="text-sm text-ink-muted">Nenhum material adicionado ainda.</p>}
 
       {materiais.length > 0 && (
-        <div className="max-h-[75vh] overflow-auto rounded border border-gray-200">
+        <div className="max-h-[75vh] overflow-auto rounded border border-line">
           {/* table-fixed é essencial aqui: com table-layout:auto (padrão), o navegador
               encolhe colunas com pouco conteúdo (ex.: "#" com só "1"/"2") abaixo da largura
               declarada, o que quebra a matemática do offset das colunas congeladas (a coluna
@@ -253,7 +262,7 @@ export default function MaterialGrid({ materiais, onChange, errors = [], disable
               <tr>
                 <th
                   style={{ width: ROW_NUMBER_WIDTH }}
-                  className="sticky top-0 left-0 z-30 border border-gray-200 bg-brand-navy-50 px-2 py-2.5 text-xs font-semibold text-brand-navy/70"
+                  className="sticky top-0 left-0 z-30 border border-line bg-surface-header px-2 py-2.5 text-xs font-semibold text-ink-muted"
                 >
                   #
                 </th>
@@ -261,14 +270,14 @@ export default function MaterialGrid({ materiais, onChange, errors = [], disable
                   <th
                     key={colIndex}
                     style={col.freeze ? { left: ROW_NUMBER_WIDTH } : undefined}
-                    className={`${CELL_WIDTHS[col.width || 'md']} sticky top-0 border border-gray-200 bg-brand-navy-50 px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide ${
-                      col.variant === 'novo' ? 'text-brand-orange' : 'text-brand-navy/80'
+                    className={`${CELL_WIDTHS[col.width || 'md']} sticky top-0 border border-line bg-surface-header px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide ${
+                      col.variant === 'novo' ? 'text-brand-orange' : 'text-ink-muted'
                     } ${col.freeze ? 'z-30' : 'z-20'}`}
                   >
                     {col.label}
                     {col.required && <span className="text-red-500"> *</span>}
                     {col.subLabel && (
-                      <span className={`block text-[10px] font-normal normal-case tracking-normal ${col.variant === 'novo' ? 'text-brand-orange/80' : 'text-gray-400'}`}>
+                      <span className={`block text-[10px] font-normal normal-case tracking-normal ${col.variant === 'novo' ? 'text-brand-orange/80' : 'text-ink-faint'}`}>
                         {col.subLabel}
                       </span>
                     )}
@@ -277,7 +286,7 @@ export default function MaterialGrid({ materiais, onChange, errors = [], disable
                 {!disabled && (
                   <th
                     style={{ width: ACTIONS_WIDTH }}
-                    className="sticky top-0 z-20 border border-gray-200 bg-brand-navy-50 px-3 py-2.5 text-center text-xs font-semibold text-brand-navy/70"
+                    className="sticky top-0 z-20 border border-line bg-surface-header px-3 py-2.5 text-center text-xs font-semibold text-ink-muted"
                   >
                     Ações
                   </th>
@@ -286,10 +295,10 @@ export default function MaterialGrid({ materiais, onChange, errors = [], disable
             </thead>
             <tbody>
               {materiais.map((material, rowIndex) => (
-                <tr key={rowIndex} className={`group ${rowIndex % 2 === 1 ? 'bg-gray-50' : 'bg-white'} hover:bg-brand-navy-50`}>
+                <tr key={rowIndex} className={`group ${rowIndex % 2 === 1 ? 'bg-surface-alt' : 'bg-surface'} hover:bg-surface-header/60`}>
                   <td
                     style={{ width: ROW_NUMBER_WIDTH }}
-                    className="sticky left-0 z-10 border border-gray-200 bg-inherit px-2 py-2 text-center text-xs text-gray-400"
+                    className="sticky left-0 z-10 border border-line bg-inherit px-2 py-2 text-center text-xs text-ink-faint"
                   >
                     {rowIndex + 1}
                   </td>
@@ -315,12 +324,12 @@ export default function MaterialGrid({ materiais, onChange, errors = [], disable
                     )
                   })}
                   {!disabled && (
-                    <td style={{ width: ACTIONS_WIDTH }} className="border border-gray-200 bg-inherit px-2 py-2 text-center">
+                    <td style={{ width: ACTIONS_WIDTH }} className="border border-line bg-inherit px-2 py-2 text-center">
                       <div className="flex justify-center gap-1.5">
                         <button
                           type="button"
                           onClick={() => setDetailRowIndex(rowIndex)}
-                          className="rounded border border-gray-300 px-2 py-1 text-xs text-gray-700 hover:bg-gray-100"
+                          className="rounded border border-line px-2 py-1 text-xs text-ink hover:bg-surface-alt"
                         >
                           Detalhes
                         </button>
@@ -361,10 +370,10 @@ function GridCell({ col, rowIndex, colIndex, value, disabled, hasError, errorMes
   // cima do azul de foco -- precisa continuar óbvio mesmo quando a célula está selecionada.
   const cellBg = hasError
     ? 'border-red-400 bg-red-50 ring-1 ring-inset ring-red-400'
-    : 'border-gray-200 bg-inherit'
+    : 'border-line bg-inherit'
   const inputClass = `h-full w-full bg-transparent px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-inset ${
     hasError ? 'focus:ring-red-500' : 'focus:ring-brand-navy'
-  } disabled:text-gray-400`
+  } disabled:text-ink-faint`
   const stickyStyle = freezeOffset !== undefined ? { left: freezeOffset } : undefined
   const stickyClass = freezeOffset !== undefined ? 'sticky z-10' : ''
 
@@ -439,23 +448,23 @@ function FieldPicker({ schema, visibleFields, setVisibleFields, open, setOpen })
       <button
         type="button"
         onClick={() => setOpen(!open)}
-        className="rounded border border-gray-300 px-3 py-1.5 text-sm hover:bg-gray-100"
+        className="rounded border border-line px-3 py-1.5 text-sm text-ink hover:bg-surface-alt"
       >
-        Fixar campos na grade ({visibleFields.length})
+        Colunas visíveis ({visibleFields.length}/{schema?.dados_basicos.length ?? 0})
       </button>
       {open && (
         <>
           <div className="fixed inset-0 z-10" onClick={() => setOpen(false)} />
-          <div className="absolute right-0 top-10 z-20 w-72 rounded border border-gray-200 bg-white p-3 shadow-lg">
-            <p className="mb-2 text-xs text-gray-500">
-              Campos de dados básicos mostrados como coluna na grade (útil pra colar em bloco). Pra editar
-              qualquer campo com mais espaço, use "Detalhes" na linha do material.
+          <div className="absolute right-0 top-10 z-20 w-72 rounded border border-line bg-surface p-3 shadow-lg">
+            <p className="mb-2 text-xs text-ink-muted">
+              Todos os campos de dados básicos aparecem na grade por padrão, igual à planilha real. Desmarque
+              aqui só pra esconder o que não interessa agora.
             </p>
             <input
               value={busca}
               onChange={(e) => setBusca(e.target.value)}
               placeholder="Buscar campo..."
-              className="mb-2 w-full rounded border border-gray-300 px-2 py-1 text-sm"
+              className="mb-2 w-full rounded border border-line bg-surface px-2 py-1 text-sm text-ink"
             />
             <div className="mb-2 flex gap-2 text-xs">
               <button
@@ -463,15 +472,15 @@ function FieldPicker({ schema, visibleFields, setVisibleFields, open, setOpen })
                 onClick={() => setVisibleFields(schema.dados_basicos.map((c) => c.key))}
                 className="text-brand-navy hover:underline"
               >
-                Selecionar tudo
+                Mostrar tudo
               </button>
-              <button type="button" onClick={() => setVisibleFields([])} className="text-gray-500 hover:underline">
-                Limpar
+              <button type="button" onClick={() => setVisibleFields([])} className="text-ink-muted hover:underline">
+                Esconder tudo
               </button>
             </div>
             <div className="max-h-64 overflow-y-auto">
               {opcoes.map((campo) => (
-                <label key={campo.key} className="flex items-center gap-2 px-1 py-1 text-sm hover:bg-gray-50">
+                <label key={campo.key} className="flex items-center gap-2 px-1 py-1 text-sm text-ink hover:bg-surface-alt">
                   <input
                     type="checkbox"
                     checked={visibleFields.includes(campo.key)}
@@ -484,7 +493,7 @@ function FieldPicker({ schema, visibleFields, setVisibleFields, open, setOpen })
                   {campo.label}
                 </label>
               ))}
-              {opcoes.length === 0 && <p className="px-1 py-2 text-sm text-gray-400">Nenhum campo encontrado.</p>}
+              {opcoes.length === 0 && <p className="px-1 py-2 text-sm text-ink-faint">Nenhum campo encontrado.</p>}
             </div>
           </div>
         </>
@@ -514,8 +523,8 @@ function SapImportPanel({ onParsed, onClose }) {
   }
 
   return (
-    <div className="mb-3 rounded border border-gray-200 bg-gray-50 p-3">
-      <p className="mb-2 text-sm text-gray-600">
+    <div className="mb-3 rounded border border-line bg-surface-alt p-3">
+      <p className="mb-2 text-sm text-ink-muted">
         Cole aqui as linhas copiadas do relatório do SAP (ZBPP009 ou equivalente). Cada linha vira um material
         novo, com identificação e snapshot atual já preenchidos — diferente de colar direto numa célula do grid
         (que edita o que já existe), isto sempre adiciona linhas novas.
@@ -524,7 +533,7 @@ function SapImportPanel({ onParsed, onClose }) {
         value={texto}
         onChange={(e) => setTexto(e.target.value)}
         rows={5}
-        className="mb-2 w-full rounded border border-gray-300 p-2 font-mono text-xs"
+        className="mb-2 w-full rounded border border-line bg-surface p-2 font-mono text-xs text-ink"
         placeholder="Cole aqui (Ctrl+V)..."
       />
       {error && <p className="mb-2 text-sm text-red-600">{error}</p>}
@@ -540,7 +549,7 @@ function SapImportPanel({ onParsed, onClose }) {
         <button
           type="button"
           onClick={onClose}
-          className="rounded border border-gray-300 px-3 py-1.5 text-sm hover:bg-gray-100"
+          className="rounded border border-line px-3 py-1.5 text-sm text-ink hover:bg-surface-alt"
         >
           Cancelar
         </button>

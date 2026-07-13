@@ -63,7 +63,7 @@ export default function MeusBitins() {
   return (
     <div>
       <div className="mb-6 flex items-center justify-between">
-        <h1 className="text-2xl font-semibold text-gray-900">Meus Bitins</h1>
+        <h1 className="text-2xl font-semibold text-ink">Meus Bitins</h1>
         <Link
           to="/bitins/novo"
           className="rounded bg-brand-navy px-4 py-2 text-sm font-medium text-white hover:bg-brand-navy-dark"
@@ -79,7 +79,7 @@ export default function MeusBitins() {
               key={a.id}
               onClick={() => setAba(a.id)}
               className={`rounded px-3 py-1.5 text-sm font-medium ${
-                aba === a.id ? 'bg-brand-navy text-white' : 'bg-white text-gray-700 border border-gray-300'
+                aba === a.id ? 'bg-brand-navy text-white' : 'bg-surface text-ink border border-line'
               }`}
             >
               {a.label}
@@ -98,29 +98,29 @@ export default function MeusBitins() {
             placeholder="Buscar por motivo, solicitante, número..."
             value={termo}
             onChange={(e) => setTermo(e.target.value)}
-            className="rounded border border-gray-300 px-3 py-1.5 text-sm focus:border-brand-navy focus:outline-none"
+            className="rounded border border-line bg-surface px-3 py-1.5 text-sm text-ink focus:border-brand-navy focus:outline-none"
           />
-          <button type="submit" className="rounded border border-gray-300 px-3 py-1.5 text-sm hover:bg-gray-100">
+          <button type="submit" className="rounded border border-line px-3 py-1.5 text-sm text-ink hover:bg-surface-alt">
             Buscar
           </button>
         </form>
       </div>
 
-      {loading && <p className="text-gray-500">Carregando...</p>}
+      {loading && <p className="text-ink-muted">Carregando...</p>}
       {error && <p className="text-red-600">{error}</p>}
 
       {!loading && !error && bitins.length === 0 && (
-        <p className="text-gray-500">Nenhum BITin encontrado.</p>
+        <p className="text-ink-muted">Nenhum BITin encontrado.</p>
       )}
 
-      <ul className="divide-y divide-gray-200 rounded border border-gray-200 bg-white">
+      <ul className="divide-y divide-line rounded border border-line bg-surface">
         {bitins.map((b) => (
           <li key={b.mongo_id} className="flex items-center justify-between px-4 py-3">
             <div>
-              <p className="font-medium text-gray-900">
+              <p className="font-medium text-ink">
                 {b.codigo || b.titulo || 'Rascunho sem título'}
               </p>
-              <p className="text-sm text-gray-500">
+              <p className="text-sm text-ink-muted">
                 {b.content?.motivo || '—'} · {b.content?.solicitante || '—'} ·{' '}
                 <span
                   className={
@@ -134,7 +134,7 @@ export default function MeusBitins() {
             <div className="flex gap-2">
               <Link
                 to={`/bitins/${b.mongo_id}`}
-                className="rounded border border-gray-300 px-3 py-1 text-sm hover:bg-gray-100"
+                className="rounded border border-line px-3 py-1 text-sm text-ink hover:bg-surface-alt"
               >
                 {b.status === 'enviado' ? 'Visualizar' : 'Editar'}
               </Link>

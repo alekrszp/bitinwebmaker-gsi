@@ -99,7 +99,7 @@ export default function BitinDetail() {
     }
   }
 
-  if (loading) return <p className="text-gray-500">Carregando...</p>
+  if (loading) return <p className="text-ink-muted">Carregando...</p>
 
   if (status === 'enviado') {
     return <BitinResumo codigo={codigo} resumo={resumo} />
@@ -107,16 +107,16 @@ export default function BitinDetail() {
 
   return (
     <div>
-      <h1 className="mb-6 text-2xl font-semibold text-gray-900">
+      <h1 className="mb-6 text-2xl font-semibold text-ink">
         {isNew ? 'Novo rascunho' : `Editar rascunho`}
       </h1>
 
-      <div className="mb-6 grid grid-cols-1 gap-4 rounded border border-gray-200 bg-white p-4 sm:grid-cols-2">
+      <div className="mb-6 grid grid-cols-1 gap-4 rounded border border-line bg-surface p-4 sm:grid-cols-2">
         <Campo label="Setor">
           <select
             value={form.setor}
             onChange={(e) => updateHeader('setor', e.target.value)}
-            className="w-full rounded border border-gray-300 px-3 py-2"
+            className="w-full rounded border border-line bg-surface px-3 py-2 text-ink"
           >
             <option value="">Selecione...</option>
             {SETORES.map((s) => (
@@ -130,21 +130,21 @@ export default function BitinDetail() {
           <input
             value={form.produto}
             onChange={(e) => updateHeader('produto', e.target.value)}
-            className="w-full rounded border border-gray-300 px-3 py-2"
+            className="w-full rounded border border-line bg-surface px-3 py-2 text-ink"
           />
         </Campo>
         <Campo label="Motivo">
           <input
             value={form.motivo}
             onChange={(e) => updateHeader('motivo', e.target.value)}
-            className="w-full rounded border border-gray-300 px-3 py-2"
+            className="w-full rounded border border-line bg-surface px-3 py-2 text-ink"
           />
         </Campo>
         <Campo label="Solicitante">
           <input
             value={form.solicitante}
             onChange={(e) => updateHeader('solicitante', e.target.value)}
-            className="w-full rounded border border-gray-300 px-3 py-2"
+            className="w-full rounded border border-line bg-surface px-3 py-2 text-ink"
           />
         </Campo>
         <Campo label="Data da solicitação">
@@ -152,7 +152,7 @@ export default function BitinDetail() {
             type="date"
             value={form.data_solicitacao}
             onChange={(e) => updateHeader('data_solicitacao', e.target.value)}
-            className="w-full rounded border border-gray-300 px-3 py-2"
+            className="w-full rounded border border-line bg-surface px-3 py-2 text-ink"
           />
         </Campo>
       </div>
@@ -174,13 +174,13 @@ export default function BitinDetail() {
         </div>
       )}
 
-      {saveMessage && <p className="mb-4 text-sm text-gray-600">{saveMessage}</p>}
+      {saveMessage && <p className="mb-4 text-sm text-ink-muted">{saveMessage}</p>}
 
       <div className="flex gap-3">
         <button
           onClick={handleSalvar}
           disabled={saving}
-          className="rounded border border-gray-300 bg-white px-4 py-2 font-medium hover:bg-gray-100 disabled:opacity-50"
+          className="rounded border border-line bg-surface px-4 py-2 font-medium text-ink hover:bg-surface-alt disabled:opacity-50"
         >
           Salvar rascunho
         </button>
@@ -199,29 +199,29 @@ export default function BitinDetail() {
 function Campo({ label, children }) {
   return (
     <label className="block">
-      <span className="mb-1 block text-sm font-medium text-gray-700">{label}</span>
+      <span className="mb-1 block text-sm font-medium text-ink-muted">{label}</span>
       {children}
     </label>
   )
 }
 
 function BitinResumo({ codigo, resumo }) {
-  if (!resumo) return <p className="text-gray-500">Carregando resumo...</p>
+  if (!resumo) return <p className="text-ink-muted">Carregando resumo...</p>
   return (
     <div>
-      <h1 className="mb-1 text-2xl font-semibold text-gray-900">{codigo}</h1>
+      <h1 className="mb-1 text-2xl font-semibold text-ink">{codigo}</h1>
       <p className="mb-6 text-sm text-green-700">Enviado — travado, sem edição.</p>
 
-      <div className="mb-6 grid grid-cols-1 gap-4 rounded border border-gray-200 bg-white p-4 sm:grid-cols-2">
+      <div className="mb-6 grid grid-cols-1 gap-4 rounded border border-line bg-surface p-4 sm:grid-cols-2">
         <Info label="Setor" valor={resumo.setor} />
         <Info label="Produto" valor={resumo.produto} />
         <Info label="Motivo" valor={resumo.motivo} />
         <Info label="Solicitante" valor={resumo.solicitante} />
       </div>
 
-      <div className="mb-6 rounded border border-gray-200 bg-white p-4">
-        <h2 className="mb-3 text-lg font-medium text-gray-900">Materiais</h2>
-        <ul className="divide-y divide-gray-100">
+      <div className="mb-6 rounded border border-line bg-surface p-4">
+        <h2 className="mb-3 text-lg font-medium text-ink">Materiais</h2>
+        <ul className="divide-y divide-line">
           {resumo.materiais.map((m, i) => (
             <li key={i} className="py-2 text-sm">
               <span className="font-medium">{m.codigo_material}</span> — {m.descricao_material} (centro{' '}
@@ -231,11 +231,11 @@ function BitinResumo({ codigo, resumo }) {
         </ul>
       </div>
 
-      <div className="rounded border border-gray-200 bg-white p-4">
-        <h2 className="mb-3 text-lg font-medium text-gray-900">Checklist</h2>
+      <div className="rounded border border-line bg-surface p-4">
+        <h2 className="mb-3 text-lg font-medium text-ink">Checklist</h2>
         <ul className="grid grid-cols-1 gap-1 text-sm sm:grid-cols-2">
           {resumo.checklist.map((item) => (
-            <li key={item.id} className={item.afeta ? 'text-gray-900' : 'text-gray-400'}>
+            <li key={item.id} className={item.afeta ? 'text-ink' : 'text-ink-faint'}>
               {item.afeta ? '☑' : '☐'} {item.etapa}
             </li>
           ))}
@@ -248,8 +248,8 @@ function BitinResumo({ codigo, resumo }) {
 function Info({ label, valor }) {
   return (
     <div>
-      <p className="text-xs uppercase tracking-wide text-gray-500">{label}</p>
-      <p className="text-gray-900">{valor || '—'}</p>
+      <p className="text-xs uppercase tracking-wide text-ink-muted">{label}</p>
+      <p className="text-ink">{valor || '—'}</p>
     </div>
   )
 }

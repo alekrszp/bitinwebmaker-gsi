@@ -18,16 +18,28 @@ All notable changes to this project will be documented in this file.
     `dados_basicos` (De/Para, com busca) e `impactos_operacionais` num layout espaçoso — a
     grade em si só fixa como coluna os campos que o usuário escolher (ideal pra colar em
     massa), evitando o problema de "muitos campos, pouco espaço".
-  - **Cabeçalho "Novo" em vermelho**: convenção extraída da planilha real do BITin
+  - **Cabeçalho "Novo" destacado**: convenção extraída da planilha real do BITin
     (`examples/bitin teste 2.xlsm`, aba `ZBPP009 + ALTERACAO`, inspecionada via `openpyxl`) —
-    toda coluna de valor novo/editável tem o rótulo em vermelho negrito, igual ao Excel que o
-    time já usa.
+    toda coluna de valor novo/editável tem o rótulo destacado (laranja da marca, não vermelho
+    como no Excel original — vermelho já é erro de validação nesta tela).
+  - **Todos os ~30 campos de `dados_basicos` visíveis por padrão** (não escondidos atrás de um
+    seletor) — pedido direto: "a tela deve ser um excel enorme, com a mesma estrutura". A grade
+    tem ~70 colunas contando identificação/impactos, com rolagem horizontal, igual a abrir a
+    planilha real. Rótulos ajustados pra bater literalmente com o texto do Plan2 (ex.:
+    "Unidade Peso", não "Unidade de Peso").
   - Modelado no `CodeForm.jsx` do projeto irmão `GPT_Engineering_BITIN`, mas reconstruído:
     colunas vêm do backend (não hardcoded), colar do SAP reaproveita o parser Python já
     testado, erros de envio destacam a célula exata (na grade ou no painel de Detalhes,
     dependendo de onde o campo está sendo editado) em vez de só listar texto solto.
   - Busca insensível a acento (`lib/textSearch.js`) no seletor de campos e no painel de
     Detalhes — achado testando: buscar "liquido" não encontrava "Peso Líquido".
+- **Identidade visual da marca (Grain & Protein Technologies) + tema claro/escuro**
+  (`frontend/src/index.css`, `ThemeContext.jsx`): paleta extraída do logo como tokens Tailwind
+  v4, cabeçalho navy com faixa de 3 cores, tokens semânticos (`app-bg`/`surface`/`line`/`ink`)
+  usados em todo componente pra que os dois temas fiquem consistentes num só lugar. Toggle
+  claro/escuro no cabeçalho, padrão claro (não detecta o tema do sistema operacional de
+  propósito), escolha persiste no navegador. Logo real ainda não está no repositório — usa
+  wordmark em texto como placeholder.
 - **`GET /bitins/schema/materiais`** (`bitin_model.build_materiais_schema`): fonte única de
   colunas do grid — identificação, snapshot, `dados_basicos` (na mesma ordem do crosswalk) e
   `impactos_operacionais` com os valores válidos do POP (`config/bitin_document_mapping.json`).
@@ -42,14 +54,14 @@ All notable changes to this project will be documented in this file.
 ### Notes
 - 8 testes novos (Python): `build_materiais_schema` (`tests/test_bitin_model.py`) + os dois
   endpoints novos (`tests/test_backend_bitins.py`) — 154 testes automatizados no total.
-- Validado com um roteiro de 24 checagens via Playwright ad-hoc cobrindo as 10 áreas do grid
+- Validado com um roteiro de 25 checagens via Playwright ad-hoc cobrindo as 10 áreas do grid
   (edição básica, navegação por teclado, colunas congeladas, colar em bloco, importar SAP,
-  fixar campos, painel de Detalhes, validação de envio) — mesma limitação de ambiente já
-  documentada (sem MongoDB real, backend testado com `mongomock-motor`/rotas mockadas onde
-  necessário). 2 bugs reais encontrados durante o teste e corrigidos antes de fechar: coluna
-  congelada sobrepondo a seguinte (`position: sticky` não é confiável com `border-collapse`,
-  nem `table-layout: fixed` sozinho sem largura total explícita — ver `docs/FRONTEND.md`) e
-  busca de campo sem suporte a acento.
+  colunas visíveis, painel de Detalhes, validação de envio, tema claro/escuro) — mesma
+  limitação de ambiente já documentada (sem MongoDB real, backend testado com
+  `mongomock-motor`/rotas mockadas onde necessário). 2 bugs reais encontrados durante o teste e
+  corrigidos antes de fechar: coluna congelada sobrepondo a seguinte (`position: sticky` não é
+  confiável com `border-collapse`, nem `table-layout: fixed` sozinho sem largura total
+  explícita — ver `docs/FRONTEND.md`) e busca de campo sem suporte a acento.
 - Ainda não incluído (ver `docs/FRONTEND.md`, "O que NÃO está nesta fatia ainda"):
   `ordem_cliente[]`, `lista_tecnica[]`, checklist editável, modo de leitura explícito pra quem
   abre o rascunho de outra pessoa sem ser dono/admin, mesclar (em vez de sempre duplicar) ao
