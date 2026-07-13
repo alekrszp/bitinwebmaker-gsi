@@ -289,6 +289,32 @@ página) e o cadastro ainda parecia "um formulário com uma tabela dentro", não
   botões de ação em todo o grid, e as colunas fixas "#" e "Ações" ficaram mais largas (48→56px
   e 168→220px) pra caber o texto maior sem cortar.
 
+### Checklist em grade de colunas + 3 faixas em largura total (7ª rodada)
+
+O usuário mandou um wireframe simples (retângulos coloridos, sem detalhe visual) confirmando
+a estrutura de página antes de enviar o Figma de verdade: cabeçalho, checklist e tabela de
+códigos devem ocupar a largura inteira da tela, e o checklist precisa ficar compacto pra não
+"descer" a tela e empurrar a tabela de materiais pra fora da dobra.
+
+- **Checklist virou grade em colunas, não lista de 22 linhas empilhadas**
+  (`ChecklistEditor.jsx`): trocado `<table>` por um grid CSS (2 colunas em telas médias, 3 em
+  telas largas, 4 em ultrawide). Cada item é um bloco compacto — etapa + seletor Afeta na
+  mesma linha — e o campo Observação só aparece quando o item está marcado "SIM" (a maioria
+  fica "NÃO", então esconder o campo economiza ainda mais altura, e escrever observação sem
+  afetar não fazia sentido mesmo). Resultado: a faixa caiu de ~750px pra ~280px de altura numa
+  tela cheia com 22 itens.
+- **Cabeçalho e checklist passaram a compartilhar a mesma largura total da grade de
+  materiais** (`BitinDetail.jsx`): antes só a grade de materiais tinha `-mx-4` (quebrava pra
+  fora do container centralizado); agora cabeçalho, checklist e grade dividem um único wrapper
+  `-mx-4`, então as 3 faixas encostam nas bordas reais da tela, igual ao wireframe. Cantos
+  arredondados e borda lateral removidos de cabeçalho/checklist pelo mesmo motivo (mesmo
+  tratamento "sem moldura" já aplicado à grade na 6ª rodada).
+- **Achado de teste**: como o checklist deixou de ser uma `<table>`, a grade de materiais
+  passou a ser a única tabela HTML da página — os scripts de regressão ad-hoc (Playwright, só
+  no scratchpad, não fazem parte do repo) que localizavam a grade por `table.nth(1)` e o
+  checklist por `table.nth(0)` precisaram ser reescritos (checklist agora localizado por texto
+  do banner "Check list" + `following-sibling`). Sem impacto em código de produção.
+
 ## O que já funciona
 
 Validado com Playwright ad-hoc contra o backend real nesta máquina (sem MongoDB real, ver

@@ -20,9 +20,14 @@ Release criado a partir da tag `v0.5.0`.
     grade de materiais deixou de ficar presa ao `max-w-6xl` do resto da página e passou a
     ocupar a tela inteira, sem moldura de card — "literalmente um excel", célula/fonte/cabeçalho
     maiores.
-- Status: cadastro completo (cabeçalho em faixas + checklist editável + grid de materiais em
-  tela inteira, com logo real); `ordem_cliente[]`, `lista_tecnica[]` e auto-cálculo do
+  - **v7**: a partir de um wireframe de estrutura enviado pelo usuário, checklist virou grade
+    de 2-4 colunas (não lista de 22 linhas empilhadas, com Observação só visível quando o item
+    afeta), e cabeçalho+checklist passaram a compartilhar a mesma largura total que só a grade
+    de materiais tinha — as 3 faixas da tela agora encostam nas bordas reais da tela.
+- Status: cadastro completo (cabeçalho + checklist compacto + grid de materiais, as 3 faixas em
+  largura total, com logo real); `ordem_cliente[]`, `lista_tecnica[]` e auto-cálculo do
   checklist a partir dos materiais continuam sem UI/não implementados (próximo incremento).
+  Aguardando telas do Figma do usuário pra próxima rodada de ajuste visual.
 
 ## Principais adições
 
@@ -52,6 +57,10 @@ Release criado a partir da tag `v0.5.0`.
   (`-mx-4`) e perdeu borda/cantos arredondados/padding do wrapper — encosta nas bordas reais da
   tela. Células, cabeçalho e botões de ação maiores; largura de coluna calculada por um único
   helper (antes havia dois mapas duplicados).
+- **Checklist compacto em grade de colunas, 3 faixas em largura total**: `ChecklistEditor.jsx`
+  trocou a lista de 22 linhas empilhadas por uma grade de 2-4 colunas (Observação só aparece
+  quando o item afeta), caindo de ~750px pra ~280px de altura. Cabeçalho e checklist passaram
+  a compartilhar o mesmo `-mx-4` de largura total que só a grade de materiais tinha.
 - **RBAC visível em "Meus Bitins"**: botão "Excluir" some quando o usuário não é dono nem
   admin.
 - **Busca insensível a acento** (`lib/textSearch.js`) no seletor de campos e no painel de

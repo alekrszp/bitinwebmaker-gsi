@@ -114,10 +114,13 @@ export default function BitinDetail() {
 
   return (
     <div>
-      <div className="mx-auto max-w-6xl">
+      {/* Cabeçalho, checklist e grade de materiais compartilham a mesma faixa de largura
+          inteira (-mx-4 cancela o padding do <main>, ver Layout.jsx) -- pedido direto:
+          as 3 faixas devem ocupar a tela toda, não ficar presas a uma caixa central. */}
+      <div className="-mx-4">
       {/* Cabeçalho -- réplica da aba "Template apresentação" da planilha real do BITin:
           logo/título/BITex/Setor na linha 1, Produto/Solicitante e Motivo/Data abaixo. */}
-      <div className="mb-6 overflow-hidden rounded border border-line">
+      <div className="mb-6 overflow-hidden border-y border-line">
         <div className="grid grid-cols-12 border-b border-line">
           <div className="col-span-3 flex items-center justify-center bg-white px-2 py-2 text-center sm:col-span-2">
             <img src="/logo.svg" className="max-h-14 w-full object-contain" alt="Grain & Protein Technologies" />
@@ -191,13 +194,11 @@ export default function BitinDetail() {
       <div className="mb-6">
         <ChecklistEditor checklist={form.checklist} onChange={setChecklist} />
       </div>
-      </div>
 
-      {/* Grade de materiais -- fora do container centralizado de propósito: "deve ser
-          literalmente um excel", usando a largura inteira da tela (a diferença entre `main`
-          ter `max-w-6xl` ou não é justamente pra isso, ver Layout.jsx), sem moldura de card. */}
-      <div className="mb-6 -mx-4">
+      {/* Grade de materiais -- "deve ser literalmente um excel", sem moldura de card. */}
+      <div className="mb-6">
         <MaterialGrid materiais={form.materiais} onChange={setMateriais} errors={enviarErrors} />
+      </div>
       </div>
 
       <div className="mx-auto max-w-6xl">

@@ -49,6 +49,13 @@ All notable changes to this project will be documented in this file.
   moldura de card (`MaterialGrid.jsx`) — encosta nas bordas reais da tela, "literalmente um
   excel" em vez de uma tabela dentro de um formulário. Padding/fonte de células, cabeçalho e
   botões de ação aumentados; cálculo de largura de coluna unificado num único helper.
+- **Checklist em grade de colunas, cabeçalho+checklist+grade em largura total** (7ª rodada,
+  a partir de um wireframe de estrutura enviado pelo usuário): `ChecklistEditor.jsx` trocou a
+  lista de 22 linhas empilhadas (`<table>`) por uma grade de 2-4 colunas (conforme a largura da
+  tela), com o campo Observação só aparecendo quando o item está marcado "SIM" — a faixa caiu
+  de ~750px pra ~280px de altura. Cabeçalho e checklist passaram a compartilhar o mesmo
+  `-mx-4` de largura total que só a grade de materiais tinha, então as 3 faixas (cabeçalho,
+  checklist, tabela) encostam nas bordas reais da tela.
   - Busca insensível a acento (`lib/textSearch.js`) no seletor de campos e no painel de
     Detalhes — achado testando: buscar "liquido" não encontrava "Peso Líquido".
 - **Identidade visual da marca (Grain & Protein Technologies) + tema claro/escuro**
