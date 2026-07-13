@@ -20,9 +20,15 @@ Release criado a partir da tag `v0.5.0`.
 
 - **Login/autenticação**: `POST /auth/login`, rota protegida (`RequireAuth`) redireciona pro
   login sem token, logout, interceptor axios limpa token em `401`.
+- **Tela de login com design completo** (`Login.jsx`, foco 100% em UI/UX): layout dividido
+  (painel de marca navy + formulário), campos com ícone, botão de mostrar/esconder senha, erro
+  estruturado com `role="alert"`, spinner de carregamento no botão, tema claro/escuro
+  disponível já no login (`ThemeToggle.jsx` extraído de `Layout.jsx` pra reaproveitar),
+  responsivo (painel de marca colapsa no celular), versão da aplicação no rodapé lida de
+  `package.json` (não texto fixo).
 - **Identidade visual da marca** (Grain & Protein Technologies): paleta como tokens Tailwind
   v4, logo real (`frontend/public/logo.svg`) no cabeçalho e na tela de login, tema claro/escuro
-  (toggle no cabeçalho, padrão claro, persiste no navegador).
+  (toggle, padrão claro, persiste no navegador).
 - **Shell autenticado** (`Layout.jsx`): cabeçalho com logo, e-mail do usuário, toggle de tema,
   botão sair — base pras próximas telas.
 

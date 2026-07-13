@@ -100,11 +100,18 @@ Primeira tela reconstruída depois do reset — pedido direto: "focar 100% no de
 usando o backend real (não mock) desde já, já que Postgres já está rodando e testado nesta
 máquina.
 
-- **Layout dividido** (`Login.jsx`): painel de marca à esquerda (`bg-brand-navy`, logo, título
-  "Boletim de Informações Técnicas Interno", subtítulo, faixa de 3 cores — mesma referência
-  visual do cabeçalho pós-login) + formulário à direita, só em telas médias+
-  (`hidden md:flex`). No celular o painel de marca colapsa pra só a logo centralizada acima do
-  formulário, em vez de gastar metade da tela vertical com algo decorativo.
+- **Layout dividido** (`Login.jsx`): painel de marca à esquerda (`bg-brand-navy`, logo, título,
+  subtítulo, faixa de 3 cores — mesma referência visual do cabeçalho pós-login) + formulário à
+  direita, só em telas médias+ (`hidden md:flex`). No celular o painel de marca colapsa pra só
+  a logo centralizada acima do formulário, em vez de gastar metade da tela vertical com algo
+  decorativo. Logo + título + subtítulo formam um único bloco vertical centralizado
+  (`justify-center`, não `justify-between`) — a 1ª versão prendia a logo isolada no topo do
+  painel, com um vão vazio grande até o texto lá embaixo ("a logo ficou meio perdida"),
+  corrigido agrupando os três num bloco só.
+- **Versão da aplicação no rodapé** (não texto fixo): `Login.jsx` importa `version` direto de
+  `frontend/package.json` (suportado nativamente pelo Vite, sem config extra — confirmado com
+  `npm run build`). `package.json` estava com o placeholder padrão do Vite (`0.0.0`),
+  sincronizado pra `0.5.0` — mesma versão rastreada em `backend/config.py` e nas releases.
 - **`ThemeToggle.jsx` extraído de `Layout.jsx`**: antes só existia dentro do cabeçalho
   pós-login; agora é um componente próprio (`className` ajustável pra contraste claro/escuro
   em fundos diferentes) — o login também tem o toggle (canto superior direito), porque a

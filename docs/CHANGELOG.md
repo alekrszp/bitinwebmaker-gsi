@@ -15,6 +15,13 @@ All notable changes to this project will be documented in this file.
   endpoints saiu. Ver `docs/FRONTEND.md`, seção "Reset da tela de Bitins".
 
 ### Added
+- **Tela de login redesenhada** (pós-reset, foco 100% em UI/UX, backend real desde já — não
+  mock): layout dividido (painel de marca navy + formulário), logo/título/subtítulo agrupados
+  num bloco centralizado (1ª versão prendia a logo isolada no topo, "meio perdida"), campos com
+  ícone, botão de mostrar/esconder senha, erro com `role="alert"`, spinner de carregamento,
+  tema claro/escuro disponível já no login (`ThemeToggle.jsx` extraído de `Layout.jsx`),
+  responsivo, versão da aplicação no rodapé lida de `frontend/package.json` (sincronizado de
+  `0.0.0` pra `0.5.0`) em vez de texto fixo.
 - **Tela de cadastro reconstruída como a aba "Template apresentação" real** (5ª rodada,
   correção de rota — as rodadas 1-4 tinham usado a aba `ZBPP009 + ALTERACAO`, mas o print
   enviado era do documento formatado): cabeçalho em faixas (logo/título/BITex/Setor dourado +
