@@ -42,7 +42,7 @@ fluxo hoje feito em Excel/VBA (`Novo_template_BITin_V2 TESTE.xlsm`) para Python 
    .venv/Scripts/python.exe scripts/lista_tecnica_export.py meu_bitin.json --out-csv lista_tecnica.csv
    ```
 
-4. Rodar a suíte de testes (147 testes cobrindo tudo acima):
+4. Rodar a suíte de testes (158 testes cobrindo tudo acima):
 
    ```powershell
    .venv/Scripts/python.exe -m unittest discover -s tests
@@ -73,10 +73,13 @@ automatizados rodam sem bancos reais (SQLite + mongomock-motor).
 ## Frontend (web)
 
 `frontend/` é a interface web que substitui o Excel/VBA pro engenheiro — React + Vite +
-Tailwind + react-router-dom, sem lib de estado global. Ver `docs/FRONTEND.md` para arquitetura,
-o que já funciona (login, "Meus Bitins", criar/editar rascunho, visualizar enviado — validado
-ponta a ponta com o backend real) e o que ainda falta (colar do SAP, edição de
-dados_basicos/impactos_operacionais, lista técnica, ordem de cliente).
+Tailwind + react-router-dom, sem lib de estado global. Ver `docs/FRONTEND.md` para arquitetura
+completa. Já funciona: login, "Meus Bitins", tela de cadastro como réplica da planilha real
+(cabeçalho + checklist de 22 itens editável + grid de materiais com todos os ~30 campos
+De/Para, navegação/colar estilo Excel, colunas congeladas, colar relatório do SAP), envio com
+validação (célula exata destacada em caso de erro) e visualização do BITin enviado. Ainda
+falta: lista técnica, ordem de cliente, auto-cálculo do checklist a partir dos materiais (ver
+"O que NÃO está nesta fatia ainda" em `docs/FRONTEND.md`).
 
 ```powershell
 cd frontend
@@ -89,6 +92,8 @@ npm run dev
 Releases são criadas manualmente no GitHub, usando `docs/RELEASE_vX.Y.Z.md` como corpo de
 cada release. O processo não é automatizado — a publicação é feita pelo GitHub web interface.
 
+- v0.5.0 (pendente de tag) — tela de cadastro como réplica da planilha real do BITin, identidade
+  visual + tema claro/escuro: `docs/RELEASE_v0.5.0.md`
 - v0.4.0 — primeira fatia do frontend web: `docs/RELEASE_v0.4.0.md` — <https://github.com/alekrszp/bitinwebmaker-gsi/releases/tag/v0.4.0>
 - v0.3.0 — autenticação, reforço de dono, validação de `ordem_cliente[]`: `docs/RELEASE_v0.3.0.md` — <https://github.com/alekrszp/bitinwebmaker-gsi/releases/tag/v0.3.0>
 - v0.2.0 — modelo de BITin, regras de negócio, ciclo de vida, backend: `docs/RELEASE_v0.2.0.md` — <https://github.com/alekrszp/bitinwebmaker-gsi/releases/tag/v0.2.0>
@@ -137,6 +142,7 @@ Veja também `docs/CHANGELOG.md` para as notas de release completas.
 
 Ler `docs/BITIN_MODEL.md` (modelo de dados e regras), `docs/BACKEND.md` (API) e
 `docs/FRONTEND.md` (interface web) para a visão completa do sistema atual. Próximos
-incrementos do frontend: colar do SAP, edição de dados básicos/impactos operacionais por
-material, lista técnica e ordem de cliente (ver `docs/FRONTEND.md`, seção "O que NÃO está
-nesta fatia ainda"). `docs/README_HANDOFF.md` guarda o histórico do PoC original (v0.1.0).
+incrementos do frontend: lista técnica, ordem de cliente, auto-cálculo do checklist a partir
+dos materiais (ver `docs/FRONTEND.md`, seção "O que NÃO está nesta fatia ainda"). Ajuste
+visual em andamento — aguardando telas do Figma do usuário pra próxima rodada.
+`docs/README_HANDOFF.md` guarda o histórico do PoC original (v0.1.0).
