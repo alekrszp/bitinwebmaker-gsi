@@ -66,7 +66,7 @@ export default function MeusBitins() {
         <h1 className="text-2xl font-semibold text-gray-900">Meus Bitins</h1>
         <Link
           to="/bitins/novo"
-          className="rounded bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
+          className="rounded bg-brand-navy px-4 py-2 text-sm font-medium text-white hover:bg-brand-navy-dark"
         >
           + Novo rascunho
         </Link>
@@ -79,7 +79,7 @@ export default function MeusBitins() {
               key={a.id}
               onClick={() => setAba(a.id)}
               className={`rounded px-3 py-1.5 text-sm font-medium ${
-                aba === a.id ? 'bg-blue-600 text-white' : 'bg-white text-gray-700 border border-gray-300'
+                aba === a.id ? 'bg-brand-navy text-white' : 'bg-white text-gray-700 border border-gray-300'
               }`}
             >
               {a.label}
@@ -98,7 +98,7 @@ export default function MeusBitins() {
             placeholder="Buscar por motivo, solicitante, número..."
             value={termo}
             onChange={(e) => setTermo(e.target.value)}
-            className="rounded border border-gray-300 px-3 py-1.5 text-sm focus:border-blue-500 focus:outline-none"
+            className="rounded border border-gray-300 px-3 py-1.5 text-sm focus:border-brand-navy focus:outline-none"
           />
           <button type="submit" className="rounded border border-gray-300 px-3 py-1.5 text-sm hover:bg-gray-100">
             Buscar

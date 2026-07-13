@@ -187,7 +187,7 @@ export default function BitinDetail() {
         <button
           onClick={handleEnviar}
           disabled={saving}
-          className="rounded bg-blue-600 px-4 py-2 font-medium text-white hover:bg-blue-700 disabled:opacity-50"
+          className="rounded bg-brand-navy px-4 py-2 font-medium text-white hover:bg-brand-navy-dark disabled:opacity-50"
         >
           Enviar
         </button>

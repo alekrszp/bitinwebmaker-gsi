@@ -40,9 +40,9 @@ const FIXED_COLUMNS = [
 function buildColumns(schema, visibleFields) {
   if (!schema) return FIXED_COLUMNS
 
-  // "para" pintado como "Novo" em vermelho no cabeçalho -- convenção da própria planilha real
-  // do BITin (aba "ZBPP009 + ALTERACAO"): toda coluna "Novo"/editável tem o rótulo em
-  // vermelho negrito, diferente das colunas de valor atual. Mantido aqui de propósito.
+  // "para" pintado como "Novo" no cabeçalho -- convenção da própria planilha real do BITin
+  // (aba "ZBPP009 + ALTERACAO", onde é vermelho negrito), aqui em laranja da marca pra não se
+  // confundir com o vermelho de erro de validação que também aparece nesta mesma célula.
   const dadosBasicosCols = visibleFields.flatMap((campo) => {
     const label = schema.dados_basicos.find((c) => c.key === campo)?.label || campo
     return [
@@ -253,7 +253,7 @@ export default function MaterialGrid({ materiais, onChange, errors = [], disable
               <tr>
                 <th
                   style={{ width: ROW_NUMBER_WIDTH }}
-                  className="sticky top-0 left-0 z-30 border border-gray-200 bg-gray-100 px-2 py-2.5 text-xs font-semibold text-gray-500"
+                  className="sticky top-0 left-0 z-30 border border-gray-200 bg-brand-navy-50 px-2 py-2.5 text-xs font-semibold text-brand-navy/70"
                 >
                   #
                 </th>
@@ -261,14 +261,14 @@ export default function MaterialGrid({ materiais, onChange, errors = [], disable
                   <th
                     key={colIndex}
                     style={col.freeze ? { left: ROW_NUMBER_WIDTH } : undefined}
-                    className={`${CELL_WIDTHS[col.width || 'md']} sticky top-0 border border-gray-200 bg-gray-100 px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide ${
-                      col.variant === 'novo' ? 'text-red-600' : 'text-gray-600'
+                    className={`${CELL_WIDTHS[col.width || 'md']} sticky top-0 border border-gray-200 bg-brand-navy-50 px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide ${
+                      col.variant === 'novo' ? 'text-brand-orange' : 'text-brand-navy/80'
                     } ${col.freeze ? 'z-30' : 'z-20'}`}
                   >
                     {col.label}
                     {col.required && <span className="text-red-500"> *</span>}
                     {col.subLabel && (
-                      <span className={`block text-[10px] font-normal normal-case tracking-normal ${col.variant === 'novo' ? 'text-red-500' : 'text-gray-400'}`}>
+                      <span className={`block text-[10px] font-normal normal-case tracking-normal ${col.variant === 'novo' ? 'text-brand-orange/80' : 'text-gray-400'}`}>
                         {col.subLabel}
                       </span>
                     )}
@@ -277,7 +277,7 @@ export default function MaterialGrid({ materiais, onChange, errors = [], disable
                 {!disabled && (
                   <th
                     style={{ width: ACTIONS_WIDTH }}
-                    className="sticky top-0 z-20 border border-gray-200 bg-gray-100 px-3 py-2.5 text-center text-xs font-semibold text-gray-600"
+                    className="sticky top-0 z-20 border border-gray-200 bg-brand-navy-50 px-3 py-2.5 text-center text-xs font-semibold text-brand-navy/70"
                   >
                     Ações
                   </th>
@@ -286,7 +286,7 @@ export default function MaterialGrid({ materiais, onChange, errors = [], disable
             </thead>
             <tbody>
               {materiais.map((material, rowIndex) => (
-                <tr key={rowIndex} className={`group ${rowIndex % 2 === 1 ? 'bg-gray-50' : 'bg-white'} hover:bg-blue-50`}>
+                <tr key={rowIndex} className={`group ${rowIndex % 2 === 1 ? 'bg-gray-50' : 'bg-white'} hover:bg-brand-navy-50`}>
                   <td
                     style={{ width: ROW_NUMBER_WIDTH }}
                     className="sticky left-0 z-10 border border-gray-200 bg-inherit px-2 py-2 text-center text-xs text-gray-400"
@@ -363,7 +363,7 @@ function GridCell({ col, rowIndex, colIndex, value, disabled, hasError, errorMes
     ? 'border-red-400 bg-red-50 ring-1 ring-inset ring-red-400'
     : 'border-gray-200 bg-inherit'
   const inputClass = `h-full w-full bg-transparent px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-inset ${
-    hasError ? 'focus:ring-red-500' : 'focus:ring-blue-500'
+    hasError ? 'focus:ring-red-500' : 'focus:ring-brand-navy'
   } disabled:text-gray-400`
   const stickyStyle = freezeOffset !== undefined ? { left: freezeOffset } : undefined
   const stickyClass = freezeOffset !== undefined ? 'sticky z-10' : ''
@@ -461,7 +461,7 @@ function FieldPicker({ schema, visibleFields, setVisibleFields, open, setOpen })
               <button
                 type="button"
                 onClick={() => setVisibleFields(schema.dados_basicos.map((c) => c.key))}
-                className="text-blue-600 hover:underline"
+                className="text-brand-navy hover:underline"
               >
                 Selecionar tudo
               </button>
@@ -533,7 +533,7 @@ function SapImportPanel({ onParsed, onClose }) {
           type="button"
           onClick={processar}
           disabled={loading || !texto.trim()}
-          className="rounded bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
+          className="rounded bg-brand-navy px-3 py-1.5 text-sm font-medium text-white hover:bg-brand-navy-dark disabled:opacity-50"
         >
           {loading ? 'Processando...' : 'Adicionar materiais'}
         </button>

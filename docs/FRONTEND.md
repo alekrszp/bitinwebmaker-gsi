@@ -19,6 +19,23 @@ benefício claro nesse estágio.
 e isso gerou um bug real de rota lá). Aqui, `/bitins/novo` e `/bitins/:id` reaproveitam o
 mesmo componente.
 
+## Identidade visual (adicionado em 2026-07-13)
+
+Paleta extraída do logo da empresa (Grain & Protein Technologies — hexágonos
+frango/grão/porco em volta do texto, cada um numa cor), definida como tokens Tailwind v4
+(`@theme` em `frontend/src/index.css`, não hardcoded em cada componente):
+
+| Token | Uso |
+|---|---|
+| `brand-navy` / `brand-navy-dark` | Cor primária — cabeçalho do app, botões primários, links, foco de campo, `accent-color` de checkbox/select. Escolhida pra tudo que precisa de bom contraste (é escura). |
+| `brand-navy-50` | Tom sólido (não translúcido) claro de navy — fundo de cabeçalho de tabela/linha em hover. Precisa ser sólido, não com opacidade, porque cabeçalhos com coluna congelada (`position: sticky`) já tiveram bug de conteúdo vazando por trás de fundo translúcido (ver seção do grid). |
+| `brand-gold` | Só decorativo (faixa de 3 cores no cabeçalho, acento no wordmark "BITin") — **nunca como cor de texto**, contraste ruim pra leitura. |
+| `brand-green` | Faixa decorativa do cabeçalho; status "positivo" continua usando os tons semânticos do Tailwind (`green-700` etc.) onde precisa de contraste de texto pequeno. |
+| `brand-orange` | Indicador "Novo"/coluna editável no grid de materiais e no painel de Detalhes (ver abaixo) — deliberadamente **não** vermelho (que já é usado pra erro de validação na mesma tela; usar as duas cores evita confundir "isto você edita" com "isto está errado"). |
+
+Erros de validação continuam em vermelho puro (Tailwind `red-*`) — cor semântica de erro não
+muda com a marca, em nenhuma tela.
+
 ## Estrutura
 
 ```text

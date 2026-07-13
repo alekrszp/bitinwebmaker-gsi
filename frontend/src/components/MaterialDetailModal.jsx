@@ -37,7 +37,7 @@ export default function MaterialDetailModal({ material, schema, errors = [], row
     'w-full rounded border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-inset disabled:bg-gray-50 disabled:text-gray-400'
 
   function fieldClass(errMsg) {
-    return errMsg ? `${inputClass} border-red-400 bg-red-50 focus:ring-red-500` : `${inputClass} border-gray-300 focus:ring-blue-500`
+    return errMsg ? `${inputClass} border-red-400 bg-red-50 focus:ring-red-500` : `${inputClass} border-gray-300 focus:ring-brand-navy`
   }
 
   return (
@@ -123,16 +123,17 @@ export default function MaterialDetailModal({ material, schema, errors = [], row
                 value={busca}
                 onChange={(e) => setBusca(e.target.value)}
                 placeholder="Buscar campo..."
-                className="w-56 rounded border border-gray-300 px-2 py-1.5 text-sm focus:border-blue-500 focus:outline-none"
+                className="w-56 rounded border border-gray-300 px-2 py-1.5 text-sm focus:border-brand-navy focus:outline-none"
               />
             </div>
             <div className="overflow-hidden rounded border border-gray-200">
-              {/* "Novo"/Para em vermelho -- mesma convenção da planilha real do BITin (aba
-                  "ZBPP009 + ALTERACAO"): coluna editável sempre com rótulo vermelho. */}
-              <div className="grid grid-cols-[1.2fr_1fr_1fr] gap-3 bg-gray-50 px-3 py-2 text-xs font-medium uppercase tracking-wide">
-                <span className="text-gray-400">Campo</span>
-                <span className="text-gray-400">Atual</span>
-                <span className="text-red-600">Novo</span>
+              {/* "Novo"/Para em laranja da marca -- mesma ideia da planilha real do BITin (aba
+                  "ZBPP009 + ALTERACAO", onde é vermelho), mas laranja aqui pra não se confundir
+                  com o vermelho de erro de validação usado nesta mesma tela. */}
+              <div className="grid grid-cols-[1.2fr_1fr_1fr] gap-3 bg-brand-navy-50 px-3 py-2 text-xs font-medium uppercase tracking-wide">
+                <span className="text-brand-navy/60">Campo</span>
+                <span className="text-brand-navy/60">Atual</span>
+                <span className="text-brand-orange">Novo</span>
               </div>
               <div className="divide-y divide-gray-100">
                 {camposFiltrados.map((campo) => {
@@ -167,7 +168,7 @@ export default function MaterialDetailModal({ material, schema, errors = [], row
           <button
             type="button"
             onClick={onClose}
-            className="rounded bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
+            className="rounded bg-brand-navy px-4 py-2 text-sm font-medium text-white hover:bg-brand-navy-dark"
           >
             Fechar
           </button>
