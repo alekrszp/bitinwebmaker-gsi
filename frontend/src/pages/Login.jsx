@@ -32,18 +32,20 @@ export default function Login() {
     <div className="flex min-h-screen bg-app-bg">
       {/* Painel de marca -- só em telas médias+; no celular a logo aparece compacta em cima do
           formulário (ver abaixo), pra não gastar metade da tela com algo só decorativo. */}
-      <div className="relative hidden w-[42%] max-w-md flex-col justify-between overflow-hidden bg-brand-navy px-10 py-10 text-white md:flex lg:w-[38%]">
-        <span className="flex w-fit items-center rounded bg-white px-2.5 py-1.5">
-          <img src="/logo.svg" className="h-9" alt="Grain & Protein Technologies" />
-        </span>
+      <div className="relative hidden w-[42%] max-w-md flex-col overflow-hidden bg-brand-navy px-10 py-10 text-white md:flex lg:w-[38%]">
+        {/* Logo + título + subtítulo formam um único bloco centralizado -- antes a logo ficava
+            presa no topo, isolada, com um vão vazio grande até o texto lá embaixo; agrupados e
+            centralizados, o painel lê como uma composição, não como dois elementos soltos. */}
+        <div className="flex flex-1 flex-col justify-center">
+          <span className="mb-8 flex w-fit items-center rounded bg-white px-2.5 py-1.5 shadow-sm">
+            <img src="/logo.svg" className="h-9" alt="Grain & Protein Technologies" />
+          </span>
 
-        <div>
           <p className="text-2xl font-semibold leading-snug text-balance">
-            Boletim de Informações Técnicas Interno
+            BitinMaker -  Sistema de manuseamento de BITins.
           </p>
           <p className="mt-3 text-sm text-white/70">
-            Substitui o processo em Excel/VBA por um fluxo com validação, auditoria e histórico
-            — sem perder a flexibilidade que o engenheiro já tem hoje.
+            Sistema interno da Grain &amp; Protein Technologies de manuseamento de BITins.
           </p>
         </div>
 
@@ -67,7 +69,7 @@ export default function Login() {
         <div className="w-full max-w-sm">
           <h1 className="text-2xl font-semibold text-ink">Entrar</h1>
           <p className="mt-1 text-sm text-ink-muted">
-            Acesse sua conta pra continuar no BITin.
+            Acesse sua conta.
           </p>
 
           <form onSubmit={handleSubmit} noValidate className="mt-8 space-y-5">
