@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
+import MaterialGrid from '../components/MaterialGrid'
 import { api } from '../lib/api'
 
 function blankForm() {
@@ -11,10 +12,6 @@ function blankForm() {
     data_solicitacao: '',
     materiais: [],
   }
-}
-
-function blankMaterial() {
-  return { codigo_material: '', descricao_material: '', centro: '', tipo_material: '' }
 }
 
 const SETORES = ['Proteína Animal', 'Armazenagem de Grãos']
@@ -58,20 +55,8 @@ export default function BitinDetail() {
     setForm((atual) => ({ ...atual, [campo]: valor }))
   }
 
-  function addMaterial() {
-    setForm((atual) => ({ ...atual, materiais: [...atual.materiais, blankMaterial()] }))
-  }
-
-  function updateMaterial(idx, campo, valor) {
-    setForm((atual) => {
-      const materiais = [...atual.materiais]
-      materiais[idx] = { ...materiais[idx], [campo]: valor }
-      return { ...atual, materiais }
-    })
-  }
-
-  function removeMaterial(idx) {
-    setForm((atual) => ({ ...atual, materiais: atual.materiais.filter((_, i) => i !== idx) }))
+  function setMateriais(materiais) {
+    setForm((atual) => ({ ...atual, materiais }))
   }
 
   async function handleSalvar() {
@@ -172,60 +157,15 @@ export default function BitinDetail() {
         </Campo>
       </div>
 
-      <div className="mb-6 rounded border border-gray-200 bg-white p-4">
-        <div className="mb-3 flex items-center justify-between">
-          <h2 className="text-lg font-medium text-gray-900">Materiais</h2>
-          <button
-            onClick={addMaterial}
-            className="rounded border border-gray-300 px-3 py-1 text-sm hover:bg-gray-100"
-          >
-            + Adicionar material
-          </button>
-        </div>
-        {form.materiais.length === 0 && (
-          <p className="text-sm text-gray-500">Nenhum material adicionado ainda.</p>
-        )}
-        <div className="space-y-3">
-          {form.materiais.map((m, idx) => (
-            <div key={idx} className="grid grid-cols-1 gap-2 rounded border border-gray-100 p-3 sm:grid-cols-5">
-              <input
-                placeholder="Código material"
-                value={m.codigo_material}
-                onChange={(e) => updateMaterial(idx, 'codigo_material', e.target.value)}
-                className="rounded border border-gray-300 px-2 py-1.5 text-sm"
-              />
-              <input
-                placeholder="Descrição"
-                value={m.descricao_material}
-                onChange={(e) => updateMaterial(idx, 'descricao_material', e.target.value)}
-                className="rounded border border-gray-300 px-2 py-1.5 text-sm"
-              />
-              <input
-                placeholder="Centro"
-                value={m.centro}
-                onChange={(e) => updateMaterial(idx, 'centro', e.target.value)}
-                className="rounded border border-gray-300 px-2 py-1.5 text-sm"
-              />
-              <input
-                placeholder="Tipo material"
-                value={m.tipo_material}
-                onChange={(e) => updateMaterial(idx, 'tipo_material', e.target.value)}
-                className="rounded border border-gray-300 px-2 py-1.5 text-sm"
-              />
-              <button
-                onClick={() => removeMaterial(idx)}
-                className="rounded border border-red-300 px-2 py-1.5 text-sm text-red-700 hover:bg-red-50"
-              >
-                Remover
-              </button>
-            </div>
-          ))}
-        </div>
+      <div className="mb-6">
+        <MaterialGrid materiais={form.materiais} onChange={setMateriais} errors={enviarErrors} />
       </div>
 
       {enviarErrors.length > 0 && (
         <div className="mb-4 rounded border border-red-300 bg-red-50 p-4">
-          <p className="mb-2 font-medium text-red-800">Não foi possível enviar:</p>
+          <p className="mb-2 font-medium text-red-800">
+            Não foi possível enviar ({enviarErrors.length} erro{enviarErrors.length > 1 ? 's' : ''}) — as células com erro estão destacadas acima.
+          </p>
           <ul className="list-inside list-disc text-sm text-red-700">
             {enviarErrors.map((e, i) => (
               <li key={i}>{e.message}</li>

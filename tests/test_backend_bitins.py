@@ -392,6 +392,37 @@ class BitinApiTest(unittest.TestCase):
         self.assertEqual(bitin_sql.criado_por, self.default_user.email)
         db.close()
 
+    def test_schema_materiais_traz_colunas_dinamicas(self) -> None:
+        resp = self.client.get("/api/v1/bitins/schema/materiais")
+        self.assertEqual(resp.status_code, 200, resp.text)
+        body = resp.json()
+        self.assertGreater(len(body["dados_basicos"]), 0)
+        self.assertTrue(any(col["key"] == "ncm" for col in body["dados_basicos"]))
+        alt_col = next(col for col in body["impactos_operacionais"] if col["key"] == "alt")
+        self.assertIn("D/P", alt_col["options"])
+
+    def test_schema_materiais_exige_autenticacao(self) -> None:
+        client_sem_auth = TestClient(app)
+        resp = client_sem_auth.get("/api/v1/bitins/schema/materiais")
+        self.assertEqual(resp.status_code, 401)
+
+    def test_parse_sap_paste_devolve_materiais(self) -> None:
+        # colunas de plan1_identificacao_columns (config/vba_mapping.json): 1=tipo_material,
+        # 2=codigo_material, 4=centro, 5=descricao_material, 6=grupo_mercadorias_atual, 14=tem_desenho
+        linha = "MP\tCOD123\t\t2001\tPeça teste\tSA016\t\t\t\t\t\t\t\tSIM"
+        resp = self.client.post("/api/v1/bitins/parse-sap-paste", json={"raw_text": linha})
+        self.assertEqual(resp.status_code, 200, resp.text)
+        materiais = resp.json()["materiais"]
+        self.assertEqual(len(materiais), 1)
+        self.assertEqual(materiais[0]["codigo_material"], "COD123")
+        self.assertEqual(materiais[0]["centro"], "2001")
+        self.assertTrue(materiais[0]["tem_desenho"])
+
+    def test_parse_sap_paste_texto_vazio_devolve_lista_vazia(self) -> None:
+        resp = self.client.post("/api/v1/bitins/parse-sap-paste", json={"raw_text": ""})
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.json()["materiais"], [])
+
 
 if __name__ == "__main__":
     unittest.main()

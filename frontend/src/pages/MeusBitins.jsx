@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
+import { useAuth } from '../context/AuthContext'
 import { api } from '../lib/api'
 
 const ABAS = [
@@ -8,7 +9,19 @@ const ABAS = [
   { id: 'enviado', label: 'Enviados', status: 'enviado' },
 ]
 
+// Espelha backend/api/bitins.py::ADMIN_LEVEL -- só usado aqui pra esconder a ação de
+// excluir que o backend já recusaria com 403 (reforço de dono, ver docs/BACKEND.md).
+const ADMIN_LEVEL = 99
+
+function podeExcluir(bitin, user) {
+  if (!user) return false
+  if (user.permission_level >= ADMIN_LEVEL) return true
+  // criado_por nulo = rascunho sem dono registrado (formato antigo) -- backend não bloqueia.
+  return !bitin.criado_por || bitin.criado_por === user.email
+}
+
 export default function MeusBitins() {
+  const { user } = useAuth()
   const [aba, setAba] = useState('todos')
   const [termo, setTermo] = useState('')
   const [bitins, setBitins] = useState([])
@@ -125,7 +138,7 @@ export default function MeusBitins() {
               >
                 {b.status === 'enviado' ? 'Visualizar' : 'Editar'}
               </Link>
-              {b.status === 'rascunho' && (
+              {b.status === 'rascunho' && podeExcluir(b, user) && (
                 <button
                   onClick={() => handleExcluir(b.mongo_id)}
                   className="rounded border border-red-300 px-3 py-1 text-sm text-red-700 hover:bg-red-50"

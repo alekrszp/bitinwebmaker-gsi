@@ -10,6 +10,7 @@ import bitin_model as bm  # noqa: E402
 import vba_port_export as vpe  # noqa: E402
 
 CONFIG_PATH = ROOT / "config" / "vba_mapping.json"
+DOCUMENT_CONFIG_PATH = ROOT / "config" / "bitin_document_mapping.json"
 
 
 def make_bitin(**overrides) -> dict:
@@ -151,6 +152,34 @@ class MaterialToPlan2RowTest(unittest.TestCase):
         row = bm.material_to_plan2_row(material, self.config)
         # grupo_mercadorias não foi informado -> deve ficar vazio (convenção vazio)
         self.assertEqual(row[9], "")
+
+
+class MateriaisSchemaTest(unittest.TestCase):
+    """build_materiais_schema é a fonte única de colunas do grid de materiais no frontend
+    (ver docs/BACKEND.md, 'Grid de materiais dirigido por schema') -- cobre que ela reflete
+    o crosswalk e os valores válidos reais, sem duplicar essas listas na UI."""
+
+    def setUp(self) -> None:
+        self.vba_config = bm.load_config(CONFIG_PATH)
+        self.document_config = bm.load_config(DOCUMENT_CONFIG_PATH)
+        self.schema = bm.build_materiais_schema(self.vba_config, self.document_config)
+
+    def test_dados_basicos_reflete_o_crosswalk_na_mesma_ordem(self) -> None:
+        campos_crosswalk = list(self.vba_config["bitin_schema_crosswalk"]["dados_basicos"].keys())
+        campos_schema = [col["key"] for col in self.schema["dados_basicos"]]
+        self.assertEqual(campos_schema, campos_crosswalk)
+
+    def test_impactos_operacionais_traz_as_opcoes_do_pop(self) -> None:
+        alt_col = next(col for col in self.schema["impactos_operacionais"] if col["key"] == "alt")
+        self.assertEqual(alt_col["options"], self.document_config["valores_validos"]["alt"])
+
+    def test_identificacao_marca_campos_obrigatorios(self) -> None:
+        chaves_obrigatorias = {col["key"] for col in self.schema["identificacao"] if col["required"]}
+        self.assertEqual(chaves_obrigatorias, {"codigo_material", "centro", "tipo_material"})
+
+    def test_impactos_condicionais_referencia_est_igual_s(self) -> None:
+        centro_custo = next(col for col in self.schema["impactos_condicionais"] if col["key"] == "centro_custo")
+        self.assertEqual(centro_custo["required_when"], {"field": "impactos_operacionais.est", "equals": "S"})
 
 
 class EndToEndBitinToPlan3Test(unittest.TestCase):

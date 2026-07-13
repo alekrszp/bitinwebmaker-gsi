@@ -107,10 +107,25 @@ edita o rascunho de outra pessoa), `created_at`, `updated_at`.
 | DELETE | `/bitins/{mongo_id}` | Apaga um rascunho. Recusa se já enviado. |
 | POST | `/bitins/{mongo_id}/enviar` | **O ponto-chave**: chama `bitin_lifecycle.enviar_bitin` (todas as validações de uma vez). Se falhar, devolve **200 com `ok=false` e a lista de erros estruturados** (`{field, code, message}`) no corpo — não é um erro HTTP, é um resultado de validação de negócio (a chamada em si funcionou). Se passar, gera o número sequencial (com retry seguro), cria a linha no Postgres, atualiza o Mongo. |
 | GET | `/bitins/{mongo_id}/resumo` | `bitin_view.render_bitin_summary` — pré-visualização/tela final. |
+| GET | `/bitins/schema/materiais` | `bitin_model.build_materiais_schema` — colunas do grid de materiais (identificação, snapshot, `dados_basicos` De/Para, `impactos_operacionais` com as opções válidas do POP) derivadas do `bitin_schema_crosswalk` (`config/vba_mapping.json`) e do `valores_validos` (`config/bitin_document_mapping.json`). Adicionado em 2026-07-13 (ver "Grid de materiais dirigido por schema" abaixo). |
+| POST | `/bitins/parse-sap-paste` | `sap_paste_parser.parse_sap_paste_to_materiais` — recebe o texto colado do SAP (`{"raw_text": "..."}`) e devolve `materiais[]` prontos (identificação + snapshot atual) pro frontend inserir no grid. Adicionado em 2026-07-13. |
 
 **Ainda não incluído nesta rodada** (próximo passo natural, não construído agora pra manter
 escopo gerenciável): endpoints que geram de fato os arquivos de export (Plan2 `.xlsx`, CSV do
 Winshuttle, lista técnica) a partir de um BITin já enviado.
+
+### Grid de materiais dirigido por schema (adicionado em 2026-07-13)
+
+Decisão registrada: o frontend do grid de materiais (ver `docs/FRONTEND.md`) **não hardcoda**
+a lista de colunas (nomes de campo, rótulos, opções de enum). Isso já causou duplicação
+arriscada no projeto irmão `GPT_Engineering_BITIN` (array de ~80 colunas copiado à mão no JS, a
+partir do mesmo crosswalk que o backend já tinha) — qualquer mudança no crosswalk exigiria
+lembrar de atualizar os dois lados, e nada acusa a divergência automaticamente. Em vez disso,
+`GET /bitins/schema/materiais` devolve a lista de colunas pronta (`bitin_model.build_materiais_schema`),
+e o frontend renderiza o grid a partir dela — uma fonte única de verdade.
+
+Pelo mesmo motivo, `POST /bitins/parse-sap-paste` reaproveita `sap_paste_parser.py` (já testado)
+em vez de reimplementar o parser de colagem em JavaScript.
 
 **Auth/users/sectors** (ver seção "Autenticação" abaixo para o design completo):
 

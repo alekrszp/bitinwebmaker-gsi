@@ -107,6 +107,74 @@ def validate_ordem_cliente(bitin: dict[str, Any]) -> list[BitinError]:
     return errors
 
 
+IMPACTOS_OPERACIONAIS_LABELS = {
+    "alt": "Alt",
+    "est": "Est",
+    "esp": "Esp",
+    "lp": "LP",
+    "pre": "Pré",
+    "oc": "OC",
+    "of": "OF",
+}
+
+LABEL_OVERRIDES = {
+    "ncm": "NCM",
+}
+
+
+def _humanize_label(campo: str) -> str:
+    palavras = campo.split("_")
+    return " ".join(LABEL_OVERRIDES.get(p, p.capitalize()) for p in palavras)
+
+
+def build_materiais_schema(vba_mapping_config: dict[str, Any], document_config: dict[str, Any]) -> dict[str, Any]:
+    """Monta a definição de colunas do grid de materiais (frontend) a partir do crosswalk
+    já existente (`bitin_schema_crosswalk`) e dos valores válidos do POP (`valores_validos`).
+    Fonte única de verdade: o frontend não deve hardcodar essas colunas (ver docs/BACKEND.md,
+    'Grid de materiais dirigido por schema')."""
+    crosswalk = vba_mapping_config["bitin_schema_crosswalk"]
+    valores_validos = document_config["valores_validos"]
+
+    identificacao = [
+        {"key": "codigo_material", "label": "Código material", "required": True},
+        {"key": "descricao_material", "label": "Descrição", "required": False},
+        {"key": "centro", "label": "Centro", "required": True},
+        {"key": "tipo_material", "label": "Tipo Material", "required": True},
+    ]
+    snapshot = [
+        {"key": "grupo_mercadorias_atual", "label": "Grupo Mercadorias (atual)", "type": "text"},
+        {"key": "tem_desenho", "label": "Tem desenho (atual)", "type": "boolean"},
+        {"key": "desenho_aprovado", "label": "Desenho aprovado", "type": "boolean"},
+        {"key": "ncm_aprovado_fiscal", "label": "NCM aprovado (fiscal)", "type": "boolean"},
+    ]
+    dados_basicos = [
+        {"key": campo, "label": _humanize_label(campo)} for campo in crosswalk["dados_basicos"]
+    ]
+    impactos_operacionais = [
+        {"key": campo, "label": IMPACTOS_OPERACIONAIS_LABELS[campo], "options": valores_validos[campo]}
+        for campo in ("alt", "est", "esp", "lp", "pre", "oc", "of")
+    ]
+    impactos_condicionais = [
+        {
+            "key": "centro_custo",
+            "label": "Centro de custo",
+            "required_when": {"field": "impactos_operacionais.est", "equals": "S"},
+        },
+        {
+            "key": "conta_razao",
+            "label": "Conta razão",
+            "required_when": {"field": "impactos_operacionais.est", "equals": "S"},
+        },
+    ]
+    return {
+        "identificacao": identificacao,
+        "snapshot": snapshot,
+        "dados_basicos": dados_basicos,
+        "impactos_operacionais": impactos_operacionais,
+        "impactos_condicionais": impactos_condicionais,
+    }
+
+
 def _na_convention_cols(config: dict[str, Any]) -> set[int]:
     return {
         rule["plan2_col"]

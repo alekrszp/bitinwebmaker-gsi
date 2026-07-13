@@ -17,9 +17,11 @@ import bitin_document
 import bitin_lifecycle
 import bitin_model
 import bitin_view
+import sap_paste_parser
 
 VBA_MAPPING_CONFIG = bitin_model.load_config(scripts_path.VBA_MAPPING_CONFIG_PATH)
 DOCUMENT_CONFIG = bitin_document.load_config(scripts_path.DOCUMENT_CONFIG_PATH)
+MATERIAIS_SCHEMA = bitin_model.build_materiais_schema(VBA_MAPPING_CONFIG, DOCUMENT_CONFIG)
 
 router = APIRouter()
 
@@ -32,6 +34,10 @@ class DraftRequest(BaseModel):
     mongo_id: str | None = None
     titulo: str | None = None
     content: dict[str, Any]
+
+
+class SapPasteRequest(BaseModel):
+    raw_text: str
 
 
 class BitinResponse(BaseModel):
@@ -73,6 +79,26 @@ def _require_owner_or_admin(doc: dict[str, Any], current_user: Usuario) -> None:
             status_code=403,
             detail="Só quem criou o rascunho (ou um admin) pode editar/excluir",
         )
+
+
+@router.get("/schema/materiais")
+async def get_materiais_schema(_current_user: Usuario = Depends(get_current_active_user)):
+    """Colunas do grid de materiais do frontend -- fonte única de verdade (ver
+    docs/BACKEND.md, 'Grid de materiais dirigido por schema'). Config já carregada em
+    memória no import do módulo (mesmo config imutável usado por validate_bitin/enviar)."""
+    return MATERIAIS_SCHEMA
+
+
+@router.post("/parse-sap-paste")
+async def parse_sap_paste_endpoint(
+    paste_in: SapPasteRequest,
+    _current_user: Usuario = Depends(get_current_active_user),
+):
+    """Colar do SAP -> materiais[] prontos (identificação + snapshot atual), pro frontend
+    inserir no grid. Reaproveita sap_paste_parser.py (já testado) em vez de reimplementar
+    o parser em JS."""
+    materiais = sap_paste_parser.parse_sap_paste_to_materiais(paste_in.raw_text, VBA_MAPPING_CONFIG)
+    return {"materiais": materiais}
 
 
 @router.post("/draft", response_model=BitinResponse)

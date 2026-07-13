@@ -2,6 +2,41 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v0.5.0] - 2026-07-13
+
+### Added
+- **Grid de materiais dirigido por schema** (`frontend/src/components/MaterialGrid.jsx`,
+  `docs/FRONTEND.md`): substitui a lista simples de identificação por uma planilha completa
+  (linha = material, colunas = campos) cobrindo `dados_basicos` (De/Para, ~30 campos, ocultos
+  por padrão até o usuário escolher quais editar), `impactos_operacionais` (Alt/Est/Esp/LP/
+  Pré/OC/OF como `<select>` com as opções válidas do POP) e snapshot atual (grupo mercadorias,
+  tem desenho, desenho aprovado, NCM aprovado fiscal). Modelado no `CodeForm.jsx` do projeto
+  irmão `GPT_Engineering_BITIN`, mas reconstruído: colunas vêm do backend (não hardcoded),
+  colar do SAP reaproveita o parser Python já testado, e erros de envio destacam a célula
+  exata em vez de só listar texto solto.
+- **`GET /bitins/schema/materiais`** (`bitin_model.build_materiais_schema`): fonte única de
+  colunas do grid — identificação, snapshot, `dados_basicos` (na mesma ordem do crosswalk) e
+  `impactos_operacionais` com os valores válidos do POP (`config/bitin_document_mapping.json`).
+- **`POST /bitins/parse-sap-paste`**: expõe `sap_paste_parser.parse_sap_paste_to_materiais` pro
+  frontend — colar linhas do SAP na planilha vira materiais novos direto no grid.
+- **Erro de envio → célula do grid**: `frontend/src/lib/bitinErrors.js` faz o parse do `field`
+  estruturado (`materiais[0].alteracoes.dados_basicos.ncm`, etc.) pra destacar a célula exata,
+  além da lista completa de erros já existente.
+- **RBAC visível em "Meus Bitins"**: o botão "Excluir" some quando o usuário não é dono nem
+  admin (o backend já recusava com `403`; a UI agora não oferece a ação de antemão).
+
+### Notes
+- 8 testes novos (Python): `build_materiais_schema` (`tests/test_bitin_model.py`) + os dois
+  endpoints novos (`tests/test_backend_bitins.py`) — 154 testes automatizados no total.
+- Validado manualmente com Playwright ad-hoc (login → criar rascunho → adicionar material →
+  filtrar campo NCM → selecionar Alt → colar do SAP → enviar com erros mockados → célula
+  destacada) — mesma limitação de ambiente já documentada (sem MongoDB real, backend testado
+  com `mongomock-motor`/rotas mockadas onde necessário).
+- Ainda não incluído (ver `docs/FRONTEND.md`, "O que NÃO está nesta fatia ainda"):
+  `ordem_cliente[]`, `lista_tecnica[]`, checklist editável, modo de leitura explícito pra quem
+  abre o rascunho de outra pessoa sem ser dono/admin, mesclar (em vez de sempre duplicar) ao
+  colar do SAP em cima de um material já existente no grid.
+
 ## [v0.4.0] - 2026-07-10
 
 ### Added
