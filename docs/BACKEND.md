@@ -109,6 +109,7 @@ edita o rascunho de outra pessoa), `created_at`, `updated_at`.
 | GET | `/bitins/{mongo_id}/resumo` | `bitin_view.render_bitin_summary` — pré-visualização/tela final. |
 | GET | `/bitins/schema/materiais` | `bitin_model.build_materiais_schema` — colunas do grid de materiais (identificação, snapshot, `dados_basicos` De/Para, `impactos_operacionais` com as opções válidas do POP) derivadas do `bitin_schema_crosswalk` (`config/vba_mapping.json`) e do `valores_validos` (`config/bitin_document_mapping.json`). Adicionado em 2026-07-13 (ver "Grid de materiais dirigido por schema" abaixo). |
 | POST | `/bitins/parse-sap-paste` | `sap_paste_parser.parse_sap_paste_to_materiais` — recebe o texto colado do SAP (`{"raw_text": "..."}`) e devolve `materiais[]` prontos (identificação + snapshot atual) pro frontend inserir no grid. Adicionado em 2026-07-13. |
+| GET | `/bitins/schema/checklist` | `bitin_document.build_checklist_schema` — os 22 itens fixos do checklist (id + etapa, do Quadro 01 do POP), pra tela de cadastro montar a tabela de checklist editável (`ChecklistEditor.jsx`). Mesma fonte que `bitin_document.build_checklist` usa pra calcular `afeta` na tela de resumo pós-envio, só sem o cálculo em si. Adicionado em 2026-07-13. |
 
 **Ainda não incluído nesta rodada** (próximo passo natural, não construído agora pra manter
 escopo gerenciável): endpoints que geram de fato os arquivos de export (Plan2 `.xlsx`, CSV do

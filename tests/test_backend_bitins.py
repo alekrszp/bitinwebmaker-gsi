@@ -406,6 +406,18 @@ class BitinApiTest(unittest.TestCase):
         resp = client_sem_auth.get("/api/v1/bitins/schema/materiais")
         self.assertEqual(resp.status_code, 401)
 
+    def test_schema_checklist_traz_22_itens(self) -> None:
+        resp = self.client.get("/api/v1/bitins/schema/checklist")
+        self.assertEqual(resp.status_code, 200, resp.text)
+        items = resp.json()["items"]
+        self.assertEqual(len(items), 22)
+        self.assertEqual(items[0], {"id": "1", "etapa": "Desenho"})
+
+    def test_schema_checklist_exige_autenticacao(self) -> None:
+        client_sem_auth = TestClient(app)
+        resp = client_sem_auth.get("/api/v1/bitins/schema/checklist")
+        self.assertEqual(resp.status_code, 401)
+
     def test_parse_sap_paste_devolve_materiais(self) -> None:
         # colunas de plan1_identificacao_columns (config/vba_mapping.json): 1=tipo_material,
         # 2=codigo_material, 4=centro, 5=descricao_material, 6=grupo_mercadorias_atual, 14=tem_desenho

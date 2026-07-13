@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 ## [v0.5.0] - 2026-07-13
 
 ### Added
+- **Tela de cadastro reconstruída como a aba "Template apresentação" real** (5ª rodada,
+  correção de rota — as rodadas 1-4 tinham usado a aba `ZBPP009 + ALTERACAO`, mas o print
+  enviado era do documento formatado): cabeçalho em faixas (logo/título/BITex/Setor dourado +
+  Produto/Solicitante + Motivo/Data), campo `bitex` agora editável, **checklist de 22 itens
+  editável de verdade** (`ChecklistEditor.jsx`, novo — antes só existia read-only no resumo
+  pós-envio) via `GET /bitins/schema/checklist` (`bitin_document.build_checklist_schema`,
+  novo), e cabeçalho da tabela de materiais em amarelo/dourado com "Novo" de volta pra
+  vermelho (igual ao Excel real — cabeçalho dourado já separa visualmente do vermelho de erro
+  de validação, que fica nas células de dado). `afeta` do checklist é 100% manual nesta
+  rodada — a lógica de auto-cálculo que já existe em `build_checklist` (usada no resumo) ainda
+  não roda ao vivo no formulário, ver `docs/FRONTEND.md`.
 - **Grid de materiais dirigido por schema, com navegação e visual de planilha real**
   (`frontend/src/components/MaterialGrid.jsx`, `MaterialDetailModal.jsx`, `docs/FRONTEND.md`):
   substitui a lista simples de identificação por uma planilha completa (linha = material,
@@ -31,6 +42,13 @@ All notable changes to this project will be documented in this file.
     colunas vêm do backend (não hardcoded), colar do SAP reaproveita o parser Python já
     testado, erros de envio destacam a célula exata (na grade ou no painel de Detalhes,
     dependendo de onde o campo está sendo editado) em vez de só listar texto solto.
+- **Logo real e grade de materiais ocupando a tela inteira** (6ª rodada): logo enviado pelo
+  usuário (`frontend/public/logo.svg`) substitui o placeholder de texto no cabeçalho, login e
+  tela de cadastro; `<main>` (`Layout.jsx`) perdeu o `max-w-6xl` global, e a grade de materiais
+  agora quebra pra fora do container centralizado (`-mx-4` em `BitinDetail.jsx`) e perdeu a
+  moldura de card (`MaterialGrid.jsx`) — encosta nas bordas reais da tela, "literalmente um
+  excel" em vez de uma tabela dentro de um formulário. Padding/fonte de células, cabeçalho e
+  botões de ação aumentados; cálculo de largura de coluna unificado num único helper.
   - Busca insensível a acento (`lib/textSearch.js`) no seletor de campos e no painel de
     Detalhes — achado testando: buscar "liquido" não encontrava "Peso Líquido".
 - **Identidade visual da marca (Grain & Protein Technologies) + tema claro/escuro**

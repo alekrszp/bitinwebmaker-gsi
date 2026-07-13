@@ -10,18 +10,15 @@ const IMPACTOS_CONDICIONAIS = [
   { key: 'conta_razao', label: 'Conta razão' },
 ]
 
-// Colunas maiores que a primeira versão -- feedback direto: células pequenas demais pra
-// campos com valores reais (código de material, descrição, texto de dados_basicos).
-const CELL_WIDTHS = { sm: 'w-24', md: 'w-40', lg: 'w-60' }
-// Mesmos valores de CELL_WIDTHS em px -- table-layout:fixed só respeita a largura declarada
-// de cada coluna se a <table> tiver uma largura total explícita (senão o navegador encolhe
-// tudo proporcionalmente pra caber no container, ignorando os valores declarados por célula
-// -- foi exatamente o bug visto: a coluna "#" de 48px renderizava a 25px, e a coluna
-// congelada "Código" ficava com o offset errado, sobrepondo "Descrição"). Por isso o total é
-// somado em JS e aplicado como `width` da <table> abaixo.
-const CELL_WIDTH_PX = { sm: 96, md: 160, lg: 240 }
-const ROW_NUMBER_WIDTH = 48 // px -- usado pra calcular o offset da 2ª coluna congelada
-const ACTIONS_WIDTH = 168 // px -- table-fixed exige largura explícita em toda coluna
+// Larguras em px -- aumentadas de novo (feedback repetido: "tá muito pequeno"). Uma única
+// fonte de verdade (não duas listas paralelas como antes) -- a classe Tailwind é derivada do
+// número via `widthClass()`, então não tem como as duas divergirem.
+const CELL_WIDTH_PX = { sm: 130, md: 220, lg: 340 }
+function widthClass(key) {
+  return `w-[${CELL_WIDTH_PX[key || 'md']}px]`
+}
+const ROW_NUMBER_WIDTH = 56 // px -- usado pra calcular o offset da 2ª coluna congelada
+const ACTIONS_WIDTH = 220 // px -- table-fixed exige largura explícita em toda coluna
 
 const FIXED_COLUMNS = [
   { group: 'campo', field: 'codigo_material', label: 'Código', type: 'text', width: 'md', required: true, freeze: true },
@@ -206,12 +203,16 @@ export default function MaterialGrid({ materiais, onChange, errors = [], disable
   }
 
   return (
-    <div className="rounded border border-line bg-surface p-4">
-      <div className="mb-3 flex flex-wrap items-start justify-between gap-3">
+    // Sem moldura de card (rounded/border/padding) de propósito -- pedido direto: "é tudo em
+    // branco, com o tamanho todo da tela". Isto renderiza dentro de um wrapper `-mx-4` em
+    // BitinDetail.jsx, que já cancela o padding lateral do <main>, então esta seção vai de
+    // ponta a ponta da tela, não fica dentro de uma caixinha.
+    <div className="bg-surface">
+      <div className="mb-3 flex flex-wrap items-start justify-between gap-3 px-4">
         <div>
-          <h2 className="text-lg font-medium text-ink">Materiais</h2>
+          <h2 className="text-xl font-medium text-ink">Materiais</h2>
           {!disabled && (
-            <p className="mt-0.5 text-xs text-ink-faint">
+            <p className="mt-0.5 text-sm text-ink-faint">
               Mesma estrutura da planilha "ZBPP009 + ALTERACAO". Clique numa célula e use as setas ↑↓←→ ou
               Enter pra navegar. Cole um bloco copiado do Excel em qualquer célula (Ctrl+V) — linhas novas são
               criadas automaticamente se precisar.
@@ -220,13 +221,13 @@ export default function MaterialGrid({ materiais, onChange, errors = [], disable
         </div>
         {!disabled && (
           <div className="flex flex-wrap gap-2">
-            <button type="button" onClick={addRow} className="rounded border border-line px-3 py-1.5 text-sm text-ink hover:bg-surface-alt">
+            <button type="button" onClick={addRow} className="rounded border border-line px-4 py-2 text-sm text-ink hover:bg-surface-alt">
               + Adicionar material
             </button>
             <button
               type="button"
               onClick={() => setShowSapImport((v) => !v)}
-              className="rounded border border-line px-3 py-1.5 text-sm text-ink hover:bg-surface-alt"
+              className="rounded border border-line px-4 py-2 text-sm text-ink hover:bg-surface-alt"
             >
               Importar relatório do SAP
             </button>
@@ -241,28 +242,30 @@ export default function MaterialGrid({ materiais, onChange, errors = [], disable
         )}
       </div>
 
-      {schemaError && <p className="mb-3 text-sm text-red-600">{schemaError}</p>}
+      {schemaError && <p className="mb-3 px-4 text-sm text-red-600">{schemaError}</p>}
 
       {showSapImport && !disabled && (
-        <SapImportPanel onParsed={addFromSapImport} onClose={() => setShowSapImport(false)} />
+        <div className="px-4">
+          <SapImportPanel onParsed={addFromSapImport} onClose={() => setShowSapImport(false)} />
+        </div>
       )}
 
-      {materiais.length === 0 && <p className="text-sm text-ink-muted">Nenhum material adicionado ainda.</p>}
+      {materiais.length === 0 && <p className="px-4 text-sm text-ink-muted">Nenhum material adicionado ainda.</p>}
 
       {materiais.length > 0 && (
-        <div className="max-h-[75vh] overflow-auto rounded border border-line">
+        <div className="max-h-[calc(100vh-260px)] overflow-auto border-y border-line">
           {/* table-fixed é essencial aqui: com table-layout:auto (padrão), o navegador
               encolhe colunas com pouco conteúdo (ex.: "#" com só "1"/"2") abaixo da largura
               declarada, o que quebra a matemática do offset das colunas congeladas (a coluna
               "Código" ficava sobrepondo "Descrição"). Com table-fixed, a largura do cabeçalho
               manda de verdade. border-separate (não border-collapse) porque position:sticky
               em <td>/<th> não funciona de forma confiável com border-collapse. */}
-          <table style={{ width: tableWidth }} className="table-fixed border-separate border-spacing-0 text-sm">
+          <table style={{ width: tableWidth }} className="table-fixed border-separate border-spacing-0 text-base">
             <thead>
               <tr>
                 <th
                   style={{ width: ROW_NUMBER_WIDTH }}
-                  className="sticky top-0 left-0 z-30 border border-line bg-surface-header px-2 py-2.5 text-xs font-semibold text-ink-muted"
+                  className="sticky top-0 left-0 z-30 border border-line bg-brand-gold px-2 py-4 text-sm font-semibold text-brand-navy"
                 >
                   #
                 </th>
@@ -270,14 +273,14 @@ export default function MaterialGrid({ materiais, onChange, errors = [], disable
                   <th
                     key={colIndex}
                     style={col.freeze ? { left: ROW_NUMBER_WIDTH } : undefined}
-                    className={`${CELL_WIDTHS[col.width || 'md']} sticky top-0 border border-line bg-surface-header px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide ${
-                      col.variant === 'novo' ? 'text-brand-orange' : 'text-ink-muted'
+                    className={`${widthClass(col.width)} sticky top-0 border border-line bg-brand-gold px-3 py-3 text-left text-sm font-semibold uppercase tracking-wide ${
+                      col.variant === 'novo' ? 'text-red-700' : 'text-brand-navy'
                     } ${col.freeze ? 'z-30' : 'z-20'}`}
                   >
                     {col.label}
-                    {col.required && <span className="text-red-500"> *</span>}
+                    {col.required && <span className="text-red-700"> *</span>}
                     {col.subLabel && (
-                      <span className={`block text-[10px] font-normal normal-case tracking-normal ${col.variant === 'novo' ? 'text-brand-orange/80' : 'text-ink-faint'}`}>
+                      <span className={`block text-xs font-normal normal-case tracking-normal ${col.variant === 'novo' ? 'text-red-700/80' : 'text-brand-navy/70'}`}>
                         {col.subLabel}
                       </span>
                     )}
@@ -286,7 +289,7 @@ export default function MaterialGrid({ materiais, onChange, errors = [], disable
                 {!disabled && (
                   <th
                     style={{ width: ACTIONS_WIDTH }}
-                    className="sticky top-0 z-20 border border-line bg-surface-header px-3 py-2.5 text-center text-xs font-semibold text-ink-muted"
+                    className="sticky top-0 z-20 border border-line bg-brand-gold px-3 py-4 text-center text-sm font-semibold text-brand-navy"
                   >
                     Ações
                   </th>
@@ -298,7 +301,7 @@ export default function MaterialGrid({ materiais, onChange, errors = [], disable
                 <tr key={rowIndex} className={`group ${rowIndex % 2 === 1 ? 'bg-surface-alt' : 'bg-surface'} hover:bg-surface-header/60`}>
                   <td
                     style={{ width: ROW_NUMBER_WIDTH }}
-                    className="sticky left-0 z-10 border border-line bg-inherit px-2 py-2 text-center text-xs text-ink-faint"
+                    className="sticky left-0 z-10 border border-line bg-inherit px-2 py-3 text-center text-sm text-ink-faint"
                   >
                     {rowIndex + 1}
                   </td>
@@ -325,18 +328,18 @@ export default function MaterialGrid({ materiais, onChange, errors = [], disable
                   })}
                   {!disabled && (
                     <td style={{ width: ACTIONS_WIDTH }} className="border border-line bg-inherit px-2 py-2 text-center">
-                      <div className="flex justify-center gap-1.5">
+                      <div className="flex justify-center gap-2">
                         <button
                           type="button"
                           onClick={() => setDetailRowIndex(rowIndex)}
-                          className="rounded border border-line px-2 py-1 text-xs text-ink hover:bg-surface-alt"
+                          className="rounded border border-line px-3 py-1.5 text-sm text-ink hover:bg-surface-alt"
                         >
                           Detalhes
                         </button>
                         <button
                           type="button"
                           onClick={() => removeRow(rowIndex)}
-                          className="rounded border border-red-300 px-2 py-1 text-xs text-red-700 hover:bg-red-50"
+                          className="rounded border border-red-300 px-3 py-1.5 text-sm text-red-700 hover:bg-red-50"
                         >
                           Remover
                         </button>
@@ -371,7 +374,7 @@ function GridCell({ col, rowIndex, colIndex, value, disabled, hasError, errorMes
   const cellBg = hasError
     ? 'border-red-400 bg-red-50 ring-1 ring-inset ring-red-400'
     : 'border-line bg-inherit'
-  const inputClass = `h-full w-full bg-transparent px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-inset ${
+  const inputClass = `h-full w-full bg-transparent px-3 py-3 text-base outline-none focus:ring-2 focus:ring-inset ${
     hasError ? 'focus:ring-red-500' : 'focus:ring-brand-navy'
   } disabled:text-ink-faint`
   const stickyStyle = freezeOffset !== undefined ? { left: freezeOffset } : undefined
@@ -379,7 +382,7 @@ function GridCell({ col, rowIndex, colIndex, value, disabled, hasError, errorMes
 
   if (col.type === 'checkbox') {
     return (
-      <td style={stickyStyle} className={`${CELL_WIDTHS[col.width || 'md']} border p-0 text-center ${cellBg} ${stickyClass}`}>
+      <td style={stickyStyle} className={`${widthClass(col.width)} border p-0 text-center ${cellBg} ${stickyClass}`}>
         <input
           ref={(el) => registerRef(rowIndex, colIndex, el)}
           type="checkbox"
@@ -389,7 +392,7 @@ function GridCell({ col, rowIndex, colIndex, value, disabled, hasError, errorMes
           onKeyDown={(e) => onCellKeyDown(e, rowIndex, colIndex)}
           onPaste={(e) => onCellPaste(e, rowIndex, colIndex)}
           title={errorMessage}
-          className="h-4 w-4 my-2.5"
+          className="h-5 w-5 my-3.5"
         />
       </td>
     )
@@ -397,7 +400,7 @@ function GridCell({ col, rowIndex, colIndex, value, disabled, hasError, errorMes
 
   if (col.type === 'select') {
     return (
-      <td style={stickyStyle} className={`${CELL_WIDTHS[col.width || 'md']} border p-0 ${cellBg} ${stickyClass}`}>
+      <td style={stickyStyle} className={`${widthClass(col.width)} border p-0 ${cellBg} ${stickyClass}`}>
         <select
           ref={(el) => registerRef(rowIndex, colIndex, el)}
           value={value || '-'}
@@ -419,7 +422,7 @@ function GridCell({ col, rowIndex, colIndex, value, disabled, hasError, errorMes
   }
 
   return (
-    <td style={stickyStyle} className={`${CELL_WIDTHS[col.width || 'md']} border p-0 ${cellBg} ${stickyClass}`}>
+    <td style={stickyStyle} className={`${widthClass(col.width)} border p-0 ${cellBg} ${stickyClass}`}>
       <input
         ref={(el) => registerRef(rowIndex, colIndex, el)}
         value={value || ''}

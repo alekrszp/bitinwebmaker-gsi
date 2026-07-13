@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
+import ChecklistEditor from '../components/ChecklistEditor'
 import MaterialGrid from '../components/MaterialGrid'
 import { api } from '../lib/api'
 
@@ -10,6 +11,8 @@ function blankForm() {
     motivo: '',
     solicitante: '',
     data_solicitacao: '',
+    bitex: 'NÃO',
+    checklist: [],
     materiais: [],
   }
 }
@@ -57,6 +60,10 @@ export default function BitinDetail() {
 
   function setMateriais(materiais) {
     setForm((atual) => ({ ...atual, materiais }))
+  }
+
+  function setChecklist(checklist) {
+    setForm((atual) => ({ ...atual, checklist }))
   }
 
   async function handleSalvar() {
@@ -107,60 +114,93 @@ export default function BitinDetail() {
 
   return (
     <div>
-      <h1 className="mb-6 text-2xl font-semibold text-ink">
-        {isNew ? 'Novo rascunho' : `Editar rascunho`}
-      </h1>
-
-      <div className="mb-6 grid grid-cols-1 gap-4 rounded border border-line bg-surface p-4 sm:grid-cols-2">
-        <Campo label="Setor">
-          <select
-            value={form.setor}
-            onChange={(e) => updateHeader('setor', e.target.value)}
-            className="w-full rounded border border-line bg-surface px-3 py-2 text-ink"
-          >
-            <option value="">Selecione...</option>
-            {SETORES.map((s) => (
-              <option key={s} value={s}>
-                {s}
-              </option>
-            ))}
-          </select>
-        </Campo>
-        <Campo label="Produto">
-          <input
-            value={form.produto}
-            onChange={(e) => updateHeader('produto', e.target.value)}
-            className="w-full rounded border border-line bg-surface px-3 py-2 text-ink"
-          />
-        </Campo>
-        <Campo label="Motivo">
-          <input
-            value={form.motivo}
-            onChange={(e) => updateHeader('motivo', e.target.value)}
-            className="w-full rounded border border-line bg-surface px-3 py-2 text-ink"
-          />
-        </Campo>
-        <Campo label="Solicitante">
-          <input
-            value={form.solicitante}
-            onChange={(e) => updateHeader('solicitante', e.target.value)}
-            className="w-full rounded border border-line bg-surface px-3 py-2 text-ink"
-          />
-        </Campo>
-        <Campo label="Data da solicitação">
-          <input
-            type="date"
-            value={form.data_solicitacao}
-            onChange={(e) => updateHeader('data_solicitacao', e.target.value)}
-            className="w-full rounded border border-line bg-surface px-3 py-2 text-ink"
-          />
-        </Campo>
+      <div className="mx-auto max-w-6xl">
+      {/* Cabeçalho -- réplica da aba "Template apresentação" da planilha real do BITin:
+          logo/título/BITex/Setor na linha 1, Produto/Solicitante e Motivo/Data abaixo. */}
+      <div className="mb-6 overflow-hidden rounded border border-line">
+        <div className="grid grid-cols-12 border-b border-line">
+          <div className="col-span-3 flex items-center justify-center bg-white px-2 py-2 text-center sm:col-span-2">
+            <img src="/logo.svg" className="max-h-14 w-full object-contain" alt="Grain & Protein Technologies" />
+          </div>
+          <div className="col-span-9 flex items-center justify-center bg-brand-navy px-2 py-3 sm:col-span-5">
+            <span className="text-center text-sm font-bold uppercase tracking-wide text-white">
+              Boletim de Informações Técnicas Interno (BITIn)
+            </span>
+          </div>
+          <div className="col-span-6 flex items-center justify-center gap-2 px-2 py-2 sm:col-span-2">
+            <span className="text-xs font-medium text-ink-muted">BITex</span>
+            <select
+              value={form.bitex}
+              onChange={(e) => updateHeader('bitex', e.target.value)}
+              className="rounded border border-line bg-surface px-2 py-1 text-sm font-bold text-red-600 focus:outline-none focus:ring-2 focus:ring-brand-navy"
+            >
+              <option value="NÃO">NÃO</option>
+              <option value="SIM">SIM</option>
+            </select>
+          </div>
+          <div className="col-span-6 flex items-center justify-center bg-brand-gold px-2 py-3 sm:col-span-3">
+            <select
+              value={form.setor}
+              onChange={(e) => updateHeader('setor', e.target.value)}
+              className="w-full bg-transparent text-center text-sm font-bold text-brand-navy focus:outline-none"
+            >
+              <option value="">Selecione o setor...</option>
+              {SETORES.map((s) => (
+                <option key={s} value={s}>
+                  {s}
+                </option>
+              ))}
+            </select>
+          </div>
+        </div>
+        <div className="grid grid-cols-1 border-b border-line sm:grid-cols-2">
+          <CampoInline label="Produto">
+            <input
+              value={form.produto}
+              onChange={(e) => updateHeader('produto', e.target.value)}
+              className="w-full bg-transparent px-2 py-2 text-sm text-ink focus:outline-none"
+            />
+          </CampoInline>
+          <CampoInline label="Solicitante" borda>
+            <input
+              value={form.solicitante}
+              onChange={(e) => updateHeader('solicitante', e.target.value)}
+              className="w-full bg-transparent px-2 py-2 text-sm text-ink focus:outline-none"
+            />
+          </CampoInline>
+        </div>
+        <div className="grid grid-cols-1 sm:grid-cols-2">
+          <CampoInline label="Motivo">
+            <input
+              value={form.motivo}
+              onChange={(e) => updateHeader('motivo', e.target.value)}
+              className="w-full bg-transparent px-2 py-2 text-sm text-ink focus:outline-none"
+            />
+          </CampoInline>
+          <CampoInline label="Data Solicitação" borda>
+            <input
+              type="date"
+              value={form.data_solicitacao}
+              onChange={(e) => updateHeader('data_solicitacao', e.target.value)}
+              className="w-full bg-transparent px-2 py-2 text-sm text-ink focus:outline-none"
+            />
+          </CampoInline>
+        </div>
       </div>
 
       <div className="mb-6">
+        <ChecklistEditor checklist={form.checklist} onChange={setChecklist} />
+      </div>
+      </div>
+
+      {/* Grade de materiais -- fora do container centralizado de propósito: "deve ser
+          literalmente um excel", usando a largura inteira da tela (a diferença entre `main`
+          ter `max-w-6xl` ou não é justamente pra isso, ver Layout.jsx), sem moldura de card. */}
+      <div className="mb-6 -mx-4">
         <MaterialGrid materiais={form.materiais} onChange={setMateriais} errors={enviarErrors} />
       </div>
 
+      <div className="mx-auto max-w-6xl">
       {enviarErrors.length > 0 && (
         <div className="mb-4 rounded border border-red-300 bg-red-50 p-4">
           <p className="mb-2 font-medium text-red-800">
@@ -192,16 +232,19 @@ export default function BitinDetail() {
           Enviar
         </button>
       </div>
+      </div>
     </div>
   )
 }
 
-function Campo({ label, children }) {
+function CampoInline({ label, borda = false, children }) {
   return (
-    <label className="block">
-      <span className="mb-1 block text-sm font-medium text-ink-muted">{label}</span>
-      {children}
-    </label>
+    <div className={`flex items-center ${borda ? 'sm:border-l sm:border-line' : ''}`}>
+      <span className="w-36 shrink-0 border-r border-line bg-surface-alt px-3 py-2 text-sm font-medium text-brand-navy">
+        {label}
+      </span>
+      <div className="flex-1">{children}</div>
+    </div>
   )
 }
 

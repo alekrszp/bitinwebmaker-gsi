@@ -22,6 +22,7 @@ import sap_paste_parser
 VBA_MAPPING_CONFIG = bitin_model.load_config(scripts_path.VBA_MAPPING_CONFIG_PATH)
 DOCUMENT_CONFIG = bitin_document.load_config(scripts_path.DOCUMENT_CONFIG_PATH)
 MATERIAIS_SCHEMA = bitin_model.build_materiais_schema(VBA_MAPPING_CONFIG, DOCUMENT_CONFIG)
+CHECKLIST_SCHEMA = bitin_document.build_checklist_schema(DOCUMENT_CONFIG)
 
 router = APIRouter()
 
@@ -87,6 +88,13 @@ async def get_materiais_schema(_current_user: Usuario = Depends(get_current_acti
     docs/BACKEND.md, 'Grid de materiais dirigido por schema'). Config já carregada em
     memória no import do módulo (mesmo config imutável usado por validate_bitin/enviar)."""
     return MATERIAIS_SCHEMA
+
+
+@router.get("/schema/checklist")
+async def get_checklist_schema(_current_user: Usuario = Depends(get_current_active_user)):
+    """Os 22 itens fixos do checklist (id + etapa) -- fonte única de verdade pro frontend
+    montar a tabela editável na tela de cadastro (ver docs/BACKEND.md)."""
+    return {"items": CHECKLIST_SCHEMA}
 
 
 @router.post("/parse-sap-paste")

@@ -57,6 +57,12 @@ export function materialFromSapPaste(parsed) {
   return { ...blankMaterial(), ...parsed }
 }
 
+// checklist[] em branco a partir do schema (GET /bitins/schema/checklist) -- os 22 itens
+// fixos do POP, todos com afeta=false até o engenheiro marcar. Ver ChecklistEditor.jsx.
+export function blankChecklist(items) {
+  return items.map((item) => ({ id: item.id, etapa: item.etapa, afeta: false, descricao: '' }))
+}
+
 // Interpreta texto colado (de uma célula tipo checkbox) do jeito que o Excel/SAP
 // normalmente representa booleano em texto -- usado só ao colar um bloco de células
 // (ver handleCellPaste em MaterialGrid.jsx); digitação normal usa o próprio <input type=checkbox>.

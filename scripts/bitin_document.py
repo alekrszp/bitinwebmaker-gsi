@@ -123,6 +123,13 @@ def build_campo_alterado_diffs(material: dict[str, Any], vba_mapping_config: dic
     return diffs
 
 
+def build_checklist_schema(config: dict[str, Any]) -> list[dict[str, str]]:
+    """Os 22 itens fixos do checklist (Quadro 01 do POP), só id+etapa -- fonte única de
+    verdade pro frontend montar a tabela de checklist editável na tela de cadastro (ver
+    docs/BACKEND.md). Mesma lista usada por build_checklist, sem o cálculo de 'afeta'."""
+    return [{"id": item["id"], "etapa": item["etapa"]} for item in config["checklist_items"]]
+
+
 def build_checklist(bitin: dict[str, Any], materiais: list[dict[str, Any]], config: dict[str, Any]) -> list[dict[str, Any]]:
     ativos: set[str] = set()
 

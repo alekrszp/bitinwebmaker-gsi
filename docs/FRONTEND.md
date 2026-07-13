@@ -73,6 +73,7 @@ frontend/
       Layout.jsx              - topo com e-mail do usuário + botão sair
       MaterialGrid.jsx        - grid de materiais (linhas/colunas), ver seção própria abaixo
       MaterialDetailModal.jsx - painel de edição de um material (todos os campos, mais espaço)
+      ChecklistEditor.jsx     - checklist de 22 itens (Documento/Afeta/Observação)
     pages/
       Login.jsx
       MeusBitins.jsx          - lista com abas Todos/Rascunhos/Enviados + busca
@@ -221,6 +222,73 @@ colar estilo Excel" acima). Isso contrariava o pedido: não é resumo, é cópia
   sem rolar a grade inteira), não como o lugar "certo" de editar dados básicos — a grade em si
   já é suficiente, igual à planilha original.
 
+### Tela de cadastro = aba "Template apresentação" real, não a "ZBPP009 + ALTERACAO" (5ª rodada)
+
+Correção de rota: as rodadas 1-4 usaram a aba `ZBPP009 + ALTERACAO` (grade De/Novo crua) como
+referência pra "tela de cadastro". O usuário mandou print de uma aba diferente — `Template
+apresentação` (o documento formatado: logo, título, BITex, Setor, Produto/Solicitante,
+Motivo/Data Solicitação, faixa "CHECK LIST" com os 22 itens, e uma tabela de alterações com
+cabeçalho amarelo) — e pediu a cópia literal dessa, "só que com nossas regras nos campos".
+
+- **Cabeçalho em faixas, igual ao print** (`BitinDetail.jsx`): logo (placeholder por
+  enquanto) + título "Boletim de Informações Técnicas Interno (BITIn)" em navy/branco, BITex
+  (select SIM/NÃO, valor sempre em vermelho negrito — mesma convenção de "isso chama atenção"
+  usada em outras células da planilha real) e Setor como um `<select>` com fundo dourado
+  sólido (a cor de destaque do print pro setor escolhido). Abaixo, Produto/Solicitante e
+  Motivo/Data Solicitação em pares label-azul + campo, réplica das linhas 2-3 do documento.
+- **Campo `bitex` adicionado ao formulário** (já existia no modelo — `docs/BITIN_MODEL.md`
+  registra que foi encontrado no `Template apresentação` real — mas não tinha campo de edição
+  no frontend ainda).
+- **Checklist editável de verdade** (`ChecklistEditor.jsx`, novo componente): faixa
+  "CHECK LIST" vermelho-escura + tabela Documento/Afeta/Observação com os 22 itens fixos do
+  POP, vindos de `GET /bitins/schema/checklist` (novo endpoint, `bitin_document.
+  build_checklist_schema` — mesma lista usada por `build_checklist`, só id+etapa, sem o
+  cálculo de `afeta`). Antes desta rodada, `checklist[]` só existia read-only na tela de
+  resumo pós-envio — não dava pra editar no rascunho.
+  - **Decisão registrada: `afeta` fica livre pro engenheiro marcar (SIM/NÃO), não
+    auto-calculado a partir dos materiais nesta rodada.** `scripts/bitin_document.
+    build_checklist` já teria a lógica pra derivar boa parte dos 22 itens automaticamente a
+    partir de `impactos_operacionais`/`bitex` (usada na tela de resumo/envio) — replicar esse
+    cálculo *ao vivo* no formulário exigiria ou reimplementar a lógica em JS (duplicação que o
+    projeto evita de propósito) ou um endpoint de prévia chamado a cada edição (custo/
+    complexidade não pedidos ainda). Fica registrado como incremento futuro possível, não
+    bloqueado por nada.
+- **Cabeçalho da tabela de materiais virou amarelo/dourado** (`MaterialGrid.jsx`), igual à
+  tabela de alterações do print — e o indicador "Novo" voltou a ser vermelho (não laranja da
+  3ª/4ª rodada): sobre fundo dourado, vermelho tem contraste bom e bate com a cor literal do
+  Excel real; a preocupação original (confundir com erro de validação) é menor aqui porque o
+  cabeçalho amarelo já é uma região visualmente separada das células de dado (brancas) onde o
+  destaque de erro aparece.
+
+### Logo real, tela inteira pra grade de materiais, sem moldura de card (6ª rodada)
+
+O usuário mandou o arquivo real do logo (`Imagem1.svg`) e apontou dois problemas na 5ª
+rodada: a grade de materiais ainda estava pequena (contida no mesmo `max-w-6xl` do resto da
+página) e o cadastro ainda parecia "um formulário com uma tabela dentro", não uma planilha.
+
+- **Logo de verdade** (`frontend/public/logo.svg`, cópia do arquivo enviado): substitui o
+  placeholder de texto em `Layout.jsx` (cabeçalho, dentro de um `bg-white` — o arquivo é um
+  JPEG embutido em SVG com fundo branco sólido, não transparente, então precisa de um fundo
+  branco próprio sobre o navy), `Login.jsx` e a célula de logo em `BitinDetail.jsx`.
+- **`<main>` deixou de ter `max-w-6xl` global** (`Layout.jsx`): antes, todo o conteúdo do app
+  ficava preso a uma largura de ~1152px, inclusive a grade de materiais. Agora `<main>` só tem
+  padding, e cada página decide sua própria largura. "Meus Bitins" e o cabeçalho/checklist do
+  cadastro ganharam seu próprio `mx-auto max-w-6xl` pra não mudarem de aparência.
+- **Grade de materiais quebra pra fora do container centralizado** (`BitinDetail.jsx`): fica
+  dentro de `<div className="-mx-4">`, que cancela o padding horizontal do `<main>` e faz a
+  grade encostar nas bordas reais da tela — literalmente uma planilha ocupando a tela inteira,
+  não uma caixa de conteúdo.
+- **Moldura de card removida da grade** (`MaterialGrid.jsx`): o wrapper externo perdeu borda,
+  cantos arredondados e padding (`rounded border border-line bg-surface p-4` → só `bg-surface`);
+  a área de rolagem trocou `rounded border` por `border-y` (só linhas horizontais, sem laterais
+  nem cantos) e o teto de altura subiu de `75vh` pra `calc(100vh-260px)` — usa o espaço vertical
+  que sobra abaixo do cabeçalho/checklist em vez de parar cedo.
+- **Células e cabeçalhos maiores**: unificado o cálculo de largura de coluna num único helper
+  `widthClass()` (antes havia dois mapas duplicados `CELL_WIDTHS`/`CELL_WIDTH_PX`
+  desincronizados); aumentado padding e tamanho de fonte de cabeçalho, células, checkbox e
+  botões de ação em todo o grid, e as colunas fixas "#" e "Ações" ficaram mais largas (48→56px
+  e 168→220px) pra caber o texto maior sem cortar.
+
 ## O que já funciona
 
 Validado com Playwright ad-hoc contra o backend real nesta máquina (sem MongoDB real, ver
@@ -231,11 +299,13 @@ Validado com Playwright ad-hoc contra o backend real nesta máquina (sem MongoDB
 - "Meus Bitins": lista com abas (status) + busca por termo, criar/excluir rascunho; botão
   "Excluir" some quando o usuário não é dono nem admin (o backend já recusava com `403`, a UI
   agora não oferece a ação — RBAC visível, adicionado em 2026-07-13).
-- Criar rascunho: cabeçalho (setor/produto/motivo/solicitante/data) + **grid de materiais**
-  (`MaterialGrid.jsx`, ver seção acima) — identificação, snapshot atual, os 30 pares De/Novo
-  de `dados_basicos` (todos visíveis por padrão) e `impactos_operacionais` (Alt/Est/Esp/LP/
-  Pré/OC/OF com as opções válidas do POP) — salva com `POST /bitins/draft`.
-- Reabrir rascunho: confirma que o conteúdo persistiu.
+- Criar rascunho: cabeçalho em faixas (logo/título/BITex/Setor + Produto/Solicitante +
+  Motivo/Data, ver "Tela de cadastro = aba Template apresentação" acima) + **checklist
+  editável** (`ChecklistEditor.jsx`, 22 itens) + **grid de materiais** (`MaterialGrid.jsx`) —
+  identificação, snapshot atual, os 30 pares De/Novo de `dados_basicos` (todos visíveis por
+  padrão) e `impactos_operacionais` (Alt/Est/Esp/LP/Pré/OC/OF com as opções válidas do POP) —
+  salva com `POST /bitins/draft`.
+- Reabrir rascunho: confirma que o conteúdo persistiu (cabeçalho, checklist e materiais).
 - Navegação por teclado nas 4 setas + `Enter`, colar em qualquer célula (`Ctrl+V`, bloco
   copiado do Excel ou de outra parte do grid), colunas "#"/"Código" congeladas ao rolar, e
   painel de "Detalhes" por material (atalho opcional) — ver "Navegação e colar estilo Excel" e
@@ -251,8 +321,11 @@ Validado com Playwright ad-hoc contra o backend real nesta máquina (sem MongoDB
 ## O que NÃO está nesta fatia ainda (próximos incrementos)
 
 - **`ordem_cliente[]` e `lista_tecnica[]`** — sem UI ainda; só o backend valida/aceita.
-- **Checklist manual** (itens não cobertos por regra automática) — hoje só visualização, sem
-  edição.
+- **Checklist sem auto-cálculo a partir dos materiais** — os 22 itens já são editáveis
+  (`ChecklistEditor.jsx`), mas `afeta` fica 100% manual; a lógica que já existe em
+  `bitin_document.build_checklist` (deriva boa parte automaticamente de
+  `impactos_operacionais`/`bitex`, usada hoje só na tela de resumo pós-envio) ainda não roda
+  ao vivo no formulário — ver "Tela de cadastro = aba Template apresentação" acima.
 - **RBAC visível na tela de edição** — a lista já esconde "Excluir" por permissão (ver acima),
   mas quem abre o rascunho de outro usuário (sem ser dono/admin) ainda vê o formulário editável
   normalmente; só descobre que não pode salvar ao tentar (o backend recusa com `403` e a

@@ -29,10 +29,7 @@ export default function Login() {
   return (
     <div className="flex min-h-screen flex-col bg-app-bg">
       <div className="flex flex-1 flex-col items-center justify-center px-4">
-        <div className="mb-6 flex items-center gap-2 text-2xl font-bold tracking-tight text-brand-navy">
-          {/* TODO: trocar por <img src="/logo.png" className="h-10" alt="Grain & Protein Technologies" /> */}
-          BIT<span className="text-brand-orange">in</span>
-        </div>
+        <img src="/logo.svg" className="mb-6 h-16" alt="Grain & Protein Technologies" />
         <div className="w-full max-w-sm rounded-lg border border-line bg-surface p-6 shadow-sm">
           <h1 className="mb-1 text-lg font-semibold text-ink">Entrar</h1>
           <p className="mb-5 text-sm text-ink-muted">Boletim de Informações Técnicas — Grain &amp; Protein Technologies</p>

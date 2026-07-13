@@ -1,42 +1,57 @@
-# Release v0.5.0 — Grid de materiais em formato planilha (estilo Excel real)
+# Release v0.5.0 — Tela de cadastro como réplica da planilha real do BITin
 
 Release criado a partir da tag `v0.5.0`.
 
 ## Resumo
 
 - Objetivo: a fatia anterior (v0.4.0) só cobria identificação de material — não dava pra
-  montar um BITin realmente útil (sem `dados_basicos` De/Para, sem `impactos_operacionais`,
-  sem colar do SAP). Esta versão fecha esse gap com um grid de materiais em formato planilha
-  de verdade — navegação por teclado, colar de blocos, colunas congeladas — inspirado
-  diretamente na planilha Excel real que o time já usa (`ZBPP009 + ALTERACAO`), não só numa
-  ideia genérica de "grid".
-- Passou por 4 rodadas de feedback direto até chegar nesse ponto: v1 (colunas dirigidas por
-  schema, sem navegação alguma) → v2 (navegação/colar estilo Excel, mas "muito ruim" pra
-  usar) → v3 (setas completas, painel de Detalhes, e fidelidade visual com o Excel real do
-  BITin) → v4 (todos os ~30 campos visíveis por padrão — "a tela deve ser um excel enorme" —
-  identidade visual da marca e tema claro/escuro).
-- Status: grid de materiais completo (identificação + snapshot + `dados_basicos` +
-  `impactos_operacionais`); `ordem_cliente[]`, `lista_tecnica[]` e checklist editável
-  continuam sem UI (próximo incremento).
+  montar um BITin realmente útil. Esta versão reconstrói a tela de cadastro inteira como
+  réplica da planilha Excel real que o time já usa, em 5 rodadas de feedback direto:
+  - v1: colunas de material dirigidas por schema, sem navegação.
+  - v2: navegação/colar estilo Excel — mas "muito ruim" pra usar.
+  - v3: setas completas, painel de Detalhes, fidelidade visual com a aba `ZBPP009 + ALTERACAO`.
+  - v4: todos os ~30 campos visíveis por padrão ("a tela deve ser um excel enorme"),
+    identidade visual da marca, tema claro/escuro.
+  - **v5 (correção de rota)**: o print enviado mostrou que a referência certa era outra aba —
+    `Template apresentação` (documento formatado: cabeçalho em faixas, BITex, Setor, checklist
+    de 22 itens, tabela de alterações com cabeçalho amarelo), não a `ZBPP009 + ALTERACAO` usada
+    nas rodadas anteriores. Tela de cadastro reconstruída pra bater com essa referência.
+  - **v6**: logo real (`Imagem1.svg` enviado pelo usuário) substitui o wordmark de texto; a
+    grade de materiais deixou de ficar presa ao `max-w-6xl` do resto da página e passou a
+    ocupar a tela inteira, sem moldura de card — "literalmente um excel", célula/fonte/cabeçalho
+    maiores.
+- Status: cadastro completo (cabeçalho em faixas + checklist editável + grid de materiais em
+  tela inteira, com logo real); `ordem_cliente[]`, `lista_tecnica[]` e auto-cálculo do
+  checklist a partir dos materiais continuam sem UI/não implementados (próximo incremento).
 
 ## Principais adições
 
-- **`GET /bitins/schema/materiais`** e **`POST /bitins/parse-sap-paste`**
-  (`backend/api/bitins.py`, `scripts/bitin_model.build_materiais_schema`): 2 endpoints novos,
-  pequenos, que reaproveitam lógica Python já testada (crosswalk, parser de colagem) em vez de
+- **Cabeçalho em faixas + checklist editável** (`BitinDetail.jsx`, `ChecklistEditor.jsx`
+  novo): réplica da aba `Template apresentação` — logo/título/BITex/Setor (dourado), Produto/
+  Solicitante, Motivo/Data, e a faixa "CHECK LIST" com os 22 itens (Documento/Afeta/
+  Observação), antes só visível read-only no resumo pós-envio.
+- **`GET /bitins/schema/materiais`**, **`GET /bitins/schema/checklist`** e
+  **`POST /bitins/parse-sap-paste`** (`backend/api/bitins.py`): 3 endpoints pequenos que
+  reaproveitam lógica Python já testada (crosswalk, checklist, parser de colagem) em vez de
   duplicá-la em JavaScript.
 - **`MaterialGrid.jsx`**: navegação por teclado nas 4 setas (não Tab) + Enter, colar em
   qualquer célula (bloco copiado do Excel, cria linha nova se precisar), colunas "#"/"Código"
   congeladas, todos os ~30 pares De/Novo de `dados_basicos` visíveis por padrão (rótulos fiéis
-  ao texto do Plan2 real) com cabeçalho "Novo" destacado em laranja da marca, `<select>` de
-  `impactos_operacionais` com as opções válidas do POP, e destaque de célula exata quando o
-  envio falha.
+  ao texto do Plan2 real), cabeçalho amarelo/dourado com "Novo" em vermelho (igual ao Excel
+  real), `<select>` de `impactos_operacionais` com as opções válidas do POP, e destaque de
+  célula exata quando o envio falha.
 - **`MaterialDetailModal.jsx`**: painel de edição por material com todos os campos de
   `dados_basicos` num layout espaçoso (com busca) — atalho opcional pra revisar um material
   sem rolar a grade inteira.
 - **Identidade visual + tema claro/escuro**: paleta da marca (Grain & Protein Technologies)
   como tokens Tailwind, cabeçalho navy com faixa de 3 cores, toggle claro/escuro (padrão
-  claro, persiste no navegador). Logo real ainda pendente (wordmark em texto por enquanto).
+  claro, persiste no navegador), logo real (`frontend/public/logo.svg`) no cabeçalho, login e
+  tela de cadastro.
+- **Grade de materiais em tela inteira, sem moldura de card**: `<main>` (`Layout.jsx`) deixou
+  de ter `max-w-6xl` global; a grade quebra pra fora do container centralizado do cadastro
+  (`-mx-4`) e perdeu borda/cantos arredondados/padding do wrapper — encosta nas bordas reais da
+  tela. Células, cabeçalho e botões de ação maiores; largura de coluna calculada por um único
+  helper (antes havia dois mapas duplicados).
 - **RBAC visível em "Meus Bitins"**: botão "Excluir" some quando o usuário não é dono nem
   admin.
 - **Busca insensível a acento** (`lib/textSearch.js`) no seletor de campos e no painel de
@@ -82,9 +97,10 @@ npm run dev
 
 ## Notas
 
-- Próximo incremento: `ordem_cliente[]`, `lista_tecnica[]`, checklist editável, modo de
-  leitura explícito para quem abre o rascunho de outra pessoa sem ser dono/admin, mesclar (em
-  vez de sempre duplicar) ao colar do SAP em cima de um material já existente — ver
-  `docs/FRONTEND.md`, seção "O que NÃO está nesta fatia ainda".
+- Próximo incremento: `ordem_cliente[]`, `lista_tecnica[]`, auto-cálculo do checklist a partir
+  dos materiais (lógica já existe em `bitin_document.build_checklist`, só não roda ao vivo no
+  formulário ainda), modo de leitura explícito para quem abre o rascunho de outra pessoa sem
+  ser dono/admin, mesclar (em vez de sempre duplicar) ao colar do SAP em cima de um material já
+  existente — ver `docs/FRONTEND.md`, seção "O que NÃO está nesta fatia ainda".
 - Ver `CHANGELOG.md` para a lista completa e `docs/FRONTEND.md`/`docs/BACKEND.md` para
   arquitetura e decisões registradas.

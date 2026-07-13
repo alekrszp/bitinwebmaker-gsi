@@ -119,6 +119,17 @@ class BuildChecklistTest(unittest.TestCase):
         self.assertEqual({item["id"] for item in checklist}, {str(i) for i in range(1, 23)})
 
 
+class BuildChecklistSchemaTest(unittest.TestCase):
+    def setUp(self) -> None:
+        self.config = bd.load_config(CONFIG_PATH)
+
+    def test_22_itens_so_id_e_etapa(self) -> None:
+        schema = bd.build_checklist_schema(self.config)
+        self.assertEqual(len(schema), 22)
+        self.assertEqual(set(schema[0].keys()), {"id", "etapa"})
+        self.assertEqual(schema[0], {"id": "1", "etapa": "Desenho"})
+
+
 class BuildCampoAlteradoDiffsTest(unittest.TestCase):
     def setUp(self) -> None:
         import bitin_model as bm

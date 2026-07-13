@@ -15,11 +15,13 @@ export default function Layout() {
   return (
     <div className="min-h-screen bg-app-bg">
       <header className="bg-brand-navy">
-        <div className="mx-auto flex max-w-6xl items-center justify-between px-4 py-3">
-          <Link to="/bitins" className="flex items-center gap-2 text-lg font-bold tracking-tight text-white">
-            {/* TODO: trocar por <img src="/logo.png" className="h-8" alt="Grain & Protein Technologies" />
-                assim que o arquivo da logo estiver disponível (ver docs/FRONTEND.md, "Identidade visual"). */}
-            BIT<span className="text-brand-gold">in</span>
+        <div className="flex items-center justify-between px-4 py-2">
+          <Link to="/bitins" className="flex items-center gap-2">
+            {/* Fundo branco de propósito: a logo é um JPEG com fundo branco sólido (não
+                transparente) -- sem isso, apareceria uma caixa branca "solta" sobre o navy. */}
+            <span className="flex items-center rounded bg-white px-2 py-1">
+              <img src="/logo.svg" className="h-8" alt="Grain & Protein Technologies" />
+            </span>
           </Link>
           {user && (
             <div className="flex items-center gap-3 text-sm text-white/80">
@@ -42,7 +44,11 @@ export default function Layout() {
           <div className="flex-1 bg-brand-orange" />
         </div>
       </header>
-      <main className="mx-auto max-w-6xl px-4 py-6">
+      {/* Sem max-width aqui de propósito -- a tela de cadastro (BitinDetail) precisa usar a
+          tela inteira pra grade de materiais parecer uma planilha de verdade, não uma caixa
+          pequena. Páginas que querem largura limitada (Meus Bitins, cabeçalho do cadastro)
+          decidem isso sozinhas, dentro do próprio conteúdo. */}
+      <main className="px-4 py-6">
         <Outlet />
       </main>
     </div>

@@ -61,7 +61,7 @@ export default function MeusBitins() {
   }
 
   return (
-    <div>
+    <div className="mx-auto max-w-6xl">
       <div className="mb-6 flex items-center justify-between">
         <h1 className="text-2xl font-semibold text-ink">Meus Bitins</h1>
         <Link
