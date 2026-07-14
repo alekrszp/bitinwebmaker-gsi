@@ -92,6 +92,9 @@ npm run dev
 Releases são criadas manualmente no GitHub, usando `docs/RELEASE_vX.Y.Z.md` como corpo de
 cada release. O processo não é automatizado — a publicação é feita pelo GitHub web interface.
 
+- v0.6.0 — auditoria de segurança/robustez do backend (SECRET_KEY, rate limiting, corrida de
+  double-submit, inconsistência Postgres/Mongo) + primeira suíte de testes de frontend
+  (Vitest); sem mudança de UI: `docs/RELEASE_v0.6.0.md` — <https://github.com/alekrszp/bitinwebmaker-gsi/releases/tag/v0.6.0>
 - v0.5.0 — autenticação consolidada + tela de login redesenhada + identidade visual/tema
   claro-escuro; a tela de cadastro/listagem de Bitins foi apagada após 8 rodadas sem chegar
   num resultado bom e está sendo reconstruída do zero, incrementalmente:
