@@ -9,3 +9,11 @@ export interface User {
   sector_id: number | null
   created_at: string
 }
+
+// Espelha backend/api/bitins.py::ResumoUsuarioResponse -- devolvido por
+// GET /bitins/resumo-usuario. Escopado por criado_por ("só os meus", não o sistema
+// inteiro) -- decisão registrada, ver docs/FRONTEND.md.
+export interface ResumoUsuario {
+  rascunhos: number
+  enviados: number
+}

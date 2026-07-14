@@ -105,6 +105,29 @@ def _require_owner_or_admin(doc: dict[str, Any], current_user: Usuario) -> None:
         )
 
 
+class ResumoUsuarioResponse(BaseModel):
+    rascunhos: int
+    enviados: int
+
+
+@router.get("/resumo-usuario", response_model=ResumoUsuarioResponse)
+async def get_resumo_usuario(
+    current_user: Usuario = Depends(get_current_active_user),
+    mongo_db=Depends(get_mongo_db),
+):
+    """Contagem de BITins do próprio usuário logado (rascunhos/enviados) -- alimenta os
+    cartões de resumo da Home (ver docs/FRONTEND.md). Escopado por criado_por de propósito
+    ("só os meus", não o sistema inteiro) -- decisão registrada com o usuário."""
+    collection = mongo_db["bitin_contents"]
+    rascunhos = await collection.count_documents(
+        {"criado_por": current_user.email, "status": STATUS_RASCUNHO}
+    )
+    enviados = await collection.count_documents(
+        {"criado_por": current_user.email, "status": STATUS_ENVIADO}
+    )
+    return ResumoUsuarioResponse(rascunhos=rascunhos, enviados=enviados)
+
+
 @router.get("/schema/materiais")
 async def get_materiais_schema(_current_user: Usuario = Depends(get_current_active_user)):
     """Colunas do grid de materiais do frontend -- fonte única de verdade (ver

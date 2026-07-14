@@ -149,6 +149,35 @@ class BitinApiTest(unittest.TestCase):
         self.assertEqual(resp.status_code, 200)
         self.assertEqual(len(resp.json()), 2)
 
+    def test_resumo_usuario_conta_rascunhos_e_enviados(self) -> None:
+        self.client.post("/api/v1/bitins/draft", json={"content": make_bitin_content()})
+        self.client.post("/api/v1/bitins/draft", json={"content": make_bitin_content()})
+        enviar_resp = self.client.post(
+            "/api/v1/bitins/draft", json={"content": make_bitin_content()},
+        )
+        self.client.post(f"/api/v1/bitins/{enviar_resp.json()['mongo_id']}/enviar")
+
+        resp = self.client.get("/api/v1/bitins/resumo-usuario")
+        self.assertEqual(resp.status_code, 200, resp.text)
+        self.assertEqual(resp.json(), {"rascunhos": 2, "enviados": 1})
+
+    def test_resumo_usuario_nao_conta_bitins_de_outro_usuario(self) -> None:
+        """Escopado por criado_por -- "só os meus", não o sistema inteiro (decisão
+        registrada em docs/FRONTEND.md)."""
+        self.client.post("/api/v1/bitins/draft", json={"content": make_bitin_content()})
+
+        outro_usuario = self._create_user(2, permission_level=0)
+        resp = self.client.get(
+            "/api/v1/bitins/resumo-usuario",
+            headers={"Authorization": f"Bearer {self._token_for(outro_usuario)}"},
+        )
+        self.assertEqual(resp.json(), {"rascunhos": 0, "enviados": 0})
+
+    def test_resumo_usuario_exige_autenticacao(self) -> None:
+        client_sem_auth = TestClient(app)
+        resp = client_sem_auth.get("/api/v1/bitins/resumo-usuario")
+        self.assertEqual(resp.status_code, 401)
+
     def test_deletar_rascunho(self) -> None:
         create_resp = self.client.post("/api/v1/bitins/draft", json={"content": make_bitin_content()})
         mongo_id = create_resp.json()["mongo_id"]

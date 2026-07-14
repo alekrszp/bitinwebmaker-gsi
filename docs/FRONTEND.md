@@ -223,6 +223,28 @@ visual já estabelecido no login, sem inventar uma linguagem nova** ("nunca fugi
   `Login.tsx`, só que num módulo próprio porque mais de um componente do shell usa os mesmos
   ícones (`Login.tsx` continua com os seus próprios, específicos da tela).
 
+### Cartões de resumo pessoal na Home (2026-07-14)
+
+Pedido direto: "deixar a Home simples mas útil". Decisão registrada com o usuário — dois
+cartões (Rascunhos/Enviados), contando **só os BITins do próprio usuário logado**, sem lista
+de recentes nem botão de ação rápida ("+ Novo BITin") nesta rodada: a tela de
+detalhe/cadastro de BITin ainda não existe, e um link/botão pra lugar nenhum seria pior que
+não ter nada.
+
+- `GET /bitins/resumo-usuario` (novo, ver `docs/BACKEND.md`) — `{rascunhos, enviados}`
+  escopado por `criado_por`, não o sistema inteiro.
+- `Home.tsx`: busca o resumo ao montar (`useEffect`), mostra `—` enquanto carrega ou se a
+  chamada falhar — **falha silenciosa de propósito**, não é crítico o bastante pra estampar um
+  erro vermelho numa tela de boas-vindas.
+- `lib/types.ts`: `ResumoUsuario` novo, espelhando `ResumoUsuarioResponse` do backend (mesmo
+  padrão do tipo `User`).
+- **Achado ao validar**: não há MongoDB real rodando nesta máquina (mesma limitação já
+  documentada em "Rodando localmente" abaixo) — a chamada trava esperando conexão e os
+  cartões ficam permanentemente em `—` ao testar contra o servidor de dev real. A correção do
+  cálculo em si (2 rascunhos + 1 enviado → `{rascunhos: 2, enviados: 1}`, e isolamento por
+  usuário) foi validada pelos 3 testes automatizados novos (`mongomock-motor`), não pela
+  UI ao vivo — registrado com transparência, não sonegado.
+
 ## O que já funciona
 
 Validado com Playwright ad-hoc contra o backend real nesta máquina (sem MongoDB real, ver
@@ -232,7 +254,8 @@ Validado com Playwright ad-hoc contra o backend real nesta máquina (sem MongoDB
   errada) e estado de carregamento.
 - Rota protegida: sem token, qualquer rota redireciona pro login.
 - Shell autenticado: sidebar de navegação (off-canvas no celular), topbar com tema/
-  configurações/usuário/sair, Home com boas-vindas, página de Configurações (placeholder).
+  configurações/usuário/sair, Home com boas-vindas + cartões de resumo pessoal
+  (rascunhos/enviados, `GET /bitins/resumo-usuario`), página de Configurações (placeholder).
 - Logout: volta pro login.
 - Tema claro/escuro (toggle no login E no topbar pós-login, padrão claro, escolha persiste no
   navegador) — testado nos dois temas, desktop e mobile.
