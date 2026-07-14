@@ -135,6 +135,36 @@ class AuthApiTest(unittest.TestCase):
         )
         self.assertEqual(resp.status_code, 400)
 
+    def test_login_com_muitas_tentativas_erradas_bloqueia_temporariamente(self) -> None:
+        from backend.auth import rate_limit
+
+        email = "rate-limit-test@example.com"
+        self.addCleanup(rate_limit.limpar_tentativas, email)
+        self.client.post(
+            "/api/v1/auth/register",
+            json={"email": email, "nome": "RL", "password": "senha123"},
+        )
+
+        for _ in range(rate_limit.MAX_TENTATIVAS):
+            resp = self.client.post(
+                "/api/v1/auth/login", data={"username": email, "password": "errada"},
+            )
+            self.assertEqual(resp.status_code, 400)
+
+        # a próxima tentativa é bloqueada mesmo com a senha CERTA -- o limite é por e-mail,
+        # não depende de continuar errando.
+        bloqueado = self.client.post(
+            "/api/v1/auth/login", data={"username": email, "password": "senha123"},
+        )
+        self.assertEqual(bloqueado.status_code, 429)
+
+        # login bem-sucedido limpa o contador (não fica bloqueado pra sempre)
+        rate_limit.limpar_tentativas(email)
+        ok = self.client.post(
+            "/api/v1/auth/login", data={"username": email, "password": "senha123"},
+        )
+        self.assertEqual(ok.status_code, 200, ok.text)
+
     def test_users_me_com_token_valido(self) -> None:
         user = self._create_user(1)
         token = create_access_token(user.id)

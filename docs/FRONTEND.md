@@ -90,9 +90,39 @@ frontend/
       ThemeToggle.jsx          - botão sol/lua (extraído de Layout.jsx pra reaproveitar no login)
     pages/
       Login.jsx                - tela de login (design completo, ver seção própria abaixo)
+      Login.test.jsx            - smoke test (Vitest + Testing Library, ver "Testes" abaixo)
       Home.jsx                - placeholder da área autenticada (ver "Reset" acima)
+    test/setup.js              - matchers do jest-dom, carregado antes de cada suíte
     App.jsx                   - rotas
 ```
+
+## Testes (Vitest, adicionado em 2026-07-13)
+
+Até esta rodada, toda a validação de frontend desta reconstrução (login, tema, navegação por
+teclado da grade apagada no reset, etc.) viveu só em scripts Playwright ad-hoc fora do repo —
+zero suíte automatizada commitada. Achado de auditoria: se alguém mexer no frontend sem esse
+histórico de scratchpad, não tem `npm test` pra rodar. Vitest + Testing Library escolhidos por
+já virem prontos pro ecossistema Vite (mesma config, `vite.config.js`), sem precisar de um
+bundler/transform separado como Jest exigiria.
+
+- `frontend/vite.config.js`: bloco `test` (`environment: 'jsdom'`, carrega
+  `src/test/setup.js`).
+- `Login.test.jsx`: smoke test da tela de login — campos renderizam, alternar
+  mostrar/esconder senha, erro estruturado aparece quando o login falha (mock de `lib/api.js`,
+  não bate no backend real — isso continua coberto pelos testes Python + validação manual),
+  toggle de tema aplica `.dark` na raiz.
+- `npm run test` (`vitest run`) — roda uma vez e sai (CI-friendly), não fica observando
+  arquivos.
+- Escopo deliberadamente pequeno por enquanto: só a única tela que existe (Login). Cresce
+  junto com a reconstrução incremental da parte de Bitins.
+
+**Achado técnico registrado**: sob Vitest (não sob `vite build`/`vite dev`, que sempre
+funcionaram normalmente), todo componente com JSX — não só os arquivos de teste — falhava com
+`ReferenceError: React is not defined`, mesmo com `@vitejs/plugin-react` registrado e o runtime
+automático de JSX funcionando fora de teste. Corrigido com `esbuild: { jsxInject: "import React
+from 'react'" }` em `vite.config.js` — injeta o import em toda transformação esbuild, sem afetar
+o build/dev real (o `vite build` já usa outro transform, `oxc`, e ignora essa opção — confirmado
+pelo aviso "Both esbuild and oxc options were set" no log de build, inofensivo).
 
 ## Tela de login (design completo, 2026-07-13)
 

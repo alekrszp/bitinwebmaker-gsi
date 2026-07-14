@@ -69,10 +69,10 @@ class BitinApiTest(unittest.TestCase):
                 db.close()
 
         mongo_client = AsyncMongoMockClient()
-        mongo_test_db = mongo_client["bitin_test_db"]
+        self.mongo_test_db = mongo_client["bitin_test_db"]
 
         async def override_get_mongo_db():
-            return mongo_test_db
+            return self.mongo_test_db
 
         app.dependency_overrides[get_db] = override_get_db
         app.dependency_overrides[get_mongo_db] = override_get_mongo_db
@@ -237,6 +237,82 @@ class BitinApiTest(unittest.TestCase):
         body = enviar_resp.json()
         self.assertFalse(body["ok"])
         self.assertTrue(any(e["code"] == "invalid_setor_value" for e in body["errors"]))
+
+    def test_envio_concorrente_devolve_erro_estruturado_nao_500(self) -> None:
+        """Simula 2 requisições de /enviar pro mesmo rascunho quase ao mesmo tempo: a 2ª
+        esgota as tentativas de gerar_e_salvar_bitin_sql (mongo_document_id já existe em
+        BitinSQL) -- antes disso vazava como 500 puro; agora devolve erro estruturado."""
+        create_resp = self.client.post("/api/v1/bitins/draft", json={"content": make_bitin_content()})
+        mongo_id = create_resp.json()["mongo_id"]
+
+        # Simula a 1ª requisição já ter reservado o número no Postgres (mas o Mongo ainda
+        # não foi atualizado pra "enviado" -- é exatamente a janela de corrida real).
+        db = self.SessionLocal()
+        db.add(BitinSQL(codigo="P1/26", prefixo="P", ano=26, sequencial=1, mongo_document_id=mongo_id))
+        db.commit()
+        db.close()
+
+        enviar_resp = self.client.post(f"/api/v1/bitins/{mongo_id}/enviar")
+        self.assertEqual(enviar_resp.status_code, 200, enviar_resp.text)
+        body = enviar_resp.json()
+        self.assertFalse(body["ok"])
+        self.assertTrue(any(e["code"] == "ja_enviado_concorrente" for e in body["errors"]), body["errors"])
+
+    def test_falha_ao_gravar_mongo_desfaz_numero_reservado_no_postgres(self) -> None:
+        """Se o Postgres commitar o número mas o Mongo falhar ao gravar "enviado" (sem
+        transação real cobrindo os 2 bancos), o número reservado precisa ser desfeito --
+        senão fica um BitinSQL órfão apontando pra um rascunho que nunca foi marcado como
+        enviado, e o próximo número gerado pula um valor à toa.
+
+        mongomock-motor gera os métodos (update_one etc.) por um proxy dinâmico que não
+        respeita `unittest.mock.patch` na classe real do motor (confirmado empiricamente --
+        o patch simplesmente não intercepta a chamada). Em vez disso, troca-se o banco
+        inteiro devolvido por get_mongo_db por um wrapper fino que delega tudo pro mongomock
+        real, exceto update_one na coleção certa, que falha de propósito.
+        """
+        create_resp = self.client.post("/api/v1/bitins/draft", json={"content": make_bitin_content()})
+        mongo_id = create_resp.json()["mongo_id"]
+
+        class ColecaoComUpdateFalhando:
+            def __init__(self, real):
+                self._real = real
+
+            def __getattr__(self, nome):
+                return getattr(self._real, nome)
+
+            async def update_one(self, *args, **kwargs):
+                raise RuntimeError("mongo indisponível")
+
+        class DbComMongoFalhando:
+            def __init__(self, real_db):
+                self._real_db = real_db
+
+            def __getitem__(self, nome):
+                colecao_real = self._real_db[nome]
+                return ColecaoComUpdateFalhando(colecao_real) if nome == "bitin_contents" else colecao_real
+
+        db_real = self.mongo_test_db
+        self.mongo_test_db = DbComMongoFalhando(db_real)
+        try:
+            enviar_resp = self.client.post(f"/api/v1/bitins/{mongo_id}/enviar")
+        finally:
+            self.mongo_test_db = db_real
+
+        self.assertEqual(enviar_resp.status_code, 500, enviar_resp.text)
+
+        db = self.SessionLocal()
+        orfao = db.query(BitinSQL).filter(BitinSQL.mongo_document_id == mongo_id).first()
+        db.close()
+        self.assertIsNone(orfao, "BitinSQL deveria ter sido desfeito após a falha no Mongo")
+
+        # o rascunho continua "rascunho" (não ficou destrancado como enviado sem número real)
+        get_resp = self.client.get(f"/api/v1/bitins/{mongo_id}")
+        self.assertEqual(get_resp.json()["status"], "rascunho")
+
+        # o próximo envio bem-sucedido reaproveita o número (não pula o que foi desfeito)
+        retry_resp = self.client.post(f"/api/v1/bitins/{mongo_id}/enviar")
+        self.assertEqual(retry_resp.status_code, 200, retry_resp.text)
+        self.assertEqual(retry_resp.json()["bitin"]["codigo"], "P1/26")
 
     def test_resumo_bitin(self) -> None:
         create_resp = self.client.post("/api/v1/bitins/draft", json={"content": make_bitin_content()})

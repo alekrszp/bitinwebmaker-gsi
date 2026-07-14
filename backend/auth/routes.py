@@ -12,6 +12,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
 
+from backend.auth import rate_limit
 from backend.auth.models import Usuario
 from backend.auth.schemas import Token, UserCreate, UserOut
 from backend.auth.security import create_access_token, get_password_hash, verify_password
@@ -46,12 +47,21 @@ def register_user(user_in: UserCreate, db: Session = Depends(get_db)) -> Usuario
 
 @router.post("/login", response_model=Token)
 def login(db: Session = Depends(get_db), form_data: OAuth2PasswordRequestForm = Depends()) -> Token:
-    usuario = db.query(Usuario).filter(Usuario.email == form_data.username).first()
+    email = form_data.username
+    if rate_limit.excedeu_limite(email):
+        raise HTTPException(
+            status_code=429,
+            detail="Muitas tentativas de login pra este e-mail. Aguarde alguns minutos e tente de novo.",
+        )
+
+    usuario = db.query(Usuario).filter(Usuario.email == email).first()
     if not usuario or not verify_password(form_data.password, usuario.hashed_password):
+        rate_limit.registrar_falha(email)
         raise HTTPException(status_code=400, detail="E-mail ou senha incorretos")
     if not usuario.ativo:
         raise HTTPException(status_code=400, detail="Usuário inativo")
 
+    rate_limit.limpar_tentativas(email)
     access_token = create_access_token(
         usuario.id, expires_delta=timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES),
     )

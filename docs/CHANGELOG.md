@@ -2,6 +2,54 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v0.6.0] - 2026-07-13
+
+Auditoria de segurança/arquitetura do backend (pedida diretamente) + primeira suíte de testes
+automatizada do frontend. Sem mudança de UI visível pro engenheiro — tudo aqui é robustez.
+
+### Security
+- **`SECRET_KEY` padrão não deixa mais o app subir em produção**: antes, um deploy sem `.env`
+  configurado subia silenciosamente com a chave JWT padrão (`backend/config.py`) — qualquer um
+  forjaria um token de admin válido, sem aviso nenhum. Agora, `backend/main.py::lifespan`
+  recusa subir (`RuntimeError`) se `ENVIRONMENT=production` e a `SECRET_KEY` continua no
+  default. Dev local/testes nunca setam `ENVIRONMENT`, então nada muda pra eles.
+- **Limite de tentativas de login** (`backend/auth/rate_limit.py`, novo): `/auth/login` não
+  tinha limite nenhum — força bruta contra senha fraca só era limitada pelo custo do hash. 5
+  tentativas erradas pro mesmo e-mail em 5 minutos bloqueiam com `429`. Em memória (processo
+  único) de propósito — registrado como limitação conhecida se um dia rodar com múltiplos
+  workers.
+- **Busca (`termo`) escapada antes de virar `$regex` do Mongo**: metacaracteres de regex
+  digitados pelo usuário podiam causar matches inesperados ou custo de busca patológico —
+  `re.escape` aplicado em `backend/api/bitins.py::list_bitins`.
+
+### Fixed
+- **Corrida no envio (double-submit) não vaza mais como `500` puro**: se
+  `gerar_e_salvar_bitin_sql` esgotasse as tentativas (quase sempre porque o mesmo BITin já
+  tinha sido enviado por uma requisição concorrente — 2 cliques, 2 abas), o `RuntimeError`
+  subia sem tratamento. `enviar_bitin_endpoint` agora distingue "já enviado por outra
+  requisição" (erro estruturado, explicando) de um erro genuíno e raro (`503` com log).
+- **Falha do Mongo depois do commit no Postgres não deixa mais número "fantasma"**: sem
+  transação real cobrindo os 2 bancos, se `collection.update_one` falhasse depois do Postgres
+  já ter reservado o número sequencial, sobrava um `BitinSQL` órfão. Agora desfaz o lado
+  Postgres (best-effort) e loga `CRITICAL` se até isso falhar — reduz bastante a janela de
+  inconsistência (não é uma solução de transação distribuída completa, ver `docs/BACKEND.md`).
+
+### Added
+- **Logging básico no backend** (`backend/main.py`): zero `logging` existia antes — uma falha
+  em produção não deixava rastro nenhum além da resposta HTTP.
+- **Dependências do backend com versão fixada** (`backend/requirements.txt`): antes sem
+  nenhuma versão fixa (reprodutibilidade frágil); fixadas nas versões que rodam os 164 testes
+  nesta máquina. `psycopg2-binary` descomentado, mas deliberadamente sem versão fixa (não
+  instalado neste ambiente de dev).
+- **Primeira suíte de testes de frontend commitada** (Vitest + Testing Library,
+  `frontend/src/pages/Login.test.jsx`): até aqui toda validação de frontend vivia só em
+  scripts Playwright ad-hoc fora do repo. `npm run test` roda smoke tests da tela de login
+  (campos, mostrar/esconder senha, erro estruturado, tema).
+- **3 novos testes Python** cobrindo a checagem de `SECRET_KEY` na subida
+  (`tests/test_backend_main.py`), a corrida no envio e a falha do Mongo pós-commit
+  (`tests/test_backend_bitins.py`), e o limite de tentativas de login
+  (`tests/test_backend_auth.py`) — 164 testes automatizados no total (era 158).
+
 ## [v0.5.0] - 2026-07-13
 
 ### Removed

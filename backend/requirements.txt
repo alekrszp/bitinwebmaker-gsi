@@ -1,17 +1,22 @@
-fastapi
-uvicorn
-sqlalchemy>=2.0
-motor
-pydantic
-pydantic[email]
-pydantic-settings
-python-jose[cryptography]
-passlib
-python-multipart
+# Versões fixadas nas que já rodam os 161 testes automatizados nesta máquina (`pip freeze`)
+# -- antes disso o arquivo não fixava nenhuma versão, então `pip install` hoje e daqui uns
+# meses podiam resolver pacotes completamente diferentes (reprodutibilidade frágil).
+fastapi==0.139.0
+uvicorn==0.51.0
+sqlalchemy==2.0.51
+motor==3.7.1
+pydantic==2.13.4
+pydantic[email]==2.13.4
+pydantic-settings==2.14.2
+python-jose[cryptography]==3.5.0
+passlib==1.7.4
+python-multipart==0.0.32
 
-# Produção (Postgres real) -- descomentar quando for rodar contra Postgres de verdade:
-# psycopg2-binary
+# Produção (Postgres real, ver docs/BACKEND.md) -- sem versão fixa de propósito: não está
+# instalado neste ambiente de dev (só SQLite é usado aqui), então não há uma versão "provada"
+# nesta máquina pra fixar com confiança. Fixar assim que for instalado contra um Postgres real.
+psycopg2-binary
 
 # Só para testes (tests/test_backend_bitins.py) -- não usados em produção:
-mongomock-motor
-httpx
+mongomock-motor==0.0.36
+httpx==0.28.1

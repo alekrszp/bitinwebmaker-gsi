@@ -195,6 +195,21 @@ criar/ver/listar — só editar/excluir rascunho de outra pessoa é restrito); v
 `Usuario.sector_id` e o `setor` do BITin (ex.: engenheiro só vê BITins do próprio setor) — não
 pedido ainda, registrado como possibilidade futura.
 
+**Limite de tentativas de login** (`backend/auth/rate_limit.py`, adicionado em 2026-07-13,
+achado de auditoria): antes, `/auth/login` não tinha limite nenhum — força bruta contra uma
+senha fraca só era limitada pelo custo do hash `pbkdf2`. Agora, 5 tentativas erradas pro mesmo
+e-mail em 5 minutos bloqueiam novas tentativas com `429` (mesmo com a senha certa) até a janela
+passar ou até um login bem-sucedido limpar o contador. **Em memória de propósito** — é a 1ª
+linha de defesa pra um processo único; um deploy com múltiplos workers/réplicas precisaria de
+um store compartilhado (Redis etc.), registrado como limitação conhecida, não escondida.
+
+**Checagem de segurança na subida** (`backend/main.py::lifespan`, adicionado em 2026-07-13,
+achado de auditoria): antes, um deploy sem `.env` configurado subia silenciosamente com a
+`SECRET_KEY` padrão — qualquer um forjaria um token de admin válido, sem nenhum aviso. Agora, se
+`ENVIRONMENT=production` (`.env`) e `SECRET_KEY` continua no valor padrão, o app **recusa
+subir** (`RuntimeError` na inicialização) em vez de subir inseguro. Dev local/testes nunca
+setam `ENVIRONMENT`, então continuam funcionando sem `.env` como sempre.
+
 **Rodando localmente**:
 
 ```powershell
@@ -203,7 +218,9 @@ pedido ainda, registrado como possibilidade futura.
 ```
 
 `SECRET_KEY` (`backend/.env`) precisa ser uma chave real em qualquer ambiente que não seja dev
-local — o default em `backend/config.py` existe só pra não quebrar testes/SQLite sem `.env`.
+local — o default em `backend/config.py` existe só pra não quebrar testes/SQLite sem `.env`, e
+setar `ENVIRONMENT=production` sem trocar a `SECRET_KEY` agora impede o app de subir (ver
+acima).
 
 ## Corrida no número sequencial (correção do achado no backend de referência)
 
@@ -211,6 +228,27 @@ local — o default em `backend/config.py` existe só pra não quebrar testes/SQ
 `unique` do `codigo` disparar (dois envios simultâneos calculando o mesmo próximo número), o
 `IntegrityError` é capturado e a geração é **retentada** (até N vezes) em vez de estourar um
 erro 500 pro usuário.
+
+**O que acontecia quando as tentativas se esgotavam** (achado de auditoria, corrigido em
+2026-07-13): se `gerar_e_salvar_bitin_sql` esgotasse as `MAX_RETRIES` tentativas (na prática,
+quase sempre porque o mesmo `mongo_document_id` — `unique` em `BitinSQL` — já tinha sido
+enviado por uma requisição concorrente enquanto esta rodava: 2 cliques em "Enviar", ou 2 abas
+abertas), o `RuntimeError` subia sem tratamento e virava um `500` puro pro usuário, sem
+explicação. `backend/api/bitins.py::enviar_bitin_endpoint` agora captura esse erro, distingue
+os dois casos (já foi enviado por outra requisição → erro estruturado explicando isso; erro
+genuíno e raro → `503` com log) e nunca mais deixa a corrida virar um 500 sem contexto.
+
+**Sem transação real cobrindo Postgres + MongoDB** (achado de auditoria, mitigado em
+2026-07-13, não eliminado): `gerar_e_salvar_bitin_sql` faz `commit()` no Postgres *antes* do
+`collection.update_one` no Mongo marcar o BITin como enviado — os dois bancos não compartilham
+uma transação. Se o processo morrer ou o Mongo falhar nesse meio-tempo, sobraria um `BitinSQL`
+"fantasma" (número reservado) apontando pra um rascunho que nunca foi marcado como enviado.
+Mitigação: se o `update_one` falhar, o `BitinSQL` recém-criado é desfeito (`db.delete` +
+`db.commit`, best-effort) e o erro vira `500` explícito pro usuário tentar de novo — se até o
+desfazimento falhar, fica logado como `CRITICAL` (precisa de reconciliação manual). Isso reduz
+bastante a janela de inconsistência, mas não é uma solução de transação distribuída de verdade
+(um saga pattern ou outbox seria o próximo passo, se a taxa de falha do Mongo justificar o
+investimento).
 
 ## Rodando localmente (sem Postgres/MongoDB reais)
 
@@ -222,3 +260,18 @@ automatizados (`tests/test_backend_*.py`) usam:
 
 Pra rodar de verdade (Postgres/MongoDB reais), configurar `.env` com `DATABASE_URL` e
 `MONGO_URL` apontando pra instâncias reais (ou `docker-compose`, a fazer depois).
+
+**Dependências com versão fixada** (`backend/requirements.txt`, desde 2026-07-13): antes não
+fixava nenhuma versão — `pip install` hoje e daqui uns meses podiam resolver pacotes
+completamente diferentes. Agora fixado nas versões que rodam os 164 testes automatizados nesta
+máquina (`pip freeze`), com uma exceção deliberada: `psycopg2-binary` fica sem versão fixa
+porque não está instalado neste ambiente de dev (só SQLite é usado aqui) — não há uma versão
+"provada" nesta máquina pra fixar com confiança; fixar assim que for instalado contra um
+Postgres real.
+
+**Logging básico** (`backend/main.py`, desde 2026-07-13): antes não existia nenhuma chamada de
+`logging` no backend inteiro — uma falha em produção (Mongo fora do ar, corrida no envio, erro
+de JWT) não deixava rastro nenhum além da resposta HTTP pro cliente. Configuração simples
+(`logging.basicConfig`, nível `INFO`) o suficiente pra diagnosticar sem precisar de infra de
+log estruturado ainda; usado nos pontos de falha tratados nesta rodada (corrida no envio,
+inconsistência Postgres/Mongo).

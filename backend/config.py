@@ -3,8 +3,12 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 class Settings(BaseSettings):
     PROJECT_NAME: str = "BITin API"
-    VERSION: str = "0.5.0"
+    VERSION: str = "0.6.0"
     API_V1_STR: str = "/api/v1"
+
+    # "production" liga checagens de segurança na subida do app (ver main.py::lifespan) --
+    # default "development" pra não quebrar dev local/testes, que nunca setam isso via .env.
+    ENVIRONMENT: str = "development"
 
     # Postgres (metadado: código, status) -- SQLite em teste, ver docs/BACKEND.md
     DATABASE_URL: str = "sqlite:///./bitin_backend.db"

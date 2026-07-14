@@ -1,3 +1,5 @@
+import logging
+import re
 import uuid
 from datetime import datetime
 from typing import Any
@@ -12,12 +14,15 @@ from backend.auth.models import Usuario
 from backend.bitin_number import SetorInvalido, gerar_e_salvar_bitin_sql
 from backend.db.mongodb import get_mongo_db
 from backend.db.session import get_db
+from backend.models_sql import BitinSQL
 
 import bitin_document
 import bitin_lifecycle
 import bitin_model
 import bitin_view
 import sap_paste_parser
+
+logger = logging.getLogger(__name__)
 
 VBA_MAPPING_CONFIG = bitin_model.load_config(scripts_path.VBA_MAPPING_CONFIG_PATH)
 DOCUMENT_CONFIG = bitin_document.load_config(scripts_path.DOCUMENT_CONFIG_PATH)
@@ -175,10 +180,14 @@ async def list_bitins(
     if status:
         query["status"] = status
     if termo:
+        # re.escape antes de virar $regex do Mongo -- sem isso, metacaracteres de regex
+        # digitados pelo usuário (ex.: "(", "*") viram parte do padrão em vez de texto
+        # literal, podendo causar matches inesperados ou custo de busca patológico.
+        termo_escapado = re.escape(termo)
         query["$or"] = [
-            {"content.motivo": {"$regex": termo, "$options": "i"}},
-            {"content.solicitante": {"$regex": termo, "$options": "i"}},
-            {"content.bitin": {"$regex": termo, "$options": "i"}},
+            {"content.motivo": {"$regex": termo_escapado, "$options": "i"}},
+            {"content.solicitante": {"$regex": termo_escapado, "$options": "i"}},
+            {"content.bitin": {"$regex": termo_escapado, "$options": "i"}},
         ]
     cursor = collection.find(query).sort("updated_at", -1).skip(skip).limit(limit)
     docs = await cursor.to_list(length=limit)
@@ -246,17 +255,55 @@ async def enviar_bitin_endpoint(
         return EnviarResponse(ok=False, errors=[
             {"field": "setor", "code": "invalid_setor_value", "message": str(exc)}
         ])
+    except RuntimeError:
+        # gerar_e_salvar_bitin_sql esgotou as tentativas -- na prática, quase sempre porque
+        # este mesmo mongo_id (unique em BitinSQL.mongo_document_id) já foi enviado por uma
+        # requisição concorrente enquanto esta rodava (2 cliques em "Enviar", ou 2 abas
+        # abertas). Antes disso o cliente via um 500 puro; agora distingue os dois casos.
+        db.rollback()
+        ja_enviado = (
+            db.query(BitinSQL).filter(BitinSQL.mongo_document_id == mongo_id).first()
+        )
+        if ja_enviado is not None:
+            logger.info("Envio duplicado detectado (concorrência): mongo_id=%s codigo=%s", mongo_id, ja_enviado.codigo)
+            return EnviarResponse(ok=False, errors=[
+                {"field": "", "code": "ja_enviado_concorrente", "message": "Este BITin já foi enviado (provavelmente em outra aba/clique duplo). Recarregue a página."}
+            ])
+        logger.error("Falha ao gerar número sequencial após esgotar tentativas: mongo_id=%s setor=%s", mongo_id, content.get("setor"))
+        raise HTTPException(status_code=503, detail="Não foi possível gerar o número do BITin agora. Tente novamente.")
 
     content["bitin"] = bitin_sql.codigo
     now = datetime.now().isoformat()
-    await collection.update_one(
-        {"_id": mongo_id},
-        {"$set": {
-            "status": STATUS_ENVIADO,
-            "content": content,
-            "sql_ref_id": bitin_sql.id,
-            "updated_at": now,
-        }},
-    )
+    try:
+        await collection.update_one(
+            {"_id": mongo_id},
+            {"$set": {
+                "status": STATUS_ENVIADO,
+                "content": content,
+                "sql_ref_id": bitin_sql.id,
+                "updated_at": now,
+            }},
+        )
+    except Exception:
+        # Postgres já commitou o número (bitin_sql), mas o Mongo não gravou "enviado" --
+        # sem uma transação real cobrindo os 2 bancos, desfaz o lado Postgres (best-effort)
+        # pra não deixar um código "fantasma" reservado apontando pra um rascunho que nunca
+        # foi marcado como enviado. Se o rollback também falhar, fica logado alto e claro em
+        # vez de silencioso -- precisa de reconciliação manual (ver docs/BACKEND.md).
+        logger.exception(
+            "Mongo update_one falhou após commit no Postgres -- desfazendo BitinSQL id=%s codigo=%s mongo_id=%s",
+            bitin_sql.id, bitin_sql.codigo, mongo_id,
+        )
+        try:
+            db.delete(bitin_sql)
+            db.commit()
+        except Exception:
+            logger.critical(
+                "INCONSISTÊNCIA NÃO RESOLVIDA: BitinSQL id=%s codigo=%s ficou órfão (mongo_id=%s "
+                "continua em rascunho). Requer reconciliação manual.",
+                bitin_sql.id, bitin_sql.codigo, mongo_id,
+            )
+        raise HTTPException(status_code=500, detail="Falha ao registrar o envio. Tente novamente.")
+
     updated_doc = await collection.find_one({"_id": mongo_id})
     return EnviarResponse(ok=True, errors=[], bitin=_doc_to_response(updated_doc))
