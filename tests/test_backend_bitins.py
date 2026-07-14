@@ -400,6 +400,19 @@ class BitinApiTest(unittest.TestCase):
         resp_all = self.client.get("/api/v1/bitins", params={"limit": 100, "skip": 0})
         self.assertEqual(len(resp_all.json()), 5)
 
+    def test_listar_nao_traz_bitins_de_outro_usuario(self) -> None:
+        """"Meus Bitins" -- mesmo escopo por criado_por já usado em resumo-usuario (decisão
+        registrada em docs/FRONTEND.md): cada usuário só vê os próprios, mesmo sendo admin."""
+        self.client.post("/api/v1/bitins/draft", json={"content": make_bitin_content()})
+
+        outro_admin = self._create_user(2, permission_level=99)
+        resp = self.client.get(
+            "/api/v1/bitins",
+            headers={"Authorization": f"Bearer {self._token_for(outro_admin)}"},
+        )
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.json(), [])
+
     def test_criar_draft_sem_content_retorna_422(self) -> None:
         resp = self.client.post("/api/v1/bitins/draft", json={})
         self.assertEqual(resp.status_code, 422)

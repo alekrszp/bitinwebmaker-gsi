@@ -1,10 +1,11 @@
 import { NavLink } from 'react-router-dom'
-import { HomeIcon } from './icons'
+import { HomeIcon, ListIcon } from './icons'
 
-// Lista extensível de propósito -- só "Início" existe hoje (a tela de Bitins ainda não foi
-// reconstruída, ver docs/FRONTEND.md), mas o próximo item entra aqui sem mexer no resto do
-// componente.
-const NAV_ITEMS = [{ to: '/', label: 'Início', icon: HomeIcon, end: true }]
+// Lista extensível de propósito -- o próximo item entra aqui sem mexer no resto do componente.
+const NAV_ITEMS = [
+  { to: '/', label: 'Início', icon: HomeIcon, end: true },
+  { to: '/bitins', label: 'Meus Bitins', icon: ListIcon, end: false },
+]
 
 export default function Sidebar({ open, onClose }: { open: boolean; onClose: () => void }) {
   return (

@@ -103,7 +103,7 @@ edita o rascunho de outra pessoa), `created_at`, `updated_at`.
 |---|---|---|
 | POST | `/bitins/draft` | Cria ou atualiza um rascunho — **sem validação de negócio** (liberdade de edição). Se `mongo_id` vier no corpo, atualiza; senão, cria novo. |
 | GET | `/bitins/{mongo_id}` | Busca um BITin (rascunho ou enviado) pelo id do Mongo. |
-| GET | `/bitins` | Lista rascunhos + enviados (filtro simples por status/termo). |
+| GET | `/bitins` | Lista rascunhos + enviados **do próprio usuário logado** (filtrado por `criado_por`, mesma decisão de escopo do `/resumo-usuario` — "Meus Bitins", não a listagem do sistema inteiro; alimenta `MeusBitins.tsx`), com filtro adicional por status/termo. Escopo mudou em 2026-07-14 — antes listava todo mundo. |
 | DELETE | `/bitins/{mongo_id}` | Apaga um rascunho. Recusa se já enviado. |
 | POST | `/bitins/{mongo_id}/enviar` | **O ponto-chave**: chama `bitin_lifecycle.enviar_bitin` (todas as validações de uma vez). Se falhar, devolve **200 com `ok=false` e a lista de erros estruturados** (`{field, code, message}`) no corpo — não é um erro HTTP, é um resultado de validação de negócio (a chamada em si funcionou). Se passar, gera o número sequencial (com retry seguro), cria a linha no Postgres, atualiza o Mongo. |
 | GET | `/bitins/{mongo_id}/resumo` | `bitin_view.render_bitin_summary` — pré-visualização/tela final. |

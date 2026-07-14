@@ -94,9 +94,11 @@ pendência já registrada como bloqueada.
 
 **Adiados por escolha (não bloqueados, só não priorizados ainda)**:
 
-- **Tela de Bitins** (listagem, cadastro, grid de materiais, checklist) — apagada no reset da
-  v0.5.0, sendo reconstruída incrementalmente à parte (ver docs/FRONTEND.md, "Reset da tela de
-  Bitins"). Não entra aqui como pendência de auditoria, é o próprio trabalho em andamento.
+- **Tela de Bitins** — apagada no reset da v0.5.0, sendo reconstruída incrementalmente (ver
+  docs/FRONTEND.md, "Reset da tela de Bitins"). Listagem "Meus Bitins" + visualização
+  só-leitura já prontas (2026-07-14, `MeusBitins.tsx`/`BitinDetail.tsx`). Falta: cadastro/
+  edição de rascunho, grid de materiais, checklist, botão "+ Novo BITin". Não entra aqui como
+  pendência de auditoria, é o próprio trabalho em andamento.
 - Restringir QUEM pode criar/ver/listar BITins por setor (`Usuario.sector_id` ↔ `setor` do
   BITin) — não pedido ainda, ver docs/BACKEND.md.
 - Docker/docker-compose e testes de borda do `sap_paste_parser.py` (paste parcial, unicode) —

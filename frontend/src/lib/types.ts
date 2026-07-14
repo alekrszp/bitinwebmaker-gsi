@@ -24,3 +24,17 @@ export interface Sector {
   nome: string
   descricao: string | null
 }
+
+// Espelha backend/api/bitins.py::BitinResponse -- devolvido por GET /bitins (lista, escopada
+// pro próprio usuário -- "Meus Bitins", ver docs/FRONTEND.md) e GET /bitins/{mongo_id}.
+export interface Bitin {
+  mongo_id: string
+  codigo: string | null
+  status: string
+  titulo: string | null
+  content: Record<string, unknown>
+  criado_por: string | null
+  created_at: string
+  updated_at: string
+  pode_editar: boolean
+}

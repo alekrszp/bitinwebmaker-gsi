@@ -270,6 +270,43 @@ diferente do Mongo — validado ao vivo de verdade, não só por teste automatiz
   confirmado por leitura direta do banco que os dois usuários (`demo@example.com`,
   `teste@example.com`) voltaram exatamente ao estado original.
 
+### "Meus Bitins" — listagem + visualização só-leitura (2026-07-14)
+
+Escopo fechado colaborativamente com o usuário via `AskUserQuestion` (pedido explícito: "quero
+decidir junto com você"). A primeira formulação da pergunta de escopo ("listagem só, ou
+listagem + visualização mínima?") não ficou clara o suficiente e precisou ser reexplicada em
+termos mais concretos antes de fechar.
+
+- **`MeusBitins.tsx`** (rota `/bitins`): tabela com abas Todos/Rascunhos/Enviados (`GET /bitins`
+  com `?status=`), colunas Código/Motivo/Solicitante/Status. Motivo e Solicitante são
+  obrigatórios na lista (não só Código) porque rascunhos ainda não têm código — só é gerado no
+  envio (`gerar_e_salvar_bitin_sql`) — e sem eles a linha de um rascunho ficaria em branco, sem
+  nada pra identificar do que se trata.
+- **Escopo "só os meus"**: `GET /bitins` passou a filtrar por `criado_por` no backend (mesma
+  decisão já registrada em `resumo-usuario`/Home) — mudança de comportamento do endpoint
+  existente, não só um filtro novo no frontend, pra não vazar motivo/solicitante de BITins de
+  outros usuários pra quem só deveria ver os próprios. Nem admins veem a lista do sistema
+  inteiro aqui (diferente de "Gestão de usuários" em Configurações, que é uma função
+  administrativa separada).
+- **`BitinDetail.tsx`** (rota `/bitins/:mongoId`, clique na linha): visualização só-leitura,
+  ainda sem edição. Usa `GET /bitins/{mongo_id}/resumo` (`bitin_view.render_bitin_summary`) em
+  vez do `content` bruto — reaproveita a lógica de diffs de campo (`dados_basicos_alterados`) e
+  impactos operacionais que o backend já monta pra pré-visualização/tela final, em vez de
+  reimplementar essa transformação no frontend.
+- **Nota de acesso direto por URL**: `GET /bitins/{mongo_id}` e `/resumo` não checam dono (só
+  `POST /draft`, `DELETE` e `/enviar` checam, via `_require_owner_or_admin`) — comportamento
+  pré-existente do backend (leitura de um BITin específico por id é aberta a qualquer usuário
+  autenticado, só a escrita é restrita). A listagem "Meus Bitins" não expõe outros ids pra
+  descobrir, mas navegar direto pra uma URL `/bitins/{id}` de outra pessoa ainda funciona —
+  não é uma regressão desta rodada, é o mesmo modelo de permissão que já existia.
+- **Fora de escopo nesta rodada** (decidido com o usuário): botão "+ Novo BITin" (não existe
+  tela de cadastro ainda) e edição no `BitinDetail` (fica travado, só leitura).
+- **Ambiente**: não foi possível validar ao vivo com Playwright (sem MongoDB real nesta
+  máquina, e as credenciais dos usuários de teste locais não são conhecidas por mim — foram
+  criadas pelo próprio usuário via `POST /auth/register`, não seedadas). Coberto pela suíte
+  automatizada (172 testes de backend com `mongomock-motor`, incluindo o novo escopo por
+  `criado_por`) e por `typecheck`/`lint`/`test`/`build` limpos no frontend.
+
 ## O que já funciona
 
 Validado com Playwright ad-hoc contra o backend real nesta máquina (sem MongoDB real, ver
@@ -278,19 +315,22 @@ Validado com Playwright ad-hoc contra o backend real nesta máquina (sem MongoDB
 - Login (`POST /auth/login`) → redireciona pra `/`, com validação visual de erro (credencial
   errada) e estado de carregamento.
 - Rota protegida: sem token, qualquer rota redireciona pro login.
-- Shell autenticado: sidebar de navegação (off-canvas no celular), topbar com tema/
-  configurações/usuário/sair, Home com boas-vindas + cartões de resumo pessoal
-  (rascunhos/enviados, `GET /bitins/resumo-usuario`), página de Configurações ("Minha conta" +
-  "Sobre" pra todo mundo, "Gestão de usuários" só pra admin).
+- Shell autenticado: sidebar de navegação (off-canvas no celular, agora com "Início" e "Meus
+  Bitins"), topbar com tema/configurações/usuário/sair, Home com boas-vindas + cartões de
+  resumo pessoal (rascunhos/enviados, `GET /bitins/resumo-usuario`), página de Configurações
+  ("Minha conta" + "Sobre" pra todo mundo, "Gestão de usuários" só pra admin).
+- "Meus Bitins" (`/bitins`): listagem escopada pro próprio usuário, abas por status, clique na
+  linha abre visualização só-leitura (`/bitins/:mongoId`) — ver seção acima. Validado pela
+  suíte automatizada (sem verificação visual ao vivo nesta rodada, ver nota de ambiente acima).
 - Logout: volta pro login.
 - Tema claro/escuro (toggle no login E no topbar pós-login, padrão claro, escolha persiste no
   navegador) — testado nos dois temas, desktop e mobile.
 
 ## O que NÃO está nesta fatia ainda (próximos incrementos)
 
-- **Toda a tela de Bitins** (listagem "Meus Bitins", criar/editar rascunho, grid de materiais,
-  checklist, visualização de enviado) — apagada de propósito, ver "Reset" acima. Reconstrução
-  incremental, começando pela listagem depois que o login estiver "100%".
+- **Criar/editar rascunho, grid de materiais, checklist, botão "+ Novo BITin"** — a listagem e
+  a visualização só-leitura já existem (`MeusBitins.tsx`/`BitinDetail.tsx`, 2026-07-14), mas
+  cadastro/edição de verdade ainda não. Apagados de propósito no reset, ver "Reset" acima.
 - **RBAC visível na UI** — o backend já recusa (`403`) quem tenta editar/excluir algo sem
   permissão; a versão anterior escondia alguns botões preventivamente, mas essa UI foi apagada
   no reset. Refazer quando a listagem voltar.

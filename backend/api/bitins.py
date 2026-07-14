@@ -217,7 +217,11 @@ async def list_bitins(
     mongo_db=Depends(get_mongo_db),
 ):
     collection = mongo_db["bitin_contents"]
-    query: dict[str, Any] = {}
+    # "Meus Bitins" -- mesma decisão de escopo já registrada na Home (resumo-usuario):
+    # cada usuário só vê os próprios BITins, não a listagem do sistema inteiro. Admins não
+    # ganham uma visão global aqui (diferente de Gestão de usuários) porque essa tela lista
+    # rascunhos/conteúdo pessoal, não é uma função administrativa.
+    query: dict[str, Any] = {"criado_por": current_user.email}
     if status:
         query["status"] = status
     if termo:
