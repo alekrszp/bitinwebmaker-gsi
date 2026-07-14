@@ -55,6 +55,10 @@ class BitinResponse(BaseModel):
     criado_por: str | None = None
     created_at: str
     updated_at: str
+    # Calculado por requisição (não vem do Mongo) -- pra o frontend abrir a tela travada
+    # (modo leitura) quando quem está vendo não pode editar, em vez de deixar editar e só
+    # descobrir o 403 ao tentar salvar. Ver _pode_editar. Adicionado em 2026-07-14.
+    pode_editar: bool = True
 
 
 class EnviarResponse(BaseModel):
@@ -63,7 +67,20 @@ class EnviarResponse(BaseModel):
     bitin: BitinResponse | None = None
 
 
-def _doc_to_response(doc: dict[str, Any]) -> BitinResponse:
+def _pode_editar(doc: dict[str, Any], current_user: Usuario) -> bool:
+    """Mesmo critério de _require_owner_or_admin, mas devolve bool em vez de levantar --
+    usado pro frontend saber de antemão se deve abrir a tela travada (modo leitura), em vez
+    de deixar editar e só descobrir com um 403 ao tentar salvar. Um BITin já enviado nunca
+    pode ser editado, nem pelo dono/admin (ver bitin_lifecycle)."""
+    if doc.get("status") == STATUS_ENVIADO:
+        return False
+    criado_por = doc.get("criado_por")
+    if criado_por and criado_por != current_user.email and current_user.permission_level < ADMIN_LEVEL:
+        return False
+    return True
+
+
+def _doc_to_response(doc: dict[str, Any], current_user: Usuario) -> BitinResponse:
     return BitinResponse(
         mongo_id=doc["_id"],
         codigo=doc.get("content", {}).get("bitin"),
@@ -73,6 +90,7 @@ def _doc_to_response(doc: dict[str, Any]) -> BitinResponse:
         criado_por=doc.get("criado_por"),
         created_at=doc.get("created_at", ""),
         updated_at=doc.get("updated_at", ""),
+        pode_editar=_pode_editar(doc, current_user),
     )
 
 
@@ -150,20 +168,20 @@ async def create_or_update_draft(
         "updated_at": now,
     }
     await collection.replace_one({"_id": mongo_id}, doc, upsert=True)
-    return _doc_to_response(doc)
+    return _doc_to_response(doc, current_user)
 
 
 @router.get("/{mongo_id}", response_model=BitinResponse)
 async def get_bitin(
     mongo_id: str,
-    _current_user: Usuario = Depends(get_current_active_user),
+    current_user: Usuario = Depends(get_current_active_user),
     mongo_db=Depends(get_mongo_db),
 ):
     collection = mongo_db["bitin_contents"]
     doc = await collection.find_one({"_id": mongo_id})
     if not doc:
         raise HTTPException(status_code=404, detail="BITin não encontrado")
-    return _doc_to_response(doc)
+    return _doc_to_response(doc, current_user)
 
 
 @router.get("", response_model=list[BitinResponse])
@@ -172,7 +190,7 @@ async def list_bitins(
     termo: str | None = None,
     limit: int = 20,
     skip: int = 0,
-    _current_user: Usuario = Depends(get_current_active_user),
+    current_user: Usuario = Depends(get_current_active_user),
     mongo_db=Depends(get_mongo_db),
 ):
     collection = mongo_db["bitin_contents"]
@@ -191,7 +209,7 @@ async def list_bitins(
         ]
     cursor = collection.find(query).sort("updated_at", -1).skip(skip).limit(limit)
     docs = await cursor.to_list(length=limit)
-    return [_doc_to_response(doc) for doc in docs]
+    return [_doc_to_response(doc, current_user) for doc in docs]
 
 
 @router.delete("/{mongo_id}")
@@ -306,4 +324,4 @@ async def enviar_bitin_endpoint(
         raise HTTPException(status_code=500, detail="Falha ao registrar o envio. Tente novamente.")
 
     updated_doc = await collection.find_one({"_id": mongo_id})
-    return EnviarResponse(ok=True, errors=[], bitin=_doc_to_response(updated_doc))
+    return EnviarResponse(ok=True, errors=[], bitin=_doc_to_response(updated_doc, current_user))

@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, type FormEvent, type SVGProps } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import ThemeToggle from '../components/ThemeToggle'
 import { useAuth } from '../context/AuthContext'
@@ -11,19 +11,24 @@ export default function Login() {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [mostrarSenha, setMostrarSenha] = useState(false)
-  const [error, setError] = useState(null)
+  const [error, setError] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
 
-  async function handleSubmit(event) {
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     setError(null)
     setSubmitting(true)
     try {
       await login(email, password)
-      const from = location.state?.from?.pathname || '/'
+      const from = (location.state as { from?: Location })?.from?.pathname || '/'
       navigate(from, { replace: true })
     } catch (err) {
-      setError(err.response?.data?.detail || 'Não foi possível entrar. Confira e-mail e senha.')
+      // Duck-typed em vez de axios.isAxiosError -- o teste (Login.test.tsx) mocka a API com um
+      // objeto de erro simples, sem a marca isAxiosError; e o formato {response:{data:{detail}}}
+      // já é a única forma de erro que este catch precisa tratar (erro de rede/CORS cai no
+      // fallback genérico do lado direito do `||`, igual antes).
+      const detail = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail
+      setError(detail || 'Não foi possível entrar. Confira e-mail e senha.')
     } finally {
       setSubmitting(false)
     }
@@ -144,7 +149,7 @@ export default function Login() {
   )
 }
 
-function MailIcon(props) {
+function MailIcon(props: SVGProps<SVGSVGElement>) {
   return (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" {...props}>
       <rect x="3" y="5" width="18" height="14" rx="2" />
@@ -153,7 +158,7 @@ function MailIcon(props) {
   )
 }
 
-function LockIcon(props) {
+function LockIcon(props: SVGProps<SVGSVGElement>) {
   return (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" {...props}>
       <rect x="4" y="10" width="16" height="10" rx="2" />
@@ -162,7 +167,7 @@ function LockIcon(props) {
   )
 }
 
-function EyeIcon(props) {
+function EyeIcon(props: SVGProps<SVGSVGElement>) {
   return (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" {...props}>
       <path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7Z" />
@@ -171,7 +176,7 @@ function EyeIcon(props) {
   )
 }
 
-function EyeOffIcon(props) {
+function EyeOffIcon(props: SVGProps<SVGSVGElement>) {
   return (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" {...props}>
       <path d="M3 3l18 18" />
@@ -181,7 +186,7 @@ function EyeOffIcon(props) {
   )
 }
 
-function AlertIcon(props) {
+function AlertIcon(props: SVGProps<SVGSVGElement>) {
   return (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" {...props}>
       <circle cx="12" cy="12" r="10" />
@@ -190,7 +195,7 @@ function AlertIcon(props) {
   )
 }
 
-function SpinnerIcon(props) {
+function SpinnerIcon(props: SVGProps<SVGSVGElement>) {
   return (
     <svg viewBox="0 0 24 24" fill="none" {...props}>
       <circle cx="12" cy="12" r="9" stroke="currentColor" strokeWidth="3" opacity="0.25" />

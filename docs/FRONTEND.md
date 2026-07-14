@@ -30,9 +30,22 @@ Bitins, uma tela de cada vez.
 
 ## Stack e por quê
 
-**React 19 + Vite + Tailwind 4 + react-router-dom + axios, sem lib de estado global**
-(Redux/Zustand). O estado de tela é local — Context API (`AuthContext`, `ThemeContext`) +
-`useState` bastam nesse estágio.
+**React 19 + TypeScript + Vite + Tailwind 4 + react-router-dom + axios, sem lib de estado
+global** (Redux/Zustand). O estado de tela é local — Context API (`AuthContext`,
+`ThemeContext`) + `useState` bastam nesse estágio.
+
+**TypeScript (migração completa, 2026-07-14)**: todo o frontend (11 arquivos — pequeno o
+suficiente pra migrar de uma vez, já que a tela de Bitins foi apagada no reset) converteu de
+`.jsx`/`.js` pra `.tsx`/`.ts`. `tsconfig.app.json`/`tsconfig.node.json` com `strict: true`,
+`noUnusedLocals`/`noUnusedParameters`. `npm run typecheck` (`tsc -b --noEmit`) roda separado
+do `build` (que também typecheca antes de gerar o bundle: `"build": "tsc -b && vite build"`).
+
+**Achado técnico registrado**: `vitest/config` empacota sua própria cópia interna de `vite`,
+com um tipo `Plugin`/`PluginOption` estruturalmente diferente do `vite` de nível superior que
+`@vitejs/plugin-react` usa — puramente um conflito de tipos entre as duas cópias aninhadas
+(build/dev/test já funcionavam certinho antes de mexer nisso; só o `tsc` reclamava). Contornado
+com um cast pontual (`as any[]`) só no array de `plugins` de `vite.config.ts`, comentado no
+próprio arquivo.
 
 ## Identidade visual (adicionado em 2026-07-13, revisado no mesmo dia — tema claro/escuro)
 
@@ -80,20 +93,23 @@ fundo branco sólido, não transparente) e na tela de login (`Login.jsx`).
 ```text
 frontend/
   src/
-    lib/api.js              - cliente axios (token via localStorage, interceptor 401)
+    lib/
+      api.ts                  - cliente axios (token via localStorage, interceptor 401)
+      types.ts                 - tipos compartilhados (User, espelha UserOut do backend)
     context/
-      AuthContext.jsx        - login/logout/estado do usuário (Context API, sem lib externa)
-      ThemeContext.jsx        - tema claro/escuro, padrão claro, persiste em localStorage
+      AuthContext.tsx         - login/logout/estado do usuário (Context API, sem lib externa)
+      ThemeContext.tsx         - tema claro/escuro, padrão claro, persiste em localStorage
     components/
-      RequireAuth.jsx        - guarda de rota (redireciona pro /login sem token)
-      Layout.jsx              - shell: cabeçalho (logo, e-mail, toggle de tema, sair)
-      ThemeToggle.jsx          - botão sol/lua (extraído de Layout.jsx pra reaproveitar no login)
+      RequireAuth.tsx         - guarda de rota (redireciona pro /login sem token)
+      Layout.tsx               - shell: cabeçalho (logo, e-mail, toggle de tema, sair)
+      ThemeToggle.tsx           - botão sol/lua (extraído de Layout.jsx pra reaproveitar no login)
     pages/
-      Login.jsx                - tela de login (design completo, ver seção própria abaixo)
-      Login.test.jsx            - smoke test (Vitest + Testing Library, ver "Testes" abaixo)
-      Home.jsx                - placeholder da área autenticada (ver "Reset" acima)
-    test/setup.js              - matchers do jest-dom, carregado antes de cada suíte
-    App.jsx                   - rotas
+      Login.tsx                 - tela de login (design completo, ver seção própria abaixo)
+      Login.test.tsx             - smoke test (Vitest + Testing Library, ver "Testes" abaixo)
+      Home.tsx                 - placeholder da área autenticada (ver "Reset" acima)
+    test/setup.ts               - matchers do jest-dom, carregado antes de cada suíte
+    vite-env.d.ts               - referência aos tipos do cliente Vite (import.meta.env)
+    App.tsx                    - rotas
 ```
 
 ## Testes (Vitest, adicionado em 2026-07-13)

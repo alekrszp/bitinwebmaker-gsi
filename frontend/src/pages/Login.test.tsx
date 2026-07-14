@@ -57,7 +57,7 @@ describe('Login', () => {
   })
 
   it('mostra erro estruturado quando o login falha', async () => {
-    api.post.mockRejectedValueOnce({ response: { data: { detail: 'E-mail ou senha incorretos' } } })
+    vi.mocked(api.post).mockRejectedValueOnce({ response: { data: { detail: 'E-mail ou senha incorretos' } } })
     const user = userEvent.setup()
     renderLogin()
 

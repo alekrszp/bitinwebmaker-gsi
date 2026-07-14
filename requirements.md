@@ -6,6 +6,10 @@ projeto. Não trata de dependências técnicas — isso está em docs/BITIN_MODE
 docs/VBA_EXPORT_MAPPING.md e docs/VBA_MIGRATION_GUIDE.md. O escopo aqui é processo de
 trabalho e critérios de qualidade da colaboração.
 
+**Ler este arquivo antes de começar qualquer trabalho novo** (registrado em 2026-07-14, pedido
+direto) — inclusive a seção 5 (Pendências conhecidas), pra não repetir trabalho já mapeado ou
+esbarrar numa dependência já registrada como bloqueada.
+
 
 
 1. Princípio central: opinião ativa, não execução passiva
@@ -61,3 +65,22 @@ nunca teve.
 
 Detalhamento técnico: ver docs/BITIN_MODEL.md, docs/VBA_EXPORT_MAPPING.md e
 docs/VBA_MIGRATION_GUIDE.md.
+
+
+5. Pendências conhecidas (bloqueadas por dependência externa)
+
+Itens já identificados (auditoria de 2026-07-13/14) que não podem ser resolvidos ainda porque
+dependem de algo que só o Alessandro tem — registrados aqui pra não ficar perguntando de novo
+a cada rodada, e pra retomar assim que o bloqueio for resolvido.
+
+- **Rate limiting de login compartilhado entre processos** (registrado em 2026-07-14): hoje
+  o limite de tentativas de login (`backend/auth/rate_limit.py`) vive num dicionário em
+  memória — funciona bem com 1 processo só, mas quebra a proteção se o backend rodar com
+  múltiplos workers/réplicas (cada processo teria seu próprio contador). Decisão: mover esse
+  contador pra uma tabela no Postgres real (sem depender de Redis/dependência nova) —
+  **bloqueado até o Alessandro passar a URL de acesso a um Postgres real** (hoje só existe
+  SQLite local/testes). Retomar assim que o acesso existir.
+- Migrations de schema (Alembic) e uma solução real de transação distribuída
+  Postgres↔MongoDB (saga/outbox, ver docs/RELEASE_v0.6.0.md) também dependem de ter um
+  Postgres/MongoDB real pra validar contra — mesma pendência, avaliar junto quando o acesso
+  chegar.

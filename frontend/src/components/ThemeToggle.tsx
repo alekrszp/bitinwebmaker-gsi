@@ -3,7 +3,7 @@ import { useTheme } from '../context/ThemeContext'
 // Botão sol/lua reutilizável -- extraído de Layout.jsx pra também aparecer no login (a
 // escolha de tema deve valer antes de autenticar, não só depois). `className` deixa cada
 // lugar ajustar a cor de contraste (branco sobre navy no cabeçalho, tom neutro no login).
-export default function ThemeToggle({ className = '' }) {
+export default function ThemeToggle({ className = '' }: { className?: string }) {
   const { theme, toggleTheme } = useTheme()
   const escuro = theme === 'dark'
   return (

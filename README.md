@@ -1,5 +1,7 @@
 ﻿# bitinwebmaker-gsi
 
+[![CI](https://github.com/alekrszp/bitinwebmaker-gsi/actions/workflows/ci.yml/badge.svg)](https://github.com/alekrszp/bitinwebmaker-gsi/actions/workflows/ci.yml)
+
 Sistema de criação e gestão de BITin (Boletim de Informações Técnicas Internas), migrando o
 fluxo hoje feito em Excel/VBA (`Novo_template_BITin_V2 TESTE.xlsm`) para Python + API web.
 
@@ -72,18 +74,20 @@ automatizados rodam sem bancos reais (SQLite + mongomock-motor).
 
 ## Frontend (web)
 
-`frontend/` é a interface web que substitui o Excel/VBA pro engenheiro — React + Vite +
-Tailwind + react-router-dom, sem lib de estado global. Ver `docs/FRONTEND.md` para arquitetura
-completa. **Reset em 2026-07-13**: a tela de cadastro/listagem de Bitins foi apagada de
-propósito depois de 8 rodadas de ajuste visual sem chegar num resultado bom o suficiente —
-sendo reconstruída do zero, incrementalmente. Hoje já funciona: login, logout, rota protegida,
-tema claro/escuro, identidade visual da marca. A parte de Bitins (listagem, cadastro, grid de
-materiais, checklist) está sendo refeita parte por parte — ver `docs/FRONTEND.md`, seção
-"Reset da tela de Bitins".
+`frontend/` é a interface web que substitui o Excel/VBA pro engenheiro — React 19 +
+TypeScript + Vite + Tailwind + react-router-dom, sem lib de estado global. Ver
+`docs/FRONTEND.md` para arquitetura completa. **Reset em 2026-07-13**: a tela de
+cadastro/listagem de Bitins foi apagada de propósito depois de 8 rodadas de ajuste visual sem
+chegar num resultado bom o suficiente — sendo reconstruída do zero, incrementalmente. Hoje já
+funciona: login, logout, rota protegida, tema claro/escuro, identidade visual da marca. A
+parte de Bitins (listagem, cadastro, grid de materiais, checklist) está sendo refeita parte
+por parte — ver `docs/FRONTEND.md`, seção "Reset da tela de Bitins".
 
 ```powershell
 cd frontend
 npm install
+npm run typecheck   # tsc -b --noEmit
+npm run test        # vitest run
 npm run dev
 ```
 
@@ -92,6 +96,9 @@ npm run dev
 Releases são criadas manualmente no GitHub, usando `docs/RELEASE_vX.Y.Z.md` como corpo de
 cada release. O processo não é automatizado — a publicação é feita pelo GitHub web interface.
 
+- v0.7.0 — CI (GitHub Actions), TypeScript no frontend inteiro, `pode_editar` no `BitinResponse`
+  (RBAC/modo leitura, pronto pro backend, ainda sem UI); sem mudança de UI visível:
+  `docs/RELEASE_v0.7.0.md` — <https://github.com/alekrszp/bitinwebmaker-gsi/releases/tag/v0.7.0>
 - v0.6.0 — auditoria de segurança/robustez do backend (SECRET_KEY, rate limiting, corrida de
   double-submit, inconsistência Postgres/Mongo) + primeira suíte de testes de frontend
   (Vitest); sem mudança de UI: `docs/RELEASE_v0.6.0.md` — <https://github.com/alekrszp/bitinwebmaker-gsi/releases/tag/v0.6.0>
@@ -142,6 +149,15 @@ Veja também `docs/CHANGELOG.md` para as notas de release completas.
 .venv/Scripts/python.exe -m pip install pandas openpyxl oletools numpy msoffcrypto-tool
 .venv/Scripts/python.exe -m pip install -r backend/requirements.txt
 ```
+
+## CI (adicionado em 2026-07-14)
+
+`.github/workflows/ci.yml` roda em todo push/PR pra `main`: suíte Python (`unittest discover`)
+e suíte de frontend (`typecheck` + `lint` + `test` + `build`) — antes disso nada rodava os
+testes automaticamente, dependia de alguém lembrar de rodar localmente (achado de auditoria).
+Sem serviço de Postgres/MongoDB no workflow: os testes automatizados já usam SQLite +
+mongomock-motor (ver "Rodando localmente" em `docs/BACKEND.md`), não precisam de banco real
+pra rodar.
 
 ## Próximo passo
 

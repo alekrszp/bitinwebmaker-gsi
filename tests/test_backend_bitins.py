@@ -445,6 +445,47 @@ class BitinApiTest(unittest.TestCase):
         )
         self.assertEqual(update_resp.status_code, 403)
 
+    def test_pode_editar_true_pro_dono(self) -> None:
+        create_resp = self.client.post("/api/v1/bitins/draft", json={"content": make_bitin_content()})
+        self.assertTrue(create_resp.json()["pode_editar"])
+        mongo_id = create_resp.json()["mongo_id"]
+
+        get_resp = self.client.get(f"/api/v1/bitins/{mongo_id}")
+        self.assertTrue(get_resp.json()["pode_editar"])
+
+    def test_pode_editar_false_pra_quem_nao_e_dono_nem_admin(self) -> None:
+        """Modo leitura: quem abre o rascunho de outra pessoa (sem ser dono/admin) recebe
+        pode_editar=false, pra a tela abrir travada em vez de deixar editar e só descobrir
+        o erro ao tentar salvar (403)."""
+        create_resp = self.client.post("/api/v1/bitins/draft", json={"content": make_bitin_content()})
+        mongo_id = create_resp.json()["mongo_id"]
+
+        outro_usuario = self._create_user(2, permission_level=0)
+        get_resp = self.client.get(
+            f"/api/v1/bitins/{mongo_id}",
+            headers={"Authorization": f"Bearer {self._token_for(outro_usuario)}"},
+        )
+        self.assertFalse(get_resp.json()["pode_editar"])
+
+    def test_pode_editar_true_pro_admin_mesmo_sem_ser_dono(self) -> None:
+        create_resp = self.client.post("/api/v1/bitins/draft", json={"content": make_bitin_content()})
+        mongo_id = create_resp.json()["mongo_id"]
+
+        admin = self._create_user(99, permission_level=99)
+        get_resp = self.client.get(
+            f"/api/v1/bitins/{mongo_id}",
+            headers={"Authorization": f"Bearer {self._token_for(admin)}"},
+        )
+        self.assertTrue(get_resp.json()["pode_editar"])
+
+    def test_pode_editar_false_apos_enviado_mesmo_pro_dono(self) -> None:
+        create_resp = self.client.post("/api/v1/bitins/draft", json={"content": make_bitin_content()})
+        mongo_id = create_resp.json()["mongo_id"]
+        self.client.post(f"/api/v1/bitins/{mongo_id}/enviar")
+
+        get_resp = self.client.get(f"/api/v1/bitins/{mongo_id}")
+        self.assertFalse(get_resp.json()["pode_editar"])
+
     def test_usuario_sem_ser_dono_ou_admin_nao_pode_excluir(self) -> None:
         create_resp = self.client.post("/api/v1/bitins/draft", json={"content": make_bitin_content()})
         mongo_id = create_resp.json()["mongo_id"]

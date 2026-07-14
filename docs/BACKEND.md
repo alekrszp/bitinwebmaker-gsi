@@ -189,11 +189,21 @@ sem uma chamada de rede por requisição):
   qualquer outro usuário autenticado recebe `403`. Um admin editando o rascunho de outra
   pessoa **não muda** o `criado_por` original.
 
+**`pode_editar` no `BitinResponse`** (adicionado em 2026-07-14, achado de auditoria "RBAC
+incompleto"): campo calculado por requisição (não vem do Mongo) — `false` quando quem está
+vendo não é dono nem admin, ou quando o BITin já foi enviado (nem o dono pode mais editar
+depois disso). Objetivo: quando a tela de Bitins for reconstruída, o frontend pode abrir a
+tela travada (modo leitura) de cara pra quem não pode editar, em vez de deixar editar
+livremente e só descobrir o erro (`403`) ao tentar salvar. Ainda **não consumido por nenhuma
+UI** (a tela de Bitins foi apagada no reset da v0.5.0, ver `docs/FRONTEND.md`) — é só o
+backend já ficando pronto pra quando ela voltar. `_pode_editar()` reaproveita o mesmo critério
+de `_require_owner_or_admin()`, só devolvendo bool em vez de levantar `403`.
+
 **Ainda não implementado** (não é mais bloqueado por decisão de arquitetura, só não construído
-ainda): RBAC nos próprios endpoints de `/bitins` (hoje qualquer usuário autenticado pode
-criar/ver/listar — só editar/excluir rascunho de outra pessoa é restrito); vínculo entre
-`Usuario.sector_id` e o `setor` do BITin (ex.: engenheiro só vê BITins do próprio setor) — não
-pedido ainda, registrado como possibilidade futura.
+ainda): restringir QUEM pode criar/ver/listar (hoje qualquer usuário autenticado pode; só
+editar/excluir rascunho de outra pessoa é restrito, e agora também sinalizado via
+`pode_editar` acima); vínculo entre `Usuario.sector_id` e o `setor` do BITin (ex.: engenheiro
+só vê BITins do próprio setor) — não pedido ainda, registrado como possibilidade futura.
 
 **Limite de tentativas de login** (`backend/auth/rate_limit.py`, adicionado em 2026-07-13,
 achado de auditoria): antes, `/auth/login` não tinha limite nenhum — força bruta contra uma

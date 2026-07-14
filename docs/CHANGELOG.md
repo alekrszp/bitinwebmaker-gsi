@@ -2,6 +2,36 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v0.7.0] - 2026-07-14
+
+Continuação direta da avaliação geral do projeto (v0.6.0): CI, TypeScript no frontend, e
+início de RBAC mais completo. Pendências que dependem de acesso a um Postgres real (rate
+limiting compartilhado, migrations, transação distribuída) ficaram documentadas em
+`requirements.md`, não implementadas ainda — aguardando o Alessandro passar a URL de acesso.
+
+### Added
+- **CI** (`.github/workflows/ci.yml`, novo): roda em todo push/PR pra `main` — suíte Python
+  (`unittest discover`) e suíte de frontend (`typecheck` + `lint` + `test` + `build`). Antes
+  disso nada rodava os testes automaticamente. Sem serviço de banco no workflow — os testes já
+  usam SQLite + mongomock-motor.
+- **TypeScript no frontend inteiro** (migração completa, não incremental — só 11 arquivos
+  existiam, já que a tela de Bitins foi apagada no reset da v0.5.0): `tsconfig.app.json`/
+  `tsconfig.node.json` com `strict: true`. `npm run typecheck` novo; `npm run build` agora
+  typecheca antes de gerar o bundle.
+- **`pode_editar` no `BitinResponse`** (`backend/api/bitins.py`, achado de auditoria "RBAC
+  incompleto"): campo calculado por requisição — `false` quando quem vê não é dono/admin, ou
+  quando o BITin já foi enviado. Prepara o backend pra tela de Bitins (quando reconstruída)
+  abrir em modo leitura pra quem não pode editar, em vez de só descobrir com um `403` ao tentar
+  salvar. 4 novos testes cobrindo dono/outro usuário/admin/já enviado.
+- **`requirements.md` atualizado** com uma seção nova de "Pendências conhecidas" — itens já
+  mapeados mas bloqueados por dependerem de acesso a infraestrutura externa (Postgres real),
+  registrados pra não repetir a pergunta a cada rodada.
+
+### Validação
+- 164 → **168 testes automatizados Python** (4 novos cobrindo `pode_editar`).
+- Frontend: `npm run typecheck` limpo, `npx oxlint src` sem warning novo, 4/4 testes (Vitest),
+  `npm run build` sem erro — tudo reverificado depois da migração TypeScript completa.
+
 ## [v0.6.0] - 2026-07-13
 
 Auditoria de segurança/arquitetura do backend (pedida diretamente) + primeira suíte de testes
