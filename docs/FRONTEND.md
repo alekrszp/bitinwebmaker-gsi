@@ -111,12 +111,16 @@ frontend/
       ThemeContext.tsx         - tema claro/escuro, padrão claro, persiste em localStorage
     components/
       RequireAuth.tsx         - guarda de rota (redireciona pro /login sem token)
-      Layout.tsx               - shell: cabeçalho (logo, e-mail, toggle de tema, sair)
-      ThemeToggle.tsx           - botão sol/lua (extraído de Layout.jsx pra reaproveitar no login)
+      Layout.tsx               - compõe Sidebar + Topbar + <Outlet/> (ver seção própria abaixo)
+      Sidebar.tsx               - navegação lateral (logo, nav extensível, off-canvas no mobile)
+      Topbar.tsx                - menu mobile, tema, configurações, usuário, sair
+      ThemeToggle.tsx           - botão sol/lua (reaproveitado no login e no topbar)
+      icons.tsx                 - ícones SVG inline compartilhados (Home/Configurações/Sair/Menu)
     pages/
       Login.tsx                 - tela de login (design completo, ver seção própria abaixo)
       Login.test.tsx             - smoke test (Vitest + Testing Library, ver "Testes" abaixo)
-      Home.tsx                 - placeholder da área autenticada (ver "Reset" acima)
+      Home.tsx                 - página de boas-vindas da área autenticada
+      Settings.tsx              - placeholder de configurações (link do topbar precisa ir a algum lugar)
     test/setup.ts               - matchers do jest-dom, carregado antes de cada suíte
     vite-env.d.ts               - referência aos tipos do cliente Vite (import.meta.env)
     App.tsx                    - rotas
@@ -128,19 +132,21 @@ Até esta rodada, toda a validação de frontend desta reconstrução (login, te
 teclado da grade apagada no reset, etc.) viveu só em scripts Playwright ad-hoc fora do repo —
 zero suíte automatizada commitada. Achado de auditoria: se alguém mexer no frontend sem esse
 histórico de scratchpad, não tem `npm test` pra rodar. Vitest + Testing Library escolhidos por
-já virem prontos pro ecossistema Vite (mesma config, `vite.config.js`), sem precisar de um
+já virem prontos pro ecossistema Vite (mesma config, `vite.config.ts`), sem precisar de um
 bundler/transform separado como Jest exigiria.
 
-- `frontend/vite.config.js`: bloco `test` (`environment: 'jsdom'`, carrega
-  `src/test/setup.js`).
-- `Login.test.jsx`: smoke test da tela de login — campos renderizam, alternar
-  mostrar/esconder senha, erro estruturado aparece quando o login falha (mock de `lib/api.js`,
+- `frontend/vite.config.ts`: bloco `test` (`environment: 'jsdom'`, carrega
+  `src/test/setup.ts`).
+- `Login.test.tsx`: smoke test da tela de login — campos renderizam, alternar
+  mostrar/esconder senha, erro estruturado aparece quando o login falha (mock de `lib/api.ts`,
   não bate no backend real — isso continua coberto pelos testes Python + validação manual),
   toggle de tema aplica `.dark` na raiz.
 - `npm run test` (`vitest run`) — roda uma vez e sai (CI-friendly), não fica observando
   arquivos.
-- Escopo deliberadamente pequeno por enquanto: só a única tela que existe (Login). Cresce
-  junto com a reconstrução incremental da parte de Bitins.
+- **Escopo ainda pequeno de propósito**: só `Login.tsx` tem teste automatizado. O shell
+  autenticado (Sidebar/Topbar/Home/Settings, adicionado em 2026-07-14) foi validado só com
+  Playwright ad-hoc (desktop/mobile, claro/escuro, navegação, logout) — sem suíte commitada
+  ainda. Cresce junto com a reconstrução incremental da parte de Bitins.
 
 **Achado técnico registrado**: sob Vitest (não sob `vite build`/`vite dev`, que sempre
 funcionaram normalmente), todo componente com JSX — não só os arquivos de teste — falhava com
@@ -184,6 +190,39 @@ máquina.
   link que levaria a lugar nenhum; registro de usuário é decisão de admin/bootstrap, não
   self-service (ver `docs/BACKEND.md`, seção "Autenticação"), então também não tem link aqui.
 
+## Shell autenticado — Sidebar + Topbar + Home (2026-07-14)
+
+Antes disso, a área autenticada era só um cabeçalho horizontal (`Layout.jsx` original) com a
+logo, e-mail e sair, e `Home.tsx` era um placeholder de texto ("Login funcionando."). Pedido
+direto: montar a "página principal" de verdade — sidebar de navegação, topbar (logo/nome,
+usuário, tema, configurações), e uma Home com boas-vindas — **seguindo exatamente o padrão
+visual já estabelecido no login, sem inventar uma linguagem nova** ("nunca fugir daquilo").
+
+- **`Sidebar.tsx`**: painel fixo à esquerda (`bg-brand-navy`, igual ao painel de marca do
+  login), logo em pílula branca no topo, faixa de 3 cores no rodapé (mesma assinatura visual
+  do login e do cabeçalho antigo). Navegação vem de um array `NAV_ITEMS` extensível — só
+  "Início" existe hoje (a tela de Bitins ainda não foi reconstruída); o próximo item entra
+  ali sem mexer no resto do componente. Vira off-canvas no celular (`-translate-x-full` por
+  padrão, `translate-x-0` quando aberta via hambúrguer no topbar), com um overlay escurecido
+  atrás que fecha ao clicar fora.
+- **`Topbar.tsx`**: barra fixa no topo do conteúdo (não da tela inteira — a sidebar já ocupa a
+  largura própria em telas médias+). Da esquerda pra direita: botão de menu (só no celular),
+  toggle de tema (`ThemeToggle.tsx`, já existia), botão de configurações (ícone de engrenagem,
+  leva pra `/configuracoes`), e-mail do usuário, botão sair.
+- **`pages/Settings.tsx`** (novo, placeholder): o botão de configurações no topbar precisa
+  levar a algum lugar real, não um link morto — mas ainda não existe nada de fato
+  configurável. Mesma lógica do `Home.tsx` original: placeholder honesto, cresce quando
+  houver conteúdo.
+- **`pages/Home.tsx`** reescrita: mensagem de boas-vindas usando o primeiro nome do usuário
+  (`useAuth().user.nome`), título grande + subtítulo discreto + faixa de 3 cores — mesma
+  hierarquia tipográfica do "Entrar" da tela de login, não uma composição nova.
+- **Tema claro por padrão, escolha do usuário persiste** — comportamento que já existia
+  (`ThemeContext.jsx`, `localStorage`), só confirmado/preservado nesta rodada, não alterado.
+- **`components/icons.tsx`** (novo): ícones SVG inline compartilhados entre Sidebar/Topbar
+  (Home, Configurações, Sair, Menu, Fechar) — mesmo padrão inline sem lib externa já usado em
+  `Login.tsx`, só que num módulo próprio porque mais de um componente do shell usa os mesmos
+  ícones (`Login.tsx` continua com os seus próprios, específicos da tela).
+
 ## O que já funciona
 
 Validado com Playwright ad-hoc contra o backend real nesta máquina (sem MongoDB real, ver
@@ -192,9 +231,11 @@ Validado com Playwright ad-hoc contra o backend real nesta máquina (sem MongoDB
 - Login (`POST /auth/login`) → redireciona pra `/`, com validação visual de erro (credencial
   errada) e estado de carregamento.
 - Rota protegida: sem token, qualquer rota redireciona pro login.
+- Shell autenticado: sidebar de navegação (off-canvas no celular), topbar com tema/
+  configurações/usuário/sair, Home com boas-vindas, página de Configurações (placeholder).
 - Logout: volta pro login.
-- Tema claro/escuro (toggle no cabeçalho pós-login E na tela de login, padrão claro, escolha
-  persiste no navegador) — testado nos dois temas, desktop e mobile.
+- Tema claro/escuro (toggle no login E no topbar pós-login, padrão claro, escolha persiste no
+  navegador) — testado nos dois temas, desktop e mobile.
 
 ## O que NÃO está nesta fatia ainda (próximos incrementos)
 

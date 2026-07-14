@@ -3,6 +3,7 @@ import Layout from './components/Layout'
 import RequireAuth from './components/RequireAuth'
 import Home from './pages/Home'
 import Login from './pages/Login'
+import Settings from './pages/Settings'
 
 function App() {
   return (
@@ -16,6 +17,7 @@ function App() {
         }
       >
         <Route path="/" element={<Home />} />
+        <Route path="/configuracoes" element={<Settings />} />
       </Route>
     </Routes>
   )
