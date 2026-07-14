@@ -47,6 +47,16 @@ com um tipo `Plugin`/`PluginOption` estruturalmente diferente do `vite` de níve
 com um cast pontual (`as any[]`) só no array de `plugins` de `vite.config.ts`, comentado no
 próprio arquivo.
 
+**Achado técnico registrado (CI, 2026-07-14)**: o primeiro run do CI (`.github/workflows/ci.yml`)
+falhou no job de frontend com `npm ci` reclamando de `package-lock.json` fora de sincronia
+(faltando `@emnapi/core`/`@emnapi/runtime`) — o lockfile tinha sido gerado só no Windows local
+(`npm install`), e ficou sem as entradas de dependências opcionais específicas de Linux (o CI
+roda em `ubuntu-latest`). `npm ci` local (Windows) não pegava o problema, porque validava
+contra o mesmo lockfile que ele mesmo tinha gerado. Corrigido apagando `node_modules` +
+`package-lock.json` e rodando `npm install` do zero, o que recapturou as entradas de todas as
+plataformas — **lição**: `npm ci` local só garante que o lockfile bate com o `package.json`,
+não que ele tem as entradas de todas as plataformas que o CI vai rodar.
+
 ## Identidade visual (adicionado em 2026-07-13, revisado no mesmo dia — tema claro/escuro)
 
 Paleta extraída do logo da empresa (Grain & Protein Technologies — hexágonos

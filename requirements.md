@@ -67,11 +67,18 @@ Detalhamento técnico: ver docs/BITIN_MODEL.md, docs/VBA_EXPORT_MAPPING.md e
 docs/VBA_MIGRATION_GUIDE.md.
 
 
-5. Pendências conhecidas (bloqueadas por dependência externa)
+5. Backlog vivo (pendências conhecidas, ainda não implementadas)
 
-Itens já identificados (auditoria de 2026-07-13/14) que não podem ser resolvidos ainda porque
-dependem de algo que só o Alessandro tem — registrados aqui pra não ficar perguntando de novo
-a cada rodada, e pra retomar assim que o bloqueio for resolvido.
+Lista contínua, não um registro de uma rodada só. Toda vez que eu (Claude) identificar algo
+que vale fazer mas decidir (ou for decidido junto com o Alessandro) adiar — por estar
+bloqueado por dependência externa, por não ser prioridade agora, ou por qualquer outro
+motivo — registro aqui, com a razão do adiamento. **Este item da lista é atualizado toda vez
+que um desses pontos for resolvido (sai daqui) ou um novo surgir (entra aqui)** — não é um
+snapshot de uma auditoria específica, é vivo. Ver item no topo do documento: ler esta seção
+antes de começar qualquer trabalho novo, pra não repetir mapeamento já feito nem esbarrar numa
+pendência já registrada como bloqueada.
+
+**Bloqueados por dependência externa**:
 
 - **Rate limiting de login compartilhado entre processos** (registrado em 2026-07-14): hoje
   o limite de tentativas de login (`backend/auth/rate_limit.py`) vive num dicionário em
@@ -80,7 +87,17 @@ a cada rodada, e pra retomar assim que o bloqueio for resolvido.
   contador pra uma tabela no Postgres real (sem depender de Redis/dependência nova) —
   **bloqueado até o Alessandro passar a URL de acesso a um Postgres real** (hoje só existe
   SQLite local/testes). Retomar assim que o acesso existir.
-- Migrations de schema (Alembic) e uma solução real de transação distribuída
-  Postgres↔MongoDB (saga/outbox, ver docs/RELEASE_v0.6.0.md) também dependem de ter um
+- **Migrations de schema (Alembic)** e **uma solução real de transação distribuída
+  Postgres↔MongoDB** (saga/outbox, ver docs/RELEASE_v0.6.0.md) também dependem de ter um
   Postgres/MongoDB real pra validar contra — mesma pendência, avaliar junto quando o acesso
   chegar.
+
+**Adiados por escolha (não bloqueados, só não priorizados ainda)**:
+
+- **Tela de Bitins** (listagem, cadastro, grid de materiais, checklist) — apagada no reset da
+  v0.5.0, sendo reconstruída incrementalmente à parte (ver docs/FRONTEND.md, "Reset da tela de
+  Bitins"). Não entra aqui como pendência de auditoria, é o próprio trabalho em andamento.
+- Restringir QUEM pode criar/ver/listar BITins por setor (`Usuario.sector_id` ↔ `setor` do
+  BITin) — não pedido ainda, ver docs/BACKEND.md.
+- Docker/docker-compose e testes de borda do `sap_paste_parser.py` (paste parcial, unicode) —
+  registrados em docs/RELEASE_v0.6.0.md como observações de auditoria, nunca priorizados.
