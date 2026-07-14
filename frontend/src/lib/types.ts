@@ -17,3 +17,10 @@ export interface ResumoUsuario {
   rascunhos: number
   enviados: number
 }
+
+// Espelha backend/auth/schemas.py::SectorOut -- devolvido por GET /sectors (público).
+export interface Sector {
+  id: number
+  nome: string
+  descricao: string | null
+}

@@ -245,6 +245,31 @@ não ter nada.
   usuário) foi validada pelos 3 testes automatizados novos (`mongomock-motor`), não pela
   UI ao vivo — registrado com transparência, não sonegado.
 
+### Tela de Configurações (2026-07-14)
+
+Antes era só um placeholder ("Nada configurável ainda por aqui."). Escopo fechado com o
+usuário: o que já dá pra fazer sem endpoint novo (Postgres/SQLite já funciona nesta máquina,
+diferente do Mongo — validado ao vivo de verdade, não só por teste automatizado).
+
+- **"Minha conta"** (somente leitura): nome, e-mail, setor (nome resolvido via `GET
+  /sectors`, público) e nível de permissão (rótulo amigável — `Usuário`/`Gestor`/`Admin` — em
+  vez do número cru). Trocar senha e editar o próprio perfil ficam pra uma rodada futura,
+  quando os endpoints existirem (o backend hoje só tem `POST /auth/register`/`login`, nada de
+  "trocar minha senha").
+- **"Gestão de usuários"** (só visível se `user.permission_level >= 99`, decisão explícita do
+  usuário — "só pra admin"): tabela com todos os usuários (`GET /users`, já exigia nível ≥ 1
+  no backend — a UI é mais restritiva que o mínimo do backend de propósito) e um `<select>`
+  por linha pra trocar o nível (`PATCH /users/{id}/permission`, backend já exigia nível 99).
+  **Proteção contra auto-rebaixamento**: o `<select>` da própria linha do usuário logado fica
+  desabilitado — evita um admin se rebaixar sem querer e ficar trancado fora da própria
+  gestão.
+- **"Sobre"**: versão do app, mesma fonte que o rodapé do login (`package.json`).
+- **Achado ao validar**: para testar a seção de admin de verdade (nenhum usuário de teste
+  local era admin), o usuário autorizou explicitamente promover `teste@example.com` pra nível
+  99 direto no SQLite local só pra essa verificação — revertido pra `0` logo depois, e
+  confirmado por leitura direta do banco que os dois usuários (`demo@example.com`,
+  `teste@example.com`) voltaram exatamente ao estado original.
+
 ## O que já funciona
 
 Validado com Playwright ad-hoc contra o backend real nesta máquina (sem MongoDB real, ver
@@ -255,7 +280,8 @@ Validado com Playwright ad-hoc contra o backend real nesta máquina (sem MongoDB
 - Rota protegida: sem token, qualquer rota redireciona pro login.
 - Shell autenticado: sidebar de navegação (off-canvas no celular), topbar com tema/
   configurações/usuário/sair, Home com boas-vindas + cartões de resumo pessoal
-  (rascunhos/enviados, `GET /bitins/resumo-usuario`), página de Configurações (placeholder).
+  (rascunhos/enviados, `GET /bitins/resumo-usuario`), página de Configurações ("Minha conta" +
+  "Sobre" pra todo mundo, "Gestão de usuários" só pra admin).
 - Logout: volta pro login.
 - Tema claro/escuro (toggle no login E no topbar pós-login, padrão claro, escolha persiste no
   navegador) — testado nos dois temas, desktop e mobile.
