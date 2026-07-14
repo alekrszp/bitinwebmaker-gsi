@@ -96,6 +96,9 @@ npm run dev
 Releases são criadas manualmente no GitHub, usando `docs/RELEASE_vX.Y.Z.md` como corpo de
 cada release. O processo não é automatizado — a publicação é feita pelo GitHub web interface.
 
+- v0.7.1 — shell autenticado: sidebar de navegação + topbar + Home de boas-vindas, seguindo o
+  padrão visual do login; primeira mudança de UI desde a v0.5.0:
+  `docs/RELEASE_v0.7.1.md` — <https://github.com/alekrszp/bitinwebmaker-gsi/releases/tag/v0.7.1>
 - v0.7.0 — CI (GitHub Actions), TypeScript no frontend inteiro, `pode_editar` no `BitinResponse`
   (RBAC/modo leitura, pronto pro backend, ainda sem UI); sem mudança de UI visível:
   `docs/RELEASE_v0.7.0.md` — <https://github.com/alekrszp/bitinwebmaker-gsi/releases/tag/v0.7.0>

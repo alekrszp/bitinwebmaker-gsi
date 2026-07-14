@@ -2,6 +2,30 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v0.7.1] - 2026-07-14
+
+Primeira mudança de UI visível pro engenheiro desde a v0.5.0 (a v0.6.0 e a v0.7.0 eram só
+robustez/infra interna). Ainda pequena de propósito — o shell sozinho, sem a listagem de
+Bitins atrás dele ainda.
+
+### Added
+- **Shell autenticado** (`Sidebar.tsx`, `Topbar.tsx`, novos): a área logada deixou de ser só
+  um cabeçalho horizontal com logo/e-mail/sair — agora tem sidebar de navegação (off-canvas
+  no celular) e topbar (menu mobile, tema, configurações, usuário, sair). Segue exatamente o
+  padrão visual da tela de login (painel navy, logo em pílula branca, faixa de 3 cores) —
+  pedido direto: "nunca fugir daquilo".
+- **`pages/Home.tsx` reescrita**: de placeholder de texto ("Login funcionando.") pra uma
+  página de boas-vindas de verdade, usando o primeiro nome do usuário.
+- **`pages/Settings.tsx`** (novo, placeholder): o botão de configurações no topbar precisa
+  levar a algum lugar real — ainda não há nada configurável de fato, mas não é mais um link
+  morto.
+- **`components/icons.tsx`** (novo): ícones SVG inline compartilhados entre Sidebar/Topbar.
+
+### Validação
+- Playwright ad-hoc: desktop/mobile, tema claro/escuro, navegação, configurações, logout —
+  zero erro de console.
+- `npm run typecheck`/`lint`/`test`/`build` limpos.
+
 ## [v0.7.0] - 2026-07-14
 
 Continuação direta da avaliação geral do projeto (v0.6.0): CI, TypeScript no frontend, e
