@@ -2,6 +2,29 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v0.7.2] - 2026-07-14
+
+Primeiro pedaço de verdade da tela de Bitins desde o reset da v0.5.0: listagem "Meus Bitins"
+(escopada pro próprio usuário) + visualização só-leitura ao clicar numa linha. Escopo fechado
+colaborativamente com o Alessandro.
+
+### Added
+- **`pages/MeusBitins.tsx`** (novo, rota `/bitins`): abas Todos/Rascunhos/Enviados, colunas
+  Código/Motivo/Solicitante/Status.
+- **`pages/BitinDetail.tsx`** (novo, rota `/bitins/:mongoId`): visualização só-leitura via
+  `GET /bitins/{mongo_id}/resumo`, sem edição ainda.
+- Novo item "Meus Bitins" na sidebar.
+
+### Changed
+- **`GET /bitins`** agora filtra por `criado_por` — cada usuário só vê os próprios BITins
+  ("só os meus", mesma decisão já usada em `resumo-usuario`/Home). Antes listava o sistema
+  inteiro.
+
+### Validação
+- Backend: 172 testes (3 novos, cobrindo isolamento entre usuários).
+- `npm run typecheck`/`lint`/`test`/`build` limpos. Sem verificação visual ao vivo (sem
+  MongoDB real nesta máquina, credenciais de teste locais desconhecidas).
+
 ## [v0.7.1] - 2026-07-14
 
 Primeira mudança de UI visível pro engenheiro desde a v0.5.0 (a v0.6.0 e a v0.7.0 eram só
