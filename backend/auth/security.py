@@ -5,6 +5,8 @@ funciona, sem repetir o problema."""
 
 import hashlib
 import re
+import secrets
+import string
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
@@ -48,6 +50,42 @@ def validate_password_strength(password: str) -> str:
     if erros:
         raise ValueError("Senha precisa ter " + " e ".join(erros))
     return password
+
+
+# Senha temporária gerada pelo admin (2026-07-15, backend/api/users.py::create_user_by_admin)
+# -- precisa satisfazer validate_password_strength() acima COM CERTEZA, não por sorte.
+# secrets.token_urlsafe() sozinho poderia até passar (seu alfabeto A-Za-z0-9-_ casa com
+# "maiúscula"/"minúscula"/"número"/"[^A-Za-z0-9]" via -/_), mas depender de sorte não é
+# aceitável pra algo que vira a senha real de alguém no primeiro login. Em vez disso, garante
+# 1 caractere de cada uma das 4 classes de propósito, completa até 12 com o alfabeto
+# combinado e embaralha -- sempre determinístico quanto a satisfazer a regra, só o CONTEÚDO é
+# aleatório (secrets, não random: mesmo padrão de segurança do resto deste módulo).
+_TEMP_PWD_LEN = 12
+_MAIUSCULAS = string.ascii_uppercase
+_MINUSCULAS = string.ascii_lowercase
+_NUMEROS = string.digits
+_ESPECIAIS = "!@#$%^&*-_"
+
+
+def generate_temp_password() -> str:
+    obrigatorios = [
+        secrets.choice(_MAIUSCULAS),
+        secrets.choice(_MINUSCULAS),
+        secrets.choice(_NUMEROS),
+        secrets.choice(_ESPECIAIS),
+    ]
+    alfabeto_completo = _MAIUSCULAS + _MINUSCULAS + _NUMEROS + _ESPECIAIS
+    resto = [secrets.choice(alfabeto_completo) for _ in range(_TEMP_PWD_LEN - len(obrigatorios))]
+    caracteres = obrigatorios + resto
+    # secrets não tem shuffle próprio -- usa o Random do módulo `random` mas trocando a fonte
+    # de aleatoriedade por SystemRandom (CSPRNG do SO), não o gerador determinístico padrão.
+    secrets.SystemRandom().shuffle(caracteres)
+    senha = "".join(caracteres)
+    # Defensivo, não devia nunca falhar dado o construído acima -- mas se falhar, é bug real
+    # (ex.: alguém mudou _TEMP_PWD_LEN pra menor que 4 classes) e precisa estourar alto em
+    # dev/teste, não ser engolido silenciosamente.
+    validate_password_strength(senha)
+    return senha
 
 
 def create_access_token(subject: Any, expires_delta: timedelta | None = None) -> str:

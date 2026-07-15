@@ -58,19 +58,29 @@ export default function Login() {
       {/* Painel de marca -- só em telas médias+; no celular a logo aparece compacta em cima do
           formulário (ver abaixo), pra não gastar metade da tela com algo só decorativo. */}
       <div className="relative hidden w-[42%] max-w-md flex-col overflow-hidden bg-brand-navy px-10 py-10 text-white md:flex lg:w-[38%]">
-        {/* Logo + título + subtítulo formam um único bloco centralizado -- antes a logo ficava
-            presa no topo, isolada, com um vão vazio grande até o texto lá embaixo; agrupados e
-            centralizados, o painel lê como uma composição, não como dois elementos soltos. */}
-        <div className="flex flex-1 flex-col justify-center">
-          <img src="/logo.svg" className="mb-8 h-20 w-fit" alt="Grain & Protein Technologies" />
-
-          <p className="text-2xl font-semibold leading-snug text-balance">
-            BITin - Sistema de manuseamento de BITins.
-          </p>
-          <p className="mt-3 text-sm text-white/70">
-            Sistema interno da Grain &amp; Protein Technologies.
+        {/* Redesenhado em 2026-07-15, várias rodadas no mesmo dia -- 1ª (logo + "BITIN" lado a
+            lado) feia demais; 2ª (fontes de impacto Anton/Mulish) descartada; 3ª (grande,
+            centralizada) grande e baixa demais; 4ª (bem pequena, encostada no topo) pequena e
+            alta demais. Meio-termo: tamanho moderado, encostada perto do topo mas com respiro
+            (não colada na borda). Nome do sistema virou "BITin DOCS" -- mesmo padrão já usado
+            internamente pra outros sistemas da empresa (ex.: "Sisven Docs", que todo mundo
+            chama só de "Sisven" no dia a dia): nome oficial com sufixo "DOCS", encurtado na
+            fala. "DOCS" como selo pequeno ao lado do nome grande, não competindo com ele --
+            a aba do navegador (`index.html`) continua só "BITin", sem o sufixo. */}
+        <div className="flex flex-col pt-16">
+          <img src="/logo.svg" className="mb-6 h-20 w-fit" alt="Grain & Protein Technologies" />
+          <div className="flex items-baseline gap-2">
+            <h1 className="text-3xl font-bold leading-none tracking-tight">BITin</h1>
+            <span className="rounded bg-white/15 px-1.5 py-0.5 text-xs font-bold tracking-wide text-white/80">
+              DOCS
+            </span>
+          </div>
+          <p className="mt-2.5 text-sm text-white/70">
+            Sistema interno Grain &amp; Protein Technologies.
           </p>
         </div>
+
+        <div className="flex-1" />
 
         {/* Faixa de 3 cores -- mesma referência discreta aos 3 hexágonos do logo usada no
             cabeçalho pós-login (Layout.jsx), pra dar continuidade visual entre as duas telas. */}

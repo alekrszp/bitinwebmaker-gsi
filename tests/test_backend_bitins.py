@@ -443,9 +443,25 @@ class BitinApiTest(unittest.TestCase):
         resp_all = self.client.get("/api/v1/bitins", params={"limit": 100, "skip": 0})
         self.assertEqual(len(resp_all.json()), 5)
 
-    def test_listar_nao_traz_bitins_de_outro_usuario(self) -> None:
-        """"Meus Bitins" -- mesmo escopo por criado_por já usado em resumo-usuario (decisão
-        registrada em docs/FRONTEND.md): cada usuário só vê os próprios, mesmo sendo admin."""
+    def test_listar_nao_traz_bitins_de_outro_usuario_comum(self) -> None:
+        """"Meus Bitins" -- usuário comum (nível 0) só vê os próprios BITins, mesmo escopo por
+        criado_por de sempre. Escopo de admin/gestor MUDOU em 2026-07-15 (ver testes abaixo:
+        "Admin vê tudo", gestor vê BITins de quem compartilha setor) -- só o nível comum
+        continua isolado ao próprio e-mail."""
+        self.client.post("/api/v1/bitins/draft", json={"content": make_bitin_content()})
+
+        outro_usuario_comum = self._create_user(2, permission_level=0)
+        resp = self.client.get(
+            "/api/v1/bitins",
+            headers={"Authorization": f"Bearer {self._token_for(outro_usuario_comum)}"},
+        )
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.json(), [])
+
+    def test_listar_admin_ve_bitins_de_todo_mundo(self) -> None:
+        """Escopo de admin em GET /bitins MUDOU em 2026-07-15 (pedido explícito do usuário:
+        "Admin vê tudo") -- antes ficava preso a "só os meus" igual todo mundo; agora vê o
+        sistema inteiro, sem filtro de criado_por nenhum."""
         self.client.post("/api/v1/bitins/draft", json={"content": make_bitin_content()})
 
         outro_admin = self._create_user(2, permission_level=99)
@@ -454,7 +470,56 @@ class BitinApiTest(unittest.TestCase):
             headers={"Authorization": f"Bearer {self._token_for(outro_admin)}"},
         )
         self.assertEqual(resp.status_code, 200)
-        self.assertEqual(resp.json(), [])
+        self.assertEqual(len(resp.json()), 1)
+        self.assertEqual(resp.json()[0]["criado_por"], self.default_user.email)
+
+    def test_listar_gestor_ve_bitins_de_colega_do_mesmo_setor_mas_nao_de_outro_setor(self) -> None:
+        """Gestor (nível 1) vê BITins de quem compartilha ao menos um Setor com ele (2026-07-15,
+        "lista de usuários e bitins de todo mundo, com filtragem de solicitante" -- mesma
+        consulta usada em GET /users, ver backend/api/users.py::_usuarios_do_mesmo_setor_query).
+        Não vê BITins de alguém de um setor totalmente diferente."""
+        db = self.SessionLocal()
+        from backend.auth.models import Setor
+
+        setor_a = Setor(nome="Proteína Animal")
+        setor_b = Setor(nome="Armazenagem de Grãos")
+        db.add_all([setor_a, setor_b])
+        db.commit()
+        db.refresh(setor_a)
+        db.refresh(setor_b)
+
+        gestor = self._create_user(2, permission_level=1)
+        colega = self._create_user(3, permission_level=0)
+        de_fora = self._create_user(4, permission_level=0)
+
+        db_gestor = db.query(Usuario).filter(Usuario.id == gestor.id).first()
+        db_colega = db.query(Usuario).filter(Usuario.id == colega.id).first()
+        db_de_fora = db.query(Usuario).filter(Usuario.id == de_fora.id).first()
+        db_gestor.setores = [setor_a]
+        db_colega.setores = [setor_a]
+        db_de_fora.setores = [setor_b]
+        db.commit()
+        db.close()
+
+        self.client.post(
+            "/api/v1/bitins/draft",
+            json={"content": make_bitin_content()},
+            headers={"Authorization": f"Bearer {self._token_for(colega)}"},
+        )
+        self.client.post(
+            "/api/v1/bitins/draft",
+            json={"content": make_bitin_content()},
+            headers={"Authorization": f"Bearer {self._token_for(de_fora)}"},
+        )
+
+        resp = self.client.get(
+            "/api/v1/bitins",
+            headers={"Authorization": f"Bearer {self._token_for(gestor)}"},
+        )
+        self.assertEqual(resp.status_code, 200)
+        criados_por = {b["criado_por"] for b in resp.json()}
+        self.assertIn(colega.email, criados_por)
+        self.assertNotIn(de_fora.email, criados_por)
 
     def test_criar_draft_sem_content_retorna_422(self) -> None:
         resp = self.client.post("/api/v1/bitins/draft", json={})

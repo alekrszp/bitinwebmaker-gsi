@@ -284,14 +284,26 @@ Antes era só um placeholder ("Nada configurável ainda por aqui."). Escopo fech
 usuário: o que já dá pra fazer sem endpoint novo (Postgres/SQLite já funciona nesta máquina,
 diferente do Mongo — validado ao vivo de verdade, não só por teste automatizado).
 
-- **"Minha conta"** (somente leitura): nome, e-mail, setor (nome resolvido via `GET
-  /sectors`, público) e nível de permissão (rótulo amigável — `Usuário`/`Gestor`/`Admin` — em
-  vez do número cru). Trocar senha e editar o próprio perfil ficam pra uma rodada futura,
-  quando os endpoints existirem (o backend hoje só tem `POST /auth/register`/`login`, nada de
-  "trocar minha senha").
+- **"Minha conta"** (somente leitura): nome, e-mail, setor(es) (nomes resolvidos via `GET
+  /sectors`, público — desde 2026-07-15 um usuário pode ter vários `Setor` ao mesmo tempo,
+  ver abaixo; nomes juntados por vírgula) e nível de permissão (rótulo amigável —
+  `Usuário`/`Gestor`/`Admin` — em vez do número cru). Trocar senha via `POST
+  /auth/change-password` (adicionado nesta mesma rodada); editar o próprio perfil fica pra uma
+  rodada futura.
+- **Setores múltiplos por usuário (2026-07-15)**: pedido explícito, "um usuário poder ser
+  tanto armazenagem tanto quanto proteina" — `Usuario.sector_id` (FK única) virou
+  `sector_ids: number[]` (many-to-many, `Setor[]` via `usuario_setores` no backend). No
+  formulário "Cadastrar usuário", o `<select>` de setor único virou um grupo de checkboxes
+  (uma por `Setor` existente, sem hardcode de quantidade); a tabela de "Gestão de usuários" e
+  o `DetailField` de "Minha conta" juntam os nomes com vírgula em vez de resolver um id só.
 - **"Gestão de usuários"** (só visível se `user.permission_level >= 99`, decisão explícita do
   usuário — "só pra admin"): tabela com todos os usuários (`GET /users`, já exigia nível ≥ 1
-  no backend — a UI é mais restritiva que o mínimo do backend de propósito) e um `<select>`
+  no backend — a UI é mais restritiva que o mínimo do backend de propósito). Desde 2026-07-15,
+  um **gestor** (não só admin) também acessa `GET /users`, mas escopado: só vê usuários que
+  compartilham ao menos um `Setor` com ele (pedido explícito: "se um usuário for gestor, ele
+  consegue só ver listagem de usuários do setor que ele é gestor"). Essa tela em si continua
+  visível só pra admin (`Settings.tsx` não muda essa checagem de UI); o escopo por setor do
+  gestor vale pra quem consumir `GET /users` diretamente, não pra esta tela hoje. Um `<select>`
   por linha pra trocar o nível (`PATCH /users/{id}/permission`, backend já exigia nível 99).
   **Proteção contra auto-rebaixamento**: o `<select>` da própria linha do usuário logado fica
   desabilitado — evita um admin se rebaixar sem querer e ficar trancado fora da própria
@@ -312,6 +324,29 @@ aparece verbatim, via o mesmo padrão de extração de erro (`extrairErro`, duck
 já usado em `Login.tsx`) que lida com as duas formas de resposta da API: `{detail: string}` e
 `{detail: [{msg}]}` (erro de validação do Pydantic).
 
+**Cadastro de usuário só por admin + primeiro login forçado (2026-07-15)**: pedido explícito
+do usuário — "tela de cadastro de usuário SÓ PARA ADMIN para não ter que cadastrar no banco" —
+substitui a nota acima ("Gestão de usuários só lista e muda nível, não cria").
+
+- **`CriarUsuarioForm`** (`Settings.tsx`, dentro de `GestaoUsuarios`): E-mail, Nome, ID/Número
+  de engenharia (opcional), Setor (`<select>` do `sectors` já carregado), Permissão (mesmo
+  mapeamento 0/1/99 do `<select>` de nível já existente na tabela). Sem campo de senha — o
+  backend gera (`POST /users`, ver `docs/BACKEND.md`). Sucesso mostra a senha gerada num
+  callout persistente (não um toast que some): "Essa senha só aparece agora — anote e repasse
+  pra [nome] antes de sair desta tela." O usuário novo entra direto na tabela abaixo via
+  atualização local (mesmo padrão otimista de `alterarNivel`, sem refetch de `GET /users`).
+- **Gate de senha temporária** (`RequireAuth.tsx`): se `user.senha_temporaria` (espelha
+  `Usuario.senha_temporaria`) for `true`, redireciona pra `/definir-senha` em vez de renderizar
+  a rota pedida — exceto quando já está em `/definir-senha` (evita loop de redirecionamento).
+  Checado depois do gate de "tem token" já existente, não substitui ele.
+- **`DefinirSenha.tsx`** (rota `/definir-senha`, nova, tela standalone sem sidebar/topbar,
+  mesmo espírito de `Login.tsx`): formulário senha temporária/nova/confirmar, reusa a mesma
+  chamada `POST /auth/change-password` de `TrocarSenhaForm` (duplicação pequena e deliberada —
+  o app não tinha um padrão pra compartilhar lógica de formulário entre páginas, e não valia a
+  pena criar um só pra isso). Sucesso chama `AuthContext.refreshUser()` (novo — rebusca `GET
+  /users/me`) e navega pra `/`; como o servidor já zerou `senha_temporaria`, o gate acima para
+  de redirecionar.
+
 ### "Meus Bitins" — listagem + visualização só-leitura (2026-07-14)
 
 Escopo fechado colaborativamente com o usuário via `AskUserQuestion` (pedido explícito: "quero
@@ -324,12 +359,14 @@ termos mais concretos antes de fechar.
   obrigatórios na lista (não só Código) porque rascunhos ainda não têm código — só é gerado no
   envio (`gerar_e_salvar_bitin_sql`) — e sem eles a linha de um rascunho ficaria em branco, sem
   nada pra identificar do que se trata.
-- **Escopo "só os meus"**: `GET /bitins` passou a filtrar por `criado_por` no backend (mesma
-  decisão já registrada em `resumo-usuario`/Home) — mudança de comportamento do endpoint
-  existente, não só um filtro novo no frontend, pra não vazar motivo/solicitante de BITins de
-  outros usuários pra quem só deveria ver os próprios. Nem admins veem a lista do sistema
-  inteiro aqui (diferente de "Gestão de usuários" em Configurações, que é uma função
-  administrativa separada).
+- **Escopo por nível, revisto em 2026-07-15** (era "só os meus" pra todo mundo, incl. admin):
+  `GET /bitins` filtra por `criado_por` no backend, mas o que entra nesse filtro agora depende
+  do nível de quem pergunta — usuário comum continua só os próprios; gestor vê os de quem
+  compartilha ao menos um `Setor` com ele (mesma lógica de "Gestão de usuários"); admin vê o
+  **sistema inteiro, sem filtro nenhum** (pedido explícito do usuário, "Admin vê tudo" —
+  reverte a decisão anterior de 2026-07-14 que também prendia admin a "só os meus" aqui). O
+  título da tela e o rótulo de busca "Solicitante" se ajustam pra quem vê um escopo mais amplo
+  (gestor/admin) — ver abaixo.
 - **`BitinDetail.tsx`** (rota `/bitins/:mongoId`, clique na linha): visualização só-leitura,
   ainda sem edição. Usa `GET /bitins/{mongo_id}/resumo` (`bitin_view.render_bitin_summary`) em
   vez do `content` bruto — reaproveita a lógica de diffs de campo (`dados_basicos_alterados`) e
@@ -439,8 +476,6 @@ Validado com Playwright ad-hoc contra o backend real nesta máquina (sem MongoDB
 
 ## O que NÃO está nesta fatia ainda (próximos incrementos)
 
-- **Tela de "criar usuário"** — hoje só dá pra cadastrar via `POST /auth/register` direto na
-  API (curl/Postman); "Gestão de usuários" em Configurações só lista e muda nível, não cria.
 - **"Esqueci minha senha"** — só existe troca de senha sabendo a senha atual
   (`POST /auth/change-password`); sem fluxo de reset pra quem esqueceu.
 - **RBAC visível na UI** além do que já existe — o backend recusa (`403`) quem tenta

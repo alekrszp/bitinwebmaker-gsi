@@ -7,6 +7,10 @@ interface AuthContextValue {
   loading: boolean
   login: (email: string, password: string) => Promise<void>
   logout: () => void
+  // Rebusca GET /users/me e atualiza o user em memória -- usado por DefinirSenha.tsx depois de
+  // POST /auth/change-password zerar Usuario.senha_temporaria no servidor, pra RequireAuth.tsx
+  // parar de redirecionar pra /definir-senha sem precisar de um reload de página inteiro.
+  refreshUser: () => Promise<void>
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null)
@@ -45,8 +49,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(null)
   }
 
+  async function refreshUser() {
+    const me = await api.get('/users/me')
+    setUser(me.data)
+  }
+
   return (
-    <AuthContext.Provider value={{ user, loading, login, logout }}>
+    <AuthContext.Provider value={{ user, loading, login, logout, refreshUser }}>
       {children}
     </AuthContext.Provider>
   )

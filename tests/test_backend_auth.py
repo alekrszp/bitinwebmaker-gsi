@@ -233,6 +233,127 @@ class AuthApiTest(unittest.TestCase):
         self.assertEqual(resp.status_code, 200, resp.text)
         self.assertEqual(resp.json()["numero_eng"], "ENG-123")
 
+    def _criar_setor(self, nome: str) -> int:
+        db = self.SessionLocal()
+        from backend.auth.models import Setor
+
+        setor = Setor(nome=nome)
+        db.add(setor)
+        db.commit()
+        db.refresh(setor)
+        setor_id = setor.id
+        db.close()
+        return setor_id
+
+    def _atribuir_setores(self, user_id: int, setor_ids: list[int]) -> None:
+        db = self.SessionLocal()
+        from backend.auth.models import Setor
+
+        usuario = db.query(Usuario).filter(Usuario.id == user_id).first()
+        usuario.setores = db.query(Setor).filter(Setor.id.in_(setor_ids)).all()
+        db.commit()
+        db.close()
+
+    def test_usuario_pode_pertencer_a_dois_setores_ao_mesmo_tempo(self) -> None:
+        """2026-07-15, pedido explícito: "colocar a opção de um usuário poder ser tanto
+        armazenagem tanto quanto proteina" -- Usuario.sector_id virou many-to-many."""
+        setor_a = self._criar_setor("Proteína Animal")
+        setor_b = self._criar_setor("Armazenagem de Grãos")
+        usuario = self._create_user(1)
+        self._atribuir_setores(usuario.id, [setor_a, setor_b])
+
+        resp = self.client.get(
+            "/api/v1/users/me", headers={"Authorization": f"Bearer {create_access_token(usuario.id)}"},
+        )
+        self.assertEqual(resp.status_code, 200, resp.text)
+        self.assertEqual(sorted(resp.json()["sector_ids"]), sorted([setor_a, setor_b]))
+
+    def test_registro_com_sector_ids_persiste_multiplos_setores(self) -> None:
+        setor_a = self._criar_setor("Proteína Animal")
+        setor_b = self._criar_setor("Armazenagem de Grãos")
+        resp = self.client.post(
+            "/api/v1/auth/register",
+            json={
+                "email": "multisetor@example.com", "nome": "Multi", "password": "Senha123!",
+                "sector_ids": [setor_a, setor_b],
+            },
+        )
+        self.assertEqual(resp.status_code, 200, resp.text)
+        self.assertEqual(sorted(resp.json()["sector_ids"]), sorted([setor_a, setor_b]))
+
+    def test_registro_com_setor_inexistente_falha(self) -> None:
+        resp = self.client.post(
+            "/api/v1/auth/register",
+            json={
+                "email": "setorinvalido@example.com", "nome": "Invalido", "password": "Senha123!",
+                "sector_ids": [99999],
+            },
+        )
+        self.assertEqual(resp.status_code, 400, resp.text)
+
+    def test_gestor_com_setor_ve_so_usuarios_do_mesmo_setor(self) -> None:
+        """2026-07-15, pedido explícito: "se um usuário for gestor, ele consegue só ver
+        listagem de usuários do setor que ele é gestor" -- não a lista do sistema inteiro."""
+        setor_a = self._criar_setor("Proteína Animal")
+        setor_b = self._criar_setor("Armazenagem de Grãos")
+
+        gestor = self._create_user(1, permission_level=1)
+        colega_mesmo_setor = self._create_user(2, permission_level=0)
+        colega_outro_setor = self._create_user(3, permission_level=0)
+        sem_setor = self._create_user(4, permission_level=0)
+
+        self._atribuir_setores(gestor.id, [setor_a])
+        self._atribuir_setores(colega_mesmo_setor.id, [setor_a])
+        self._atribuir_setores(colega_outro_setor.id, [setor_b])
+
+        resp = self.client.get(
+            "/api/v1/users", headers={"Authorization": f"Bearer {create_access_token(gestor.id)}"},
+        )
+        self.assertEqual(resp.status_code, 200, resp.text)
+        ids = {u["id"] for u in resp.json()}
+        self.assertIn(gestor.id, ids)
+        self.assertIn(colega_mesmo_setor.id, ids)
+        self.assertNotIn(colega_outro_setor.id, ids)
+        self.assertNotIn(sem_setor.id, ids)
+
+    def test_gestor_sem_setor_ve_lista_vazia_de_usuarios(self) -> None:
+        """Um gestor sem setor nenhum não gerencia ninguém -- não cai pra "vê todo mundo" por
+        omissão."""
+        gestor = self._create_user(1, permission_level=1)
+        self._create_user(2, permission_level=0)
+
+        resp = self.client.get(
+            "/api/v1/users", headers={"Authorization": f"Bearer {create_access_token(gestor.id)}"},
+        )
+        self.assertEqual(resp.status_code, 200, resp.text)
+        self.assertEqual(resp.json(), [])
+
+    def test_admin_continua_vendo_todo_mundo_em_users(self) -> None:
+        admin = self._create_user(1, permission_level=99)
+        self._create_user(2, permission_level=0)
+        self._create_user(3, permission_level=0)
+
+        resp = self.client.get(
+            "/api/v1/users", headers={"Authorization": f"Bearer {create_access_token(admin.id)}"},
+        )
+        self.assertEqual(resp.status_code, 200, resp.text)
+        self.assertEqual(len(resp.json()), 3)
+
+    def test_get_user_fora_do_setor_do_gestor_retorna_404(self) -> None:
+        setor_a = self._criar_setor("Proteína Animal")
+        setor_b = self._criar_setor("Armazenagem de Grãos")
+
+        gestor = self._create_user(1, permission_level=1)
+        de_fora = self._create_user(2, permission_level=0)
+        self._atribuir_setores(gestor.id, [setor_a])
+        self._atribuir_setores(de_fora.id, [setor_b])
+
+        resp = self.client.get(
+            f"/api/v1/users/{de_fora.id}",
+            headers={"Authorization": f"Bearer {create_access_token(gestor.id)}"},
+        )
+        self.assertEqual(resp.status_code, 404, resp.text)
+
     def test_users_me_com_token_valido(self) -> None:
         user = self._create_user(1)
         token = create_access_token(user.id)
@@ -414,6 +535,84 @@ class AuthApiTest(unittest.TestCase):
             headers={"Authorization": f"Bearer {create_access_token(admin.id)}"},
         )
         self.assertEqual(resp_ok.status_code, 200, resp_ok.text)
+
+    # Cadastro de usuário só por admin (2026-07-15, POST /users -- backend/api/users.py::
+    # create_user_by_admin), pedido explícito: "tela de cadastro de usuário SÓ PARA ADMIN
+    # para não ter que cadastrar no banco".
+
+    def test_criar_usuario_por_admin_exige_permissao_99(self) -> None:
+        gestor = self._create_user(1, permission_level=1)
+        resp = self.client.post(
+            "/api/v1/users",
+            json={"email": "novo@example.com", "nome": "Novo", "permission_level": 0},
+            headers={"Authorization": f"Bearer {create_access_token(gestor.id)}"},
+        )
+        self.assertEqual(resp.status_code, 403, resp.text)
+
+    def test_criar_usuario_por_admin_com_sucesso_gera_senha_temporaria_valida(self) -> None:
+        admin = self._create_user(1, permission_level=99)
+        resp = self.client.post(
+            "/api/v1/users",
+            json={"email": "Novo@Example.com", "nome": "Novo", "permission_level": 0},
+            headers={"Authorization": f"Bearer {create_access_token(admin.id)}"},
+        )
+        self.assertEqual(resp.status_code, 200, resp.text)
+        body = resp.json()
+        senha_gerada = body["senha_temporaria_gerada"]
+        # Não confia "por sorte" -- roda a mesma validação de força que o servidor rodaria
+        # contra qualquer senha de registro/troca (backend/auth/security.py::
+        # validate_password_strength), garantindo que o gerador realmente cumpre a regra.
+        from backend.auth.security import validate_password_strength
+
+        validate_password_strength(senha_gerada)  # não deve levantar
+        self.assertTrue(body["senha_temporaria"])
+
+        db = self.SessionLocal()
+        criado = db.query(Usuario).filter(Usuario.email == "novo@example.com").first()
+        db.close()
+        self.assertIsNotNone(criado)
+        self.assertTrue(criado.senha_temporaria)
+
+    def test_criar_usuario_por_admin_com_email_duplicado_falha(self) -> None:
+        admin = self._create_user(1, permission_level=99)
+        self._create_user(2, permission_level=0)  # email user2@example.com
+        resp = self.client.post(
+            "/api/v1/users",
+            json={"email": "user2@example.com", "nome": "Duplicado", "permission_level": 0},
+            headers={"Authorization": f"Bearer {create_access_token(admin.id)}"},
+        )
+        self.assertEqual(resp.status_code, 400, resp.text)
+
+    def test_login_com_senha_temporaria_gerada_por_admin_funciona(self) -> None:
+        admin = self._create_user(1, permission_level=99)
+        criar = self.client.post(
+            "/api/v1/users",
+            json={"email": "temp@example.com", "nome": "Temp", "permission_level": 0},
+            headers={"Authorization": f"Bearer {create_access_token(admin.id)}"},
+        )
+        senha_gerada = criar.json()["senha_temporaria_gerada"]
+
+        login_resp = self.client.post(
+            "/api/v1/auth/login",
+            data={"username": "temp@example.com", "password": senha_gerada},
+        )
+        self.assertEqual(login_resp.status_code, 200, login_resp.text)
+        headers = {"Authorization": f"Bearer {login_resp.json()['access_token']}"}
+
+        me = self.client.get("/api/v1/users/me", headers=headers)
+        self.assertEqual(me.status_code, 200, me.text)
+        self.assertTrue(me.json()["senha_temporaria"])
+
+        troca = self.client.post(
+            "/api/v1/auth/change-password",
+            json={"senha_atual": senha_gerada, "senha_nova": "MinhaSenhaSecreta1!"},
+            headers=headers,
+        )
+        self.assertEqual(troca.status_code, 200, troca.text)
+
+        me_depois = self.client.get("/api/v1/users/me", headers=headers)
+        self.assertEqual(me_depois.status_code, 200, me_depois.text)
+        self.assertFalse(me_depois.json()["senha_temporaria"])
 
 
 if __name__ == "__main__":

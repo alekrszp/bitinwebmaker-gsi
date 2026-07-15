@@ -2,6 +2,39 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v0.8.1] - 2026-07-15
+
+Setores múltiplos por usuário + escopo por setor/nível em usuários e BITins. Pedido explícito:
+"se um usuário for gestor, ele consegue só ver listagem de usuários do setor que ele é gestor,
+e coloca a opção de um usuário poder ser tanto armazenagem tanto quanto proteina" +
+"lista de usuários e bitins de todo mundo, com filtragem de solicitante".
+
+### Changed
+- **`Usuario.sector_id` (FK única) → many-to-many** (`Usuario.setores`, tabela de associação
+  `usuario_setores`): um usuário pode pertencer a mais de um `Setor` ao mesmo tempo. Migração
+  `dd1208ae65a6` (backfill de `sector_id` + drop da coluna via `batch_alter_table`, testada
+  contra cópia de `bitin_backend.db`, não aplicada ao banco real). `UserOut.sector_ids: list[int]`
+  substitui `sector_id: int | None` em toda a API (`UserCreate`, `AdminUserCreate`, `UserOut`).
+- **`GET /users`/`GET /users/{id}`**: gestor (nível 1) agora só vê usuários que compartilham
+  ao menos um `Setor` com ele (antes via a lista do sistema inteiro, igual admin). Gestor sem
+  setor nenhum vê lista vazia. `GET /users/{id}` fora do escopo do gestor → 404. Admin
+  inalterado (vê todo mundo).
+- **`GET /bitins`**: gestor passa a ver BITins de qualquer um que compartilhe setor com ele
+  (antes só os próprios); admin passa a ver o **sistema inteiro sem filtro** (antes também
+  ficava preso a "só os meus" — decisão de 2026-07-14 revertida explicitamente: "Admin vê
+  tudo"). Usuário comum inalterado.
+- Frontend: `Settings.tsx` — formulário "Cadastrar usuário" troca o `<select>` de setor único
+  por um grupo de checkboxes; tabela "Gestão de usuários" e "Minha conta" juntam múltiplos
+  nomes de setor com vírgula. `MeusBitins.tsx` — título e rótulo de busca "Solicitante" se
+  ajustam pra gestor/admin (escopo mais amplo que "só os meus").
+
+### Validação
+- Backend: 205 testes (196 → 205, 9 novos cobrindo múltiplos setores por usuário, escopo de
+  gestor/admin em `GET /users` e `GET /bitins`).
+- `npm run typecheck`/`lint`/`test`/`build` limpos.
+- Migração testada contra cópia de `bitin_backend.db` (upgrade e downgrade), banco real não
+  tocado.
+
 ## [v0.8.0] - 2026-07-15
 
 Rodada grande de três frentes: autenticação real (banco persistente + migrations, sessões

@@ -1,8 +1,22 @@
-from sqlalchemy import Boolean, Column, ForeignKey, Integer, String
+from sqlalchemy import Boolean, Column, ForeignKey, Integer, String, Table
+from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from sqlalchemy.types import DateTime
 
 from backend.db.session import Base
+
+# Tabela de associação pura (sem colunas extras) pro many-to-many Usuario<->Setor (2026-07-15,
+# pedido explícito: "um usuário poder ser tanto armazenagem tanto quanto proteina"). Antes disso
+# Usuario.sector_id era uma FK única nullable -- trocada por esta tabela + Usuario.setores
+# (ver migração usuario_setores_many_to_many). `Table()` simples é o padrão SQLAlchemy pra
+# many-to-many sem payload próprio (não precisa de uma classe/model dedicada como SessaoUsuario,
+# que carrega colunas além das duas FKs).
+usuario_setores = Table(
+    "usuario_setores",
+    Base.metadata,
+    Column("usuario_id", Integer, ForeignKey("usuarios.id"), primary_key=True),
+    Column("setor_id", Integer, ForeignKey("setores.id"), primary_key=True),
+)
 
 # NOTA (2026-07-15): o ER diagram de referência (Fluxo.md) traz `password_salt` e
 # `algorithm_hash` como colunas separadas em usuario_auth. NÃO copiamos isso -- o hash de
@@ -37,11 +51,26 @@ class Usuario(Base):
     # 0 = usuário comum, 1 = gestor, 99 = admin (ver backend/auth/deps.py check_permission).
     permission_level = Column(Integer, nullable=False, default=0)
     network_id = Column(String, nullable=True)
-    sector_id = Column(Integer, ForeignKey("setores.id"), nullable=True)
+    # Many-to-many desde 2026-07-15 (era sector_id, FK única nullable) -- um usuário agora pode
+    # pertencer a mais de um Setor ao mesmo tempo (ex.: gestor de Proteína Animal E Armazenagem
+    # de Grãos). Usado tanto pra escopar GET /users (gestor só vê usuários com setor em comum)
+    # quanto GET /bitins (gestor só vê BITins de quem tem setor em comum) -- ver
+    # backend/api/users.py e backend/api/bitins.py.
+    setores = relationship("Setor", secondary=usuario_setores, backref="usuarios")
     # Só relevante pra contas de engenheiro (diagram: "Apenas engenheiros") -- outros papéis
     # deixam nulo, não é obrigatório pro sistema todo.
     numero_eng = Column(String, nullable=True)
     email_verificado = Column(Boolean, nullable=False, default=False)
+    # Fluxo "cadastro só por admin" (2026-07-15, pedido explícito do usuário: "tela de cadastro
+    # de usuário SÓ PARA ADMIN"). True quando a senha atual foi gerada pelo backend em
+    # POST /users (backend/api/users.py::create_user_by_admin) e ainda não foi trocada pela
+    # senha de verdade do dono da conta -- POST /auth/change-password zera de volta pra False
+    # ao trocar com sucesso (backend/auth/routes.py::change_password). Login continua
+    # funcionando normalmente com a senha temporária; é o FRONTEND (RequireAuth.tsx) quem lê
+    # essa flag via GET /users/me e força a rota /definir-senha antes de liberar o resto do
+    # app -- não há bloqueio de outros endpoints no servidor por essa flag, decisão deliberada
+    # pra não precisar tocar em toda rota autenticada.
+    senha_temporaria = Column(Boolean, nullable=False, default=False)
 
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())

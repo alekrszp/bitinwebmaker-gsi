@@ -9,6 +9,7 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 import backend.scripts_path as scripts_path  # noqa: F401  (garante sys.path antes dos imports abaixo)
+from backend.api.users import _usuarios_do_mesmo_setor_query
 from backend.auth.deps import get_current_active_user
 from backend.auth.models import Usuario
 from backend.bitin_number import SetorInvalido, gerar_e_salvar_bitin_sql
@@ -227,14 +228,31 @@ async def list_bitins(
     limit: int = 20,
     skip: int = 0,
     current_user: Usuario = Depends(get_current_active_user),
+    db: Session = Depends(get_db),
     mongo_db=Depends(get_mongo_db),
 ):
     collection = mongo_db["bitin_contents"]
-    # "Meus Bitins" -- mesma decisão de escopo já registrada na Home (resumo-usuario):
-    # cada usuário só vê os próprios BITins, não a listagem do sistema inteiro. Admins não
-    # ganham uma visão global aqui (diferente de Gestão de usuários) porque essa tela lista
-    # rascunhos/conteúdo pessoal, não é uma função administrativa.
-    query: dict[str, Any] = {"criado_por": current_user.email}
+    # Escopo por nível (revisto em 2026-07-15, pedido explícito: "lista de usuários e bitins de
+    # todo mundo, com filtragem de solicitante"):
+    # - Usuário comum: só os próprios BITins (criado_por == e-mail), como sempre foi.
+    # - Gestor: BITins de qualquer um que compartilhe ao menos um Setor com ele (mesma consulta
+    #   SQL de backend/api/users.py::_usuarios_do_mesmo_setor_query, "quem o gestor gerencia").
+    #   Gestor sem setor nenhum não ganha acesso a mais ninguém -- cai pra "só os próprios",
+    #   pra não perder o acesso ao próprio trabalho (mesmo raciocínio de list_users, mas aqui a
+    #   consequência de "não vê nada" seria pior: perderia os rascunhos que ele mesmo criou).
+    # - Admin: sem restrição nenhuma -- vê o sistema inteiro (decisão MUDOU nesta rodada: antes
+    #   admin também ficava preso a "só os meus" aqui; usuário confirmou "Admin vê tudo").
+    if current_user.permission_level >= ADMIN_LEVEL:
+        query: dict[str, Any] = {}
+    elif current_user.permission_level >= 1:
+        colegas = _usuarios_do_mesmo_setor_query(db, current_user).all()
+        emails = [u.email for u in colegas]
+        if emails:
+            query = {"criado_por": {"$in": emails}}
+        else:
+            query = {"criado_por": current_user.email}
+    else:
+        query = {"criado_por": current_user.email}
     if status:
         query["status"] = status
     if termo:

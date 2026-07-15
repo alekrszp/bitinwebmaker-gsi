@@ -80,14 +80,23 @@ valor legível direto, sem o frontend precisar resolver id→nome.
 **Postgres — tabelas `usuarios`/`setores`** (`backend/auth/models.py`):
 
 ```text
-usuarios: id, email (único), nome, hashed_password, ativo, permission_level (0/1/99),
-          network_id (nullable), sector_id (nullable, FK setores), created_at
-setores:  id, nome (único), descricao
+usuarios:         id, email (único), nome, hashed_password, ativo, permission_level (0/1/99),
+                  network_id (nullable), created_at
+setores:          id, nome (único), descricao
+usuario_setores:  usuario_id (FK usuarios), setor_id (FK setores) -- PK composta
 ```
 
 `setores` aqui é o **departamento do usuário** (Engenharia, RH, TI, ...) — conceito diferente
 do `setor` do BITin em si (`"Proteína Animal"`/`"Armazenagem de Grãos"`, que define o prefixo
 `P`/`A` do número, ver `backend/bitin_number.py`). Os dois não têm relação hoje.
+
+**Many-to-many desde 2026-07-15** (era `sector_id`, FK única nullable em `usuarios`): pedido
+explícito do usuário, "um usuário poder ser tanto armazenagem tanto quanto proteina" — um
+usuário agora pode pertencer a mais de um `Setor` ao mesmo tempo. `Usuario.setores`
+(`relationship` via a tabela de associação pura `usuario_setores`, sem colunas extras) substitui
+a antiga coluna. `UserOut.sector_ids: list[int]` expõe os ids pro frontend; migração
+`dd1208ae65a6` faz o backfill de `sector_id` -> `usuario_setores` e derruba a coluna antiga
+(SQLite exige `batch_alter_table` pra isso).
 
 **MongoDB — coleção `bitin_contents`** (rascunho e enviado, documento inteiro):
 o conteúdo é exatamente a estrutura de `docs/BITIN_MODEL.md` (não o modelo antigo
@@ -103,7 +112,7 @@ edita o rascunho de outra pessoa), `created_at`, `updated_at`.
 |---|---|---|
 | POST | `/bitins/draft` | Cria ou atualiza um rascunho — **sem validação de negócio** (liberdade de edição). Se `mongo_id` vier no corpo, atualiza; senão, cria novo. |
 | GET | `/bitins/{mongo_id}` | Busca um BITin (rascunho ou enviado) pelo id do Mongo. |
-| GET | `/bitins` | Lista rascunhos + enviados **do próprio usuário logado** (filtrado por `criado_por`, mesma decisão de escopo do `/resumo-usuario` — "Meus Bitins", não a listagem do sistema inteiro; alimenta `MeusBitins.tsx`), com filtro adicional por status/termo. Escopo mudou em 2026-07-14 — antes listava todo mundo. |
+| GET | `/bitins` | Lista rascunhos + enviados, escopado por **nível de permissão** (alimenta `MeusBitins.tsx`), com filtro adicional por status/termo. Escopo revisto em 2026-07-15 (pedido explícito: "lista de usuários e bitins de todo mundo, com filtragem de solicitante"): usuário comum (0) só os próprios (`criado_por`, como sempre); gestor (1) os de qualquer um que compartilhe ao menos um `Setor` com ele (mesma consulta de `_usuarios_do_mesmo_setor_query`, sem setor nenhum cai pra "só os meus", nunca "todo mundo"); admin (99) o **sistema inteiro, sem filtro nenhum** — antes de 2026-07-15 até admin ficava preso a "só os meus" aqui, decisão que o usuário reverteu explicitamente ("Admin vê tudo"). |
 | DELETE | `/bitins/{mongo_id}` | Apaga um rascunho. Recusa se já enviado. |
 | POST | `/bitins/{mongo_id}/enviar` | **O ponto-chave**: chama `bitin_lifecycle.enviar_bitin` (todas as validações de uma vez). Se falhar, devolve **200 com `ok=false` e a lista de erros estruturados** (`{field, code, message}`) no corpo — não é um erro HTTP, é um resultado de validação de negócio (a chamada em si funcionou). Se passar, gera o número sequencial (com retry seguro), cria a linha no Postgres, atualiza o Mongo. |
 | GET | `/bitins/{mongo_id}/resumo` | `bitin_view.render_bitin_summary` — pré-visualização/tela final. |
@@ -154,10 +163,11 @@ pares ficam sempre em colunas adjacentes).
 | POST | `/auth/register` | Público. Cria usuário, sempre `permission_level=0` (exceto bootstrap do primeiro usuário). |
 | POST | `/auth/login` | Público (`OAuth2PasswordRequestForm`: `username`=e-mail, `password`). Devolve `Token`. Grava `TentativaLogin`, atualiza `ultimo_acesso`, cria `SessaoUsuario` no sucesso. |
 | POST | `/auth/logout` | Autenticado. Revoga a `SessaoUsuario` do token atual (ver "Tabelas de sessão e auditoria de login" abaixo) — chamadas seguintes com o mesmo token viram `401`. |
-| POST | `/auth/change-password` | Autenticado. Exige `senha_atual` correta; `senha_nova` passa pela mesma validação de força de `UserCreate.password`. Revoga as OUTRAS sessões ativas do usuário (mantém a atual válida) — ver "Troca de senha self-service" abaixo. |
-| GET | `/users/me` | Perfil do usuário autenticado. |
-| GET | `/users` | Lista usuários — exige `permission_level >= 1` (gestor/admin). |
-| GET | `/users/{id}` | Busca usuário por id — exige `permission_level >= 1`. |
+| POST | `/auth/change-password` | Autenticado. Exige `senha_atual` correta; `senha_nova` passa pela mesma validação de força de `UserCreate.password`. Revoga as OUTRAS sessões ativas do usuário (mantém a atual válida) — ver "Troca de senha self-service" abaixo. Também zera `Usuario.senha_temporaria` no sucesso (ver "Cadastro de usuário só por admin" abaixo) — mesma rota atende tanto troca voluntária quanto o primeiro login forçado. |
+| GET | `/users/me` | Perfil do usuário autenticado. Inclui `senha_temporaria`. |
+| POST | `/users` | Cadastro de usuário — exige `permission_level >= 99` (admin). Ver "Cadastro de usuário só por admin" abaixo. |
+| GET | `/users` | Lista usuários — exige `permission_level >= 1` (gestor/admin). Escopo por setor desde 2026-07-15 (pedido explícito: "se um usuário for gestor, ele consegue só ver listagem de usuários do setor que ele é gestor"): admin vê todo mundo; gestor só vê quem compartilha ao menos um `Setor` com ele (`_usuarios_do_mesmo_setor_query`, join via `usuario_setores`) — gestor sem setor nenhum vê lista vazia, não cai pra "vê todo mundo". |
+| GET | `/users/{id}` | Busca usuário por id — exige `permission_level >= 1`. Mesmo escopo por setor de `GET /users`: gestor pedindo um id fora do(s) setor(es) dele recebe **404** (não 403 — não vaza que o id existe). |
 | PATCH | `/users/{id}/permission` | Promove/rebaixa — exige `permission_level >= 99` (admin). |
 | GET | `/sectors` | Público (form de registro precisa listar antes do login existir). |
 | POST | `/sectors` | Cria setor — exige admin. |
@@ -300,6 +310,32 @@ usuário: "vamos fazer uma autenticação melhor, segurança nas senhas etc.".
   outro dispositivo/navegador desloga esses, mas não a sessão que acabou de fazer a própria
   troca.
 
+### Cadastro de usuário só por admin (adicionado em 2026-07-15)
+
+Pedido explícito do usuário: "tela de cadastro de usuário SÓ PARA ADMIN para não ter que
+cadastrar no banco". Antes, a única forma de criar uma conta era `POST /auth/register` (auto-
+atendimento, sempre `permission_level=0`) ou edição direta no banco.
+
+- **`POST /users`** (`AdminUserCreate`: `email`, `nome`, `numero_eng?`, `sector_ids?` (lista,
+  2026-07-15 — era `sector_id` único), `permission_level`) — exige `check_permission(99)`. Ao
+  contrário de `UserCreate`, aqui
+  `permission_level` VEM do corpo de propósito: não é a mesma vulnerabilidade de
+  escalonamento de privilégio documentada no registro aberto, porque só quem já é admin passa
+  por `check_permission(99)`.
+- Não recebe senha nenhuma no corpo — gerada no servidor por
+  `backend/auth/security.py::generate_temp_password` (12 caracteres, garante 1 de cada classe
+  — maiúscula/minúscula/número/especial — via `secrets.SystemRandom`, não por sorte tipo
+  `secrets.token_urlsafe`). Devolvida em texto puro UMA ÚNICA VEZ no corpo de resposta
+  (`AdminUserCreateOut.senha_temporaria_gerada`) pro admin repassar fora do sistema.
+- `Usuario.senha_temporaria` fica `True` na criação. Login funciona normalmente com essa senha
+  (`POST /auth/login` não sabe nem se importa se é temporária). `GET /users/me` expõe a flag —
+  é o FRONTEND (`RequireAuth.tsx`) quem força a rota `/definir-senha` antes de liberar o resto
+  do app; não há bloqueio de outros endpoints no servidor por essa flag (decisão deliberada,
+  pra não precisar tocar em toda rota autenticada por um gate que é essencialmente de UI).
+- `POST /auth/change-password` (mesma rota de sempre) zera `senha_temporaria=False` no
+  sucesso — não existe endpoint separado pra "definir senha pela primeira vez", a senha
+  temporária já é a `senha_atual` dessa primeira chamada.
+
 **Checagem de segurança na subida** (`backend/main.py::lifespan`, adicionado em 2026-07-13,
 achado de auditoria): antes, um deploy sem `.env` configurado subia silenciosamente com a
 `SECRET_KEY` padrão — qualquer um forjaria um token de admin válido, sem nenhum aviso. Agora, se
@@ -364,7 +400,7 @@ conflita com um banco já migrado) — ver comentário em `backend/main.py`. Os 
 (`tests/test_backend_*.py`) não usam Alembic nem o lifespan: criam um SQLite em memória e
 chamam `Base.metadata.create_all` direto por teste, então não são afetados por nada disto.
 
-**Duas migrações**:
+**Quatro migrações**:
 - `f19fae8abd7f_baseline_usuarios_setores_bitins.py` — schema como ele já existia antes desta
   rodada (`usuarios`, `setores`, `bitins`). Existe só pra dar um ponto de partida consistente
   ao histórico Alembic; não deve ser "upgraded" contra um banco que já tem essas tabelas (ver
@@ -373,6 +409,18 @@ chamam `Base.metadata.create_all` direto por teste, então não são afetados po
   `usuarios` (`numero_eng`, `email_verificado` com `server_default='0'` — necessário porque a
   coluna é `NOT NULL` e o banco de dev já tem usuários cadastrados —, `updated_at`,
   `ultimo_acesso`).
+- `11420a31c617_senha_temporaria_em_usuarios.py` — `usuarios.senha_temporaria` (`server_default
+  ='0'`, mesmo motivo acima).
+- `dd1208ae65a6_usuario_setores_many_to_many.py` (2026-07-15) — cria `usuario_setores`
+  (PK composta `usuario_id`+`setor_id`), faz o backfill de `usuarios.sector_id` pra lá (`INSERT
+  ... SELECT ... WHERE sector_id IS NOT NULL`), depois derruba `usuarios.sector_id` via
+  `batch_alter_table` (primeira migração desta base a dropar coluna — SQLite não suporta `DROP
+  COLUMN` direto, precisa do modo batch, que recria a tabela por trás dos panos). `downgrade()`
+  é com perda de propósito se algum usuário tiver 2+ setores (só o de menor id volta pra
+  `sector_id`) — documentado no próprio arquivo da migração. **Testado contra uma cópia de
+  `bitin_backend.db`** antes de entrar no repo (upgrade preservou os 3 usuários reais e o
+  backfill dos 2 que já tinham `sector_id`; downgrade reverteu limpo) — não aplicada ao banco
+  real, precisa dos comandos abaixo rodados manualmente.
 
 **Clone novo / banco vazio** — roda as duas migrações do zero:
 

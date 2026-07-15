@@ -7,9 +7,11 @@ import { api } from '../lib/api'
 import type { Bitin } from '../lib/types'
 
 // Escopo desta rodada (decidido com o usuário, ver docs/FRONTEND.md): listagem + clique na
-// linha abre uma visualização só-leitura (BitinDetail.tsx). GET /bitins já vem escopado pro
-// próprio usuário no backend ("só os meus", mesma decisão do resumo da Home).
-const ADMIN_LEVEL = 99
+// linha abre uma visualização só-leitura (BitinDetail.tsx). GET /bitins vem escopado por
+// nível no backend (2026-07-15, ver backend/api/bitins.py::list_bitins): usuário comum só os
+// próprios, gestor os de quem compartilha setor, admin o sistema inteiro -- por isso o título
+// e o rótulo de busca abaixo não presumem mais "só os meus" pra todo mundo.
+const GESTOR_LEVEL = 1
 
 type Aba = 'todos' | 'rascunho' | 'enviado'
 type CampoBusca = 'todos' | 'codigo' | 'motivo' | 'solicitante'
@@ -37,18 +39,20 @@ export default function MeusBitins() {
 
   // "Solicitante" como opção de busca só faz sentido pra quem lida com BITins de várias
   // pessoas -- um engenheiro comum normalmente é o próprio solicitante dos seus BITins
-  // (decisão do usuário, 2026-07-14).
+  // (decisão do usuário, 2026-07-14). Gestor passou a ver BITins de colegas de setor
+  // (2026-07-15), então ganha a mesma opção que já existia só pra admin.
+  const ehGestorOuAdmin = (user?.permission_level ?? 0) >= GESTOR_LEVEL
   const camposBusca = useMemo(() => {
     const base: { value: CampoBusca; label: string }[] = [
       { value: 'todos', label: 'Tudo' },
       { value: 'codigo', label: 'Número' },
       { value: 'motivo', label: 'Motivo' },
     ]
-    if ((user?.permission_level ?? 0) >= ADMIN_LEVEL) {
+    if (ehGestorOuAdmin) {
       base.push({ value: 'solicitante', label: 'Solicitante' })
     }
     return base
-  }, [user])
+  }, [ehGestorOuAdmin])
 
   // Debounce -- espera parar de digitar antes de bater na API (GET /bitins?termo=&campo=, já
   // suportado no backend: busca em motivo/solicitante/número, tudo junto ou um campo só, ver
@@ -96,7 +100,9 @@ export default function MeusBitins() {
   return (
     <div>
       <div className="flex flex-wrap items-center justify-between gap-4">
-        <h1 className="text-2xl font-semibold text-ink">Meus Bitins</h1>
+        {/* Rota/menu continua "Meus Bitins" (Sidebar.tsx) -- só o título aqui dentro muda pra
+            não soar enganoso pra quem vê BITins de outras pessoas (gestor/admin, 2026-07-15). */}
+        <h1 className="text-2xl font-semibold text-ink">{ehGestorOuAdmin ? 'BITins' : 'Meus Bitins'}</h1>
 
         <div className="flex items-center gap-3">
           <div className="flex w-full max-w-lg items-center rounded-lg border border-line bg-surface focus-within:ring-2 focus-within:ring-brand-navy/30">

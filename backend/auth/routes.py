@@ -14,7 +14,7 @@ from sqlalchemy.orm import Session
 
 from backend.auth import rate_limit
 from backend.auth.deps import get_current_active_user, get_current_user, oauth2_scheme
-from backend.auth.models import SessaoUsuario, Usuario
+from backend.auth.models import SessaoUsuario, Setor, Usuario
 from backend.auth.schemas import ChangePasswordRequest, Token, UserCreate, UserOut
 from backend.auth.security import create_access_token, get_password_hash, hash_token, verify_password
 from backend.config import settings
@@ -25,8 +25,21 @@ router = APIRouter()
 ADMIN_LEVEL = 99
 
 
+def _resolve_setores(db: Session, sector_ids: list[int]) -> list[Setor]:
+    """Valida que todo id em sector_ids corresponde a um Setor real -- 400 se algum não
+    existir, mesmo estilo de validação de e-mail duplicado logo acima/abaixo neste arquivo."""
+    if not sector_ids:
+        return []
+    setores = db.query(Setor).filter(Setor.id.in_(sector_ids)).all()
+    encontrados = {s.id for s in setores}
+    faltando = set(sector_ids) - encontrados
+    if faltando:
+        raise HTTPException(status_code=400, detail=f"Setor(es) inexistente(s): {sorted(faltando)}")
+    return setores
+
+
 @router.post("/register", response_model=UserOut)
-def register_user(user_in: UserCreate, db: Session = Depends(get_db)) -> Usuario:
+def register_user(user_in: UserCreate, db: Session = Depends(get_db)) -> UserOut:
     # E-mail sempre normalizado pra minúsculo (achado real: login falhava pra um e-mail
     # cadastrado com maiúsculas porque a comparação no banco é case-sensitive) -- registro e
     # login sempre comparam/gravam a mesma forma normalizada, então digitar o e-mail com
@@ -36,13 +49,15 @@ def register_user(user_in: UserCreate, db: Session = Depends(get_db)) -> Usuario
     if existing:
         raise HTTPException(status_code=400, detail="E-mail já cadastrado")
 
+    setores = _resolve_setores(db, user_in.sector_ids)
+
     is_first_user = db.query(Usuario).count() == 0
     novo_usuario = Usuario(
         email=email_normalizado,
         nome=user_in.nome,
         hashed_password=get_password_hash(user_in.password),
         network_id=user_in.network_id,
-        sector_id=user_in.sector_id,
+        setores=setores,
         numero_eng=user_in.numero_eng,
         permission_level=ADMIN_LEVEL if is_first_user else 0,
         # email_verificado NUNCA vem do cliente -- mesma lição de permission_level acima.
@@ -53,7 +68,7 @@ def register_user(user_in: UserCreate, db: Session = Depends(get_db)) -> Usuario
     db.add(novo_usuario)
     db.commit()
     db.refresh(novo_usuario)
-    return novo_usuario
+    return UserOut.from_usuario(novo_usuario)
 
 
 @router.post("/login", response_model=Token)
@@ -143,6 +158,12 @@ def change_password(
         raise HTTPException(status_code=400, detail="Senha atual incorreta")
 
     current_user.hashed_password = get_password_hash(body.senha_nova)
+    # Reusa esta MESMA rota pro fluxo "primeiro login com senha temporária" (2026-07-15,
+    # POST /users em backend/api/users.py cria a conta com senha_temporaria=True) -- não
+    # existe endpoint separado pra isso, a senha temporária já É a senha_atual dessa primeira
+    # chamada. Zera a flag sempre que a troca dá certo; pra conta que já não era temporária
+    # (imensa maioria), fica False -> False, sem efeito nenhum.
+    current_user.senha_temporaria = False
 
     hashed_atual = hash_token(token)
     (

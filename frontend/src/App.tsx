@@ -3,6 +3,7 @@ import Layout from './components/Layout'
 import RequireAuth from './components/RequireAuth'
 import BitinDetail from './pages/BitinDetail'
 import CodigosSapPage from './pages/CodigosSapPage'
+import DefinirSenha from './pages/DefinirSenha'
 import Home from './pages/Home'
 import ListaTecnicaPage from './pages/ListaTecnicaPage'
 import Login from './pages/Login'
@@ -13,6 +14,18 @@ function App() {
   return (
     <Routes>
       <Route path="/login" element={<Login />} />
+      {/* Fora do Layout (sem sidebar/topbar) de propósito -- mesmo espírito standalone de
+          /login -- mas AINDA dentro de RequireAuth: precisa estar logado pra chegar aqui,
+          RequireAuth.tsx só isenta ESTA rota específica do redirecionamento por senha
+          temporária (senão seria loop: /definir-senha redirecionando pra /definir-senha). */}
+      <Route
+        path="/definir-senha"
+        element={
+          <RequireAuth>
+            <DefinirSenha />
+          </RequireAuth>
+        }
+      />
       <Route
         element={
           <RequireAuth>

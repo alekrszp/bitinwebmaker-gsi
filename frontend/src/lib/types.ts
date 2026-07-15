@@ -6,8 +6,30 @@ export interface User {
   ativo: boolean
   permission_level: number
   network_id: string | null
-  sector_id: number | null
+  // Lista de ids de Setor (2026-07-15, era sector_id único -- "um usuário poder ser tanto
+  // armazenagem tanto quanto proteina"). Espelha backend/auth/schemas.py::UserOut.sector_ids.
+  sector_ids: number[]
   created_at: string
+  // Espelha Usuario.senha_temporaria (backend/auth/models.py) -- True quando a senha atual foi
+  // gerada por um admin (POST /users) e ainda não foi trocada pelo dono da conta.
+  // RequireAuth.tsx usa isso pra forçar a rota /definir-senha antes de liberar o resto do app.
+  senha_temporaria: boolean
+}
+
+// Espelha backend/auth/schemas.py::AdminUserCreate -- corpo de POST /users (cadastro de
+// usuário SÓ POR ADMIN, 2026-07-15, Settings.tsx -- GestaoUsuarios).
+export interface AdminUserCreateRequest {
+  email: string
+  nome: string
+  numero_eng: string | null
+  sector_ids: number[]
+  permission_level: number
+}
+
+// Espelha backend/auth/schemas.py::AdminUserCreateOut -- resposta de POST /users. Inclui a
+// senha temporária em texto puro, devolvida UMA ÚNICA VEZ (não fica recuperável depois).
+export interface AdminUserCreateResponse extends User {
+  senha_temporaria_gerada: string
 }
 
 // Espelha backend/api/bitins.py::ResumoUsuarioResponse -- devolvido por
