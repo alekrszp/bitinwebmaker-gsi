@@ -44,73 +44,38 @@ class ValidateBusinessRulesTest(unittest.TestCase):
     def test_bitin_sem_regras_especiais_passa(self) -> None:
         self.assertEqual(self.validate(make_bitin()), [])
 
-    # --- Nota 2: desenho aprovado ---
-
-    def test_nota2_desenho_alterado_sem_aprovacao_falha(self) -> None:
-        bitin = make_bitin()
-        material = bitin["materiais"][0]
-        material["alteracoes"]["impactos_operacionais"]["alt"] = "D/P"
-        material["alteracoes"]["dados_basicos"]["nivel_revisao"] = {"de": "A", "para": "B"}
-        errors = self.validate(bitin)
-        self.assertTrue(any("desenho_aprovado" in e["message"] for e in errors))
-
-    def test_nota2_desenho_alterado_com_aprovacao_passa(self) -> None:
-        bitin = make_bitin()
-        material = bitin["materiais"][0]
-        material["desenho_aprovado"] = True
-        material["alteracoes"]["impactos_operacionais"]["alt"] = "D/P"
-        material["alteracoes"]["dados_basicos"]["nivel_revisao"] = {"de": "A", "para": "B"}
-        self.assertEqual(self.validate(bitin), [])
-
-    def test_nota2_material_real_nap5213_exige_aprovacao(self) -> None:
-        """NAP-5213 real (bitin teste 2.xlsm): Alt="D/P" declarado, Nível Revisão C->D,
-        sem desenho_aprovado -> deve falhar."""
-        bitin = make_bitin(
-            materiais=[
-                {
-                    "codigo_material": "NAP-5213",
-                    "centro": "2001",
-                    "tipo_material": "HALB",
-                    "alteracoes": {
-                        "dados_basicos": {"nivel_revisao": {"de": "C", "para": "D"}},
-                        "impactos_operacionais": {"alt": "D/P"},
-                    },
-                }
-            ]
-        )
-        errors = self.validate(bitin)
-        self.assertTrue(any("desenho_aprovado" in e["message"] and "NAP-5213" in e["message"] for e in errors))
-
-    # --- Nota 17: NCM exige fiscal ---
-
-    def test_nota17_ncm_alterado_sem_fiscal_falha(self) -> None:
-        bitin = make_bitin()
-        bitin["materiais"][0]["alteracoes"]["dados_basicos"]["ncm"] = {"de": "123", "para": "456"}
-        errors = self.validate(bitin)
-        self.assertTrue(any("ncm_aprovado_fiscal" in e["message"] for e in errors))
-
-    def test_nota17_ncm_alterado_com_fiscal_passa(self) -> None:
-        bitin = make_bitin()
-        bitin["materiais"][0]["alteracoes"]["dados_basicos"]["ncm"] = {"de": "123", "para": "456"}
-        bitin["materiais"][0]["alteracoes"]["impactos_operacionais"]["alt"] = "-/P"
-        bitin["materiais"][0]["ncm_aprovado_fiscal"] = True
-        self.assertEqual(self.validate(bitin), [])
+    # --- Nota 2 (desenho aprovado) e Nota 17 (NCM aprovado fiscal) NÃO são mais validadas
+    # aqui -- exigem confirmação externa que o sistema não tem como conferir, e não há
+    # controle na UI pra marcar `desenho_aprovado`/`ncm_aprovado_fiscal` (decisão do usuário,
+    # 2026-07-15). Ver docstring de bitin_business_rules.py e o popover de ajuda da aba BITin.
 
     # --- Nota 8: sucateamento exige centro de custo ---
 
     def test_nota8_sucateamento_sem_centro_custo_falha(self) -> None:
+        # Checklist é 100% manual agora (2026-07-15) -- Est=S não liga mais o item 22 sozinho,
+        # precisa de override explícito. Sem descrição preenchida ali, a regra falha.
         bitin = make_bitin()
         bitin["materiais"][0]["alteracoes"]["impactos_operacionais"] = {"alt": "-", "est": "S"}
+        bitin["checklist_overrides"] = {"22": True}
         errors = self.validate(bitin)
-        self.assertTrue(any("centro_custo" in e["message"] for e in errors))
+        self.assertTrue(any("centro de custo" in e["message"].lower() for e in errors))
+        self.assertTrue(any(e["field"] == "checklist_descricoes.22" for e in errors))
 
     def test_nota8_sucateamento_com_centro_custo_passa(self) -> None:
         bitin = make_bitin()
-        bitin["materiais"][0]["alteracoes"]["impactos_operacionais"] = {
-            "alt": "-", "est": "S", "centro_custo": "1010", "conta_razao": "99999",
-        }
+        bitin["materiais"][0]["alteracoes"]["impactos_operacionais"] = {"alt": "-", "est": "S"}
+        bitin["checklist_overrides"] = {"22": True}
+        bitin["checklist_descricoes"] = {"22": "Centro de custo 1010, conta razão 99999"}
         # Removendo o dados_basicos herdado de make_bitin (descricao de!=para geraria
         # inconsistência com Alt="-"); aqui o foco é só a regra de sucateamento.
+        bitin["materiais"][0]["alteracoes"]["dados_basicos"] = {}
+        self.assertEqual(self.validate(bitin), [])
+
+    def test_nota8_item_22_nao_marcado_manualmente_nao_exige_nada(self) -> None:
+        # Est=S sozinho (sem override manual do item 22) não ativa mais a regra -- a checklist
+        # é responsabilidade exclusiva do engenheiro (2026-07-15).
+        bitin = make_bitin()
+        bitin["materiais"][0]["alteracoes"]["impactos_operacionais"] = {"alt": "-", "est": "S"}
         bitin["materiais"][0]["alteracoes"]["dados_basicos"] = {}
         self.assertEqual(self.validate(bitin), [])
 

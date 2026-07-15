@@ -75,6 +75,19 @@ class ParseSapPasteTest(unittest.TestCase):
         self.assertEqual(material["grupo_mercadorias_atual"], "MP026")
         self.assertTrue(material["tem_desenho"])
 
+    def test_dados_basicos_atual_traz_o_snapshot_completo(self) -> None:
+        """Tela Códigos SAP é idêntica à ZBPP009 (decisão do usuário, 2026-07-15): o colar
+        do SAP preenche o 'de' de todos os 30 campos de dados_basicos, não só um recorte."""
+        rows = spp.parse_sap_paste(make_sap_row())
+        material = spp.plan1_row_to_material_atual(rows[0], self.config)
+        dados_basicos = material["dados_basicos_atual"]
+        self.assertEqual(len(dados_basicos), 30)
+        self.assertEqual(dados_basicos["descricao"], 'TUBO MENOR 1/2"')
+        self.assertEqual(dados_basicos["grupo_mercadorias"], "MP026")
+        self.assertEqual(dados_basicos["peso_bruto"], "0,061")
+        self.assertEqual(dados_basicos["ncm"], "8479.90.90")
+        self.assertEqual(dados_basicos["marcacao_eliminar_nivel_mandante"], "")
+
     def test_parse_sap_paste_to_materiais_varios_centros(self) -> None:
         texto = "\n".join([make_sap_row({4: "2001"}), make_sap_row({4: "2003"})])
         materiais = spp.parse_sap_paste_to_materiais(texto, self.config)

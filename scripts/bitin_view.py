@@ -44,4 +44,9 @@ def render_bitin_summary(
         "materiais": [render_material_summary(m, vba_mapping_config) for m in materiais],
         "checklist": checklist,
         "checklist_pendencias": [item["etapa"] for item in checklist if item["afeta"]],
+        "setores_afetados": bitin_document.build_setores_afetados(checklist, document_config),
+        # Passthrough -- já validado estruturalmente em bitin_model.validate_ordem_cliente
+        # (codigo obrigatório, itens de acrescentar/retira com codigo_material+quantidade), sem
+        # transformação adicional necessária pra exibição. Ver docs/BITIN_MODEL.md.
+        "ordem_cliente": bitin.get("ordem_cliente", []),
     }

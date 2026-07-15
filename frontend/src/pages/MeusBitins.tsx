@@ -1,13 +1,18 @@
-import { useEffect, useState } from 'react'
-import { Link } from 'react-router-dom'
+import { useEffect, useMemo, useState } from 'react'
+import { Link, useSearchParams } from 'react-router-dom'
+import { ChevronDownIcon, SearchIcon } from '../components/icons'
+import StatusBadge from '../components/bitin/StatusBadge'
+import { useAuth } from '../context/AuthContext'
 import { api } from '../lib/api'
 import type { Bitin } from '../lib/types'
 
 // Escopo desta rodada (decidido com o usuário, ver docs/FRONTEND.md): listagem + clique na
-// linha abre uma visualização só-leitura (BitinDetail.tsx) -- ainda sem edição nem botão
-// "+ Novo BITin" (não existe tela de cadastro ainda). GET /bitins já vem escopado pro próprio
-// usuário no backend ("só os meus", mesma decisão do resumo da Home).
+// linha abre uma visualização só-leitura (BitinDetail.tsx). GET /bitins já vem escopado pro
+// próprio usuário no backend ("só os meus", mesma decisão do resumo da Home).
+const ADMIN_LEVEL = 99
+
 type Aba = 'todos' | 'rascunho' | 'enviado'
+type CampoBusca = 'todos' | 'codigo' | 'motivo' | 'solicitante'
 
 const ABAS: { value: Aba; label: string }[] = [
   { value: 'todos', label: 'Todos' },
@@ -15,17 +20,56 @@ const ABAS: { value: Aba; label: string }[] = [
   { value: 'enviado', label: 'Enviados' },
 ]
 
+const ABAS_VALIDAS = new Set<Aba>(['todos', 'rascunho', 'enviado'])
+
 export default function MeusBitins() {
-  const [aba, setAba] = useState<Aba>('todos')
+  const { user } = useAuth()
+  const [searchParams] = useSearchParams()
+  const abaInicial = searchParams.get('status')
+  const [aba, setAba] = useState<Aba>(
+    abaInicial && ABAS_VALIDAS.has(abaInicial as Aba) ? (abaInicial as Aba) : 'todos',
+  )
+  const [campoBusca, setCampoBusca] = useState<CampoBusca>('todos')
+  const [busca, setBusca] = useState('')
+  const [termo, setTermo] = useState('')
   const [bitins, setBitins] = useState<Bitin[] | null>(null)
   const [erro, setErro] = useState<string | null>(null)
 
+  // "Solicitante" como opção de busca só faz sentido pra quem lida com BITins de várias
+  // pessoas -- um engenheiro comum normalmente é o próprio solicitante dos seus BITins
+  // (decisão do usuário, 2026-07-14).
+  const camposBusca = useMemo(() => {
+    const base: { value: CampoBusca; label: string }[] = [
+      { value: 'todos', label: 'Tudo' },
+      { value: 'codigo', label: 'Número' },
+      { value: 'motivo', label: 'Motivo' },
+    ]
+    if ((user?.permission_level ?? 0) >= ADMIN_LEVEL) {
+      base.push({ value: 'solicitante', label: 'Solicitante' })
+    }
+    return base
+  }, [user])
+
+  // Debounce -- espera parar de digitar antes de bater na API (GET /bitins?termo=&campo=, já
+  // suportado no backend: busca em motivo/solicitante/número, tudo junto ou um campo só, ver
+  // bitins.py).
   useEffect(() => {
+    const id = setTimeout(() => setTermo(busca.trim()), 300)
+    return () => clearTimeout(id)
+  }, [busca])
+
+  function carregar() {
     let cancelado = false
     setBitins(null)
     setErro(null)
+    const params: Record<string, string> = {}
+    if (aba !== 'todos') params.status = aba
+    if (termo) {
+      params.termo = termo
+      if (campoBusca !== 'todos') params.campo = campoBusca
+    }
     api
-      .get('/bitins', { params: aba === 'todos' ? {} : { status: aba } })
+      .get('/bitins', { params })
       .then((resp) => {
         if (!cancelado) setBitins(resp.data)
       })
@@ -35,11 +79,64 @@ export default function MeusBitins() {
     return () => {
       cancelado = true
     }
-  }, [aba])
+  }
+
+  useEffect(carregar, [aba, termo, campoBusca])
+
+  async function excluir(mongoId: string) {
+    if (!window.confirm('Excluir este rascunho? Essa ação não pode ser desfeita.')) return
+    try {
+      await api.delete(`/bitins/${mongoId}`)
+      setBitins((atual) => atual?.filter((b) => b.mongo_id !== mongoId) ?? null)
+    } catch {
+      setErro('Não foi possível excluir. Tente novamente.')
+    }
+  }
 
   return (
     <div>
-      <h1 className="text-2xl font-semibold text-ink">Meus Bitins</h1>
+      <div className="flex flex-wrap items-center justify-between gap-4">
+        <h1 className="text-2xl font-semibold text-ink">Meus Bitins</h1>
+
+        <div className="flex items-center gap-3">
+          <div className="flex w-full max-w-lg items-center rounded-lg border border-line bg-surface focus-within:ring-2 focus-within:ring-brand-navy/30">
+            <SearchIcon className="pointer-events-none ml-3.5 h-5 w-5 shrink-0 text-ink-faint" />
+            <input
+              type="text"
+              value={busca}
+              onChange={(e) => setBusca(e.target.value)}
+              placeholder="Buscar..."
+              className="w-full min-w-0 bg-transparent py-3 pl-2.5 pr-3 text-sm text-ink placeholder:text-ink-faint focus:outline-none"
+            />
+            <div className="h-6 w-px shrink-0 bg-line" />
+            <div className="relative shrink-0">
+              {/* appearance-none + seta própria -- a seta nativa do <select> ficava
+                  encostada no canto, e a lista de opções ignorava o tema escuro em alguns
+                  navegadores (o [color-scheme] força o popup nativo a respeitar o tema,
+                  bg-surface sozinho não é suficiente pra isso). */}
+              <select
+                value={campoBusca}
+                onChange={(e) => setCampoBusca(e.target.value as CampoBusca)}
+                aria-label="Buscar em"
+                className="dark:[color-scheme:dark] [color-scheme:light] appearance-none rounded-r-lg bg-surface py-3 pl-2.5 pr-8 text-sm text-ink-muted focus:outline-none"
+              >
+                {camposBusca.map(({ value, label }) => (
+                  <option key={value} value={value}>
+                    {label}
+                  </option>
+                ))}
+              </select>
+              <ChevronDownIcon className="pointer-events-none absolute right-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-ink-faint" />
+            </div>
+          </div>
+          <Link
+            to="/bitins/novo"
+            className="whitespace-nowrap rounded-lg bg-brand-navy px-4 py-3 text-sm font-medium text-white transition-colors hover:bg-brand-navy-dark"
+          >
+            + Novo BITin
+          </Link>
+        </div>
+      </div>
 
       <div className="mt-4 flex gap-1 border-b border-line">
         {ABAS.map(({ value, label }) => (
@@ -69,15 +166,16 @@ export default function MeusBitins() {
           <table className="w-full text-left text-sm">
             <thead>
               <tr className="bg-surface-alt text-xs uppercase tracking-wide text-ink-muted">
-                <th className="px-4 py-2 font-medium">Código</th>
+                <th className="px-4 py-2 font-medium">Número</th>
                 <th className="px-4 py-2 font-medium">Motivo</th>
                 <th className="px-4 py-2 font-medium">Solicitante</th>
                 <th className="px-4 py-2 font-medium">Status</th>
+                <th className="w-10" />
               </tr>
             </thead>
             <tbody className="divide-y divide-line bg-surface">
               {bitins.map((b) => (
-                <tr key={b.mongo_id}>
+                <tr key={b.mongo_id} className="hover:bg-surface-alt">
                   <td className="px-4 py-2">
                     <Link to={`/bitins/${b.mongo_id}`} className="block text-ink hover:underline">
                       {b.codigo ?? '—'}
@@ -98,6 +196,19 @@ export default function MeusBitins() {
                       <StatusBadge status={b.status} />
                     </Link>
                   </td>
+                  <td className="px-4 py-2 text-center">
+                    {b.status === 'rascunho' && b.pode_editar && (
+                      <button
+                        type="button"
+                        onClick={() => excluir(b.mongo_id)}
+                        className="text-ink-faint hover:text-red-600"
+                        aria-label="Excluir rascunho"
+                        title="Excluir rascunho"
+                      >
+                        ×
+                      </button>
+                    )}
+                  </td>
                 </tr>
               ))}
             </tbody>
@@ -105,18 +216,5 @@ export default function MeusBitins() {
         </div>
       )}
     </div>
-  )
-}
-
-function StatusBadge({ status }: { status: string }) {
-  const enviado = status === 'enviado'
-  return (
-    <span
-      className={`inline-block rounded-full px-2.5 py-0.5 text-xs font-medium ${
-        enviado ? 'bg-brand-green/15 text-brand-green' : 'bg-brand-gold/15 text-brand-gold'
-      }`}
-    >
-      {enviado ? 'Enviado' : 'Rascunho'}
-    </span>
   )
 }

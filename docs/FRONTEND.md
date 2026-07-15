@@ -57,21 +57,24 @@ contra o mesmo lockfile que ele mesmo tinha gerado. Corrigido apagando `node_mod
 plataformas — **lição**: `npm ci` local só garante que o lockfile bate com o `package.json`,
 não que ele tem as entradas de todas as plataformas que o CI vai rodar.
 
-## Identidade visual (adicionado em 2026-07-13, revisado no mesmo dia — tema claro/escuro)
+## Identidade visual (adicionado em 2026-07-13, revisado em 2026-07-15 — paleta oficial)
 
-Paleta extraída do logo da empresa (Grain & Protein Technologies — hexágonos
-frango/grão/porco em volta do texto, cada um numa cor), definida como tokens Tailwind v4
-(`@theme` em `frontend/src/index.css`, não hardcoded em cada componente). Dois grupos de
-token:
+Tokens Tailwind v4 (`@theme` em `frontend/src/index.css`, não hardcoded em cada componente).
+**Paleta atualizada em 2026-07-15** com os valores do guia de marca oficial (print com
+HEX/RGB/CMYK/Pantone enviado pelo usuário) — substitui a aproximação anterior tirada pixel a
+pixel dos arquivos de logo (frontend/public/brand/), que era só uma leitura visual. Dois
+grupos de token:
 
 **Marca** (não mudam entre os temas claro/escuro):
 
-| Token | Uso |
-|---|---|
-| `brand-navy` / `brand-navy-dark` | Cor primária — cabeçalho do app, botões primários, links, foco de campo, `accent-color` de checkbox/select. Escolhida pra tudo que precisa de bom contraste (é escura). |
-| `brand-gold` | Só decorativo (faixa de 3 cores no cabeçalho) — **nunca como cor de texto**: contraste ruim contra fundo claro E contra fundo escuro (é uma cor clara). |
-| `brand-green` | Faixa decorativa do cabeçalho; status "positivo" continua usando os tons semânticos do Tailwind (`green-700` etc.) onde precisa de contraste de texto pequeno. |
-| `brand-orange` | Acento reservado pra indicar "campo editável"/"Novo" em telas de dados tabulares, sem confundir com vermelho de erro de validação. |
+| Token | Hex | Uso |
+|---|---|---|
+| `brand-navy` | `#32464d` ("GPT Dark Blue") | Cor primária — cabeçalho do app, botões primários, links, foco de campo, `accent-color` de checkbox/select. |
+| `brand-navy-light` | `#6c8899` ("GPT Light Blue") | Cor oficial da marca, reaproveitada pro papel de variante clara do navy (já existia esse papel no sistema; antes era um tom calculado à mão, agora é uma cor real do guia). |
+| `brand-navy-dark` | `#243237` | Sem "GPT Dark Blue escuro" oficial no guia — calculado a partir do novo `brand-navy` (mesmo tom, ~28% mais escuro), usado em hover de botões primários. |
+| `brand-gold` | `#f3d148` ("GPT Yellow") | Só decorativo (faixa de 3 cores no cabeçalho) — **nunca como cor de texto**: contraste ruim contra fundo claro E contra fundo escuro (é uma cor clara). |
+| `brand-green` | `#79aa00` ("GPT Green") | Faixa decorativa do cabeçalho; status "positivo" continua usando os tons semânticos do Tailwind (`green-700` etc.) onde precisa de contraste de texto pequeno. |
+| `brand-orange` | `#ea7603` ("GPT Orange") | Acento reservado pra indicar "campo editável"/"Novo" em telas de dados tabulares, sem confundir com vermelho de erro de validação. |
 
 **Semânticos** (mudam entre os temas — todo componente usa estes nomes, nunca `gray-*`
 direto, pra que os dois temas fiquem consistentes num só lugar):
@@ -100,30 +103,60 @@ fundo branco sólido, não transparente) e na tela de login (`Login.jsx`).
 
 ## Estrutura
 
+Atualizada em 2026-07-15 (a árvore abaixo estava desatualizada desde antes do reconstrução da
+aba de Bitins — não listava nem `BitinDetail.tsx`/`MeusBitins.tsx`, que já existiam há duas
+rodadas):
+
 ```text
 frontend/
   src/
     lib/
       api.ts                  - cliente axios (token via localStorage, interceptor 401)
-      types.ts                 - tipos compartilhados (User, espelha UserOut do backend)
+      types.ts                - tipos compartilhados (User, ChangePasswordRequest, ResumoUsuario, ...)
+      bitinTypes.ts            - tipos do domínio BITin (BitinResumo, ChecklistItem, MaterialResumo, ...)
+      bitinDefaults.ts         - materialVazio(), normalizarMaterial() (defensivo contra material
+                                  salvo antes de um campo novo existir no schema)
+      format.ts                - formatarDataEnvio() (DD.MM.YYYY)
+      useEnviarBitin.ts        - hook compartilhado pelo fluxo de envio (BitinDetail/CodigosSapPage/
+                                  ListaTecnicaPage chamam a mesma lógica de envio + erros)
     context/
-      AuthContext.tsx         - login/logout/estado do usuário (Context API, sem lib externa)
+      AuthContext.tsx          - login/logout/estado do usuário (Context API, sem lib externa)
       ThemeContext.tsx         - tema claro/escuro, padrão claro, persiste em localStorage
     components/
-      RequireAuth.tsx         - guarda de rota (redireciona pro /login sem token)
-      Layout.tsx               - compõe Sidebar + Topbar + <Outlet/> (ver seção própria abaixo)
-      Sidebar.tsx               - navegação lateral (logo, nav extensível, off-canvas no mobile)
-      Topbar.tsx                - menu mobile, tema, configurações, usuário, sair
-      ThemeToggle.tsx           - botão sol/lua (reaproveitado no login e no topbar)
-      icons.tsx                 - ícones SVG inline compartilhados (Home/Configurações/Sair/Menu)
+      RequireAuth.tsx          - guarda de rota (redireciona pro /login sem token)
+      Layout.tsx                - compõe Sidebar + Topbar + <Outlet/> (ver seção própria abaixo)
+      Sidebar.tsx                - navegação lateral (logo, nav extensível, off-canvas no mobile)
+      Topbar.tsx                 - menu mobile, tema, configurações, usuário, sair
+      ThemeToggle.tsx            - botão sol/lua (reaproveitado no login e no topbar)
+      icons.tsx                  - ícones SVG inline compartilhados (Home/Configurações/Sair/Menu)
+      Card.tsx                   - card com título, base visual de toda a aba de BITin
+      DetailField.tsx            - par rótulo/valor só-leitura (Settings, visualização de BITin)
+      bitin/
+        AjudaPopover.tsx         - ícone "?" com tutorial em popover (ZBPP009/BITin/Lista Técnica)
+        ChecklistTable.tsx       - checklist 100% manual, grade responsiva (1-3 colunas)
+        DadosGeraisCard.tsx      - card "Dados gerais" (produto/motivo/solicitante/setor + checklist)
+        MaterialEditorCard.tsx   - bloco editável de um material na aba BITin
+        MateriaisSection.tsx     - lista de MaterialEditorCard + "+ Novo material"
+        AlteracaoTable.tsx       - visualização só-leitura de um material (BITin enviado)
+        DadosBasicosTable.tsx    - tabela De/Para de um material (dados básicos SAP)
+        OrdemClienteSection.tsx  - bloco de ordem_cliente[] (POP Nota 10)
+        SetorBadge.tsx / StatusBadge.tsx / SetoresBanner.tsx - badges/banners de status e setor
+        EdicaoBottomBar.tsx      - barra fixa (BITin/ZBPP009/Lista Técnica + Enviar)
+        ErrosEnvioBanner.tsx     - lista de erros de validação ao tentar enviar
     pages/
-      Login.tsx                 - tela de login (design completo, ver seção própria abaixo)
-      Login.test.tsx             - smoke test (Vitest + Testing Library, ver "Testes" abaixo)
-      Home.tsx                 - página de boas-vindas da área autenticada
-      Settings.tsx              - placeholder de configurações (link do topbar precisa ir a algum lugar)
-    test/setup.ts               - matchers do jest-dom, carregado antes de cada suíte
-    vite-env.d.ts               - referência aos tipos do cliente Vite (import.meta.env)
-    App.tsx                    - rotas
+      Login.tsx                  - tela de login (design completo, ver seção própria abaixo)
+      Login.test.tsx              - smoke test (Vitest + Testing Library, ver "Testes" abaixo)
+      Home.tsx                   - boas-vindas + cartões de resumo pessoal (rascunhos/enviados)
+      Settings.tsx                - Minha conta (+ troca de senha) e Gestão de usuários (admin)
+      MeusBitins.tsx               - listagem escopada por usuário + excluir rascunho
+      BitinDetail.tsx               - aba "BITin": mesma estrutura de edição e de visualização
+                                       enviada, só trava os campos quando não é mais editável
+      CodigosSapPage.tsx            - aba "ZBPP009": grade estilo planilha, cola/digita direto
+      ListaTecnicaPage.tsx          - aba "Lista Técnica": grade independente, não depende de
+                                       materiais pré-cadastrados
+    test/setup.ts                - matchers do jest-dom, carregado antes de cada suíte
+    vite-env.d.ts                - referência aos tipos do cliente Vite (import.meta.env)
+    App.tsx                     - rotas
 ```
 
 ## Testes (Vitest, adicionado em 2026-07-13)
@@ -270,6 +303,15 @@ diferente do Mongo — validado ao vivo de verdade, não só por teste automatiz
   confirmado por leitura direta do banco que os dois usuários (`demo@example.com`,
   `teste@example.com`) voltaram exatamente ao estado original.
 
+**Troca de senha self-service (2026-07-15)**: "Minha conta" deixou de ser só-leitura em uma
+parte — ganhou um formulário "Trocar senha" (senha atual/nova/confirmar), postando pra
+`POST /auth/change-password` (ver `docs/BACKEND.md`). Confirmação de senha é checada no
+cliente antes de enviar (evita uma ida à API por erro de digitação — a validação de força de
+verdade é sempre do servidor). Erro do servidor (senha atual errada, senha nova fraca)
+aparece verbatim, via o mesmo padrão de extração de erro (`extrairErro`, duck-typing igual ao
+já usado em `Login.tsx`) que lida com as duas formas de resposta da API: `{detail: string}` e
+`{detail: [{msg}]}` (erro de validação do Pydantic).
+
 ### "Meus Bitins" — listagem + visualização só-leitura (2026-07-14)
 
 Escopo fechado colaborativamente com o usuário via `AskUserQuestion` (pedido explícito: "quero
@@ -307,6 +349,71 @@ termos mais concretos antes de fechar.
   automatizada (172 testes de backend com `mongomock-motor`, incluindo o novo escopo por
   `criado_por`) e por `typecheck`/`lint`/`test`/`build` limpos no frontend.
 
+### Aba BITin, ZBPP009 e Lista Técnica — cadastro/edição (2026-07-15)
+
+Rodada grande de feedback direto sobre as três telas de edição de um BITin (aba "BITin",
+ZBPP009 e Lista Técnica), fechando o ciclo começado em "Meus Bitins": agora dá pra criar e
+editar um BITin de verdade, não só visualizar. Decisão central do usuário: **as três telas não
+se complementam, fazem a mesma coisa de formas diferentes** — o mesmo `materiais[]` do JSON do
+BITin, editável em qualquer uma das três, nenhuma dependendo da outra pra existir.
+
+- **`BitinDetail.tsx`** vira editável quando o BITin é rascunho: mesma estrutura da
+  visualização enviada (`AlteracaoTable`), só destrava os campos. Um material pode ser criado
+  inteiramente aqui, sem nunca abrir a ZBPP009 ("`+ Novo material`").
+- **Checklist 100% manual (`ChecklistTable.tsx`)**: antes o sistema sugeria "Sim/Não"
+  automaticamente a partir dos campos de cada material (Alt/Est/Esp/etc.) — decisão do usuário:
+  "checklist é marcada manualmente", tirou completamente a derivação automática
+  (`scripts/bitin_document.py::build_checklist`, ver `docs/BACKEND.md`). Cada item vira
+  "Sim" só quando o engenheiro clica nele. Item com anotação de texto livre (usado no item 22,
+  "Centro de custo (se tem sucata)", pra registrar a Nota 8 do POP) — campo aparece quando o
+  item está "Sim" e a tela é editável. Layout em **grade responsiva** (1 coluna no celular, até
+  3 em telas largas) em vez de uma coluna só empilhada, reduzindo o scroll.
+- **Bloco de material simplificado (`MaterialEditorCard.tsx`)**: "Atualizar DWG/SAT" e "Centro
+  de custo"/"Conta razão" saíram do bloco — a primeira agora é só clicar no item 18 da
+  checklist, a segunda virou a anotação do item 22 (ver acima). Campo "Tipo" fica escondido
+  aqui (continua obrigatório pro envio — `materialVazio()` preenche um valor padrão), mas
+  **continua visível na ZBPP009**, porque lá é a réplica fiel da grade real do SAP (é a
+  primeira coluna de verdade do relatório, e a âncora de onde o parser de colagem espera o
+  texto colado).
+- **ZBPP009 renomeada** (de "Códigos SAP" — "vai ajudar o pessoal" a reconhecer): rota
+  (`/bitins/:mongoId/codigos-sap`) não mudou, só o rótulo em toda a UI.
+- **Bug de colagem corrigido**: o interceptador de colar só ficava na primeira coluna da
+  grade, mas a primeira coluna visual (Código) não é mais a primeira coluna real do SAP (Tipo
+  Material) — colar numa célula "errada" jogava o texto inteiro, cru, num campo só. Corrigido
+  colocando o mesmo interceptador em toda célula da linha (identificação + dados básicos);
+  colar em qualquer célula da linha, se tiver TAB/quebra de linha, dispara o parser
+  (`POST /bitins/parse-sap-paste`) igual antes.
+- **Lista Técnica virou página independente**: antes dependia de materiais já cadastrados
+  (`materiais[]` não vazio) pra mostrar qualquer coisa. Agora é uma grade estilo planilha,
+  igual à ZBPP009, com uma coluna "Código pai" livre (texto, não precisa já existir) — ao
+  salvar, agrupa as linhas por código pai e cria um material novo (mesmo formato de
+  `materialVazio()`) pra qualquer código pai digitado que ainda não exista.
+- **`AjudaPopover.tsx`** (novo): ícone "?" com tutorial em popover, substitui parágrafo de
+  instrução fixo nas três telas (BITin/ZBPP009/Lista Técnica). Revisado pra ficar resumido —
+  só o que é específico do sistema (como colar, Salvar vs. Importar, checklist manual) e os
+  lembretes de regra de negócio que importam pro envio; não repete o que o engenheiro já sabe
+  do processo do POP.
+- **Botão "Importar pra BITin"** (ZBPP009 e Lista Técnica): salva e leva direto pra aba BITin,
+  onde a checklist/setores recalculam automaticamente a partir do que foi preenchido.
+- **Regras de negócio automatizáveis vs. confirmação externa**: `scripts/bitin_business_rules.py`
+  só bloqueia envio por regras que o sistema consegue verificar sozinho a partir do que já está
+  no BITin (Nota 8 — descrição do item 22 da checklist; Nota 10 — `ordem_cliente[]`). Regras que
+  dependem de confirmação de alguém fora do sistema (Nota 2 — desenho aprovado; Nota 17 —
+  aprovação fiscal de NCM) **não bloqueiam mais o envio** — não existia (e não existe) campo na
+  UI pra marcar isso como "aprovado", então travar o envio nelas era travar pra sempre. Viraram
+  lembrete no `AjudaPopover` da aba BITin.
+- **Excluir rascunho**: botão dentro do BITin (`BitinDetail.tsx`) e agora também direto na
+  listagem (`MeusBitins.tsx`), sem precisar abrir o BITin primeiro — mesmo endpoint
+  (`DELETE /bitins/{mongo_id}`), só reaproveitado dos dois lugares.
+- **Data de envio em `DD.MM.YYYY`** (`lib/format.ts::formatarDataEnvio`) — convenção de data do
+  POP/SAP, aplicada só ao campo `data_envio`, não aos campos de data dentro do snapshot de
+  dados básicos (esses são texto livre do SAP, não datas parseadas).
+- **`normalizarMaterial()` (`lib/bitinDefaults.ts`)**: correção de um bug real — material salvo
+  antes de um campo existir no schema (ex.: `lista_tecnica`) vinha `undefined` do backend,
+  quebrando a tela inteira com `Cannot read properties of undefined (reading 'map')` sem
+  nenhum error boundary. Aplicado em toda tela que carrega materiais do backend
+  (BitinDetail/CodigosSapPage/ListaTecnicaPage).
+
 ## O que já funciona
 
 Validado com Playwright ad-hoc contra o backend real nesta máquina (sem MongoDB real, ver
@@ -315,25 +422,30 @@ Validado com Playwright ad-hoc contra o backend real nesta máquina (sem MongoDB
 - Login (`POST /auth/login`) → redireciona pra `/`, com validação visual de erro (credencial
   errada) e estado de carregamento.
 - Rota protegida: sem token, qualquer rota redireciona pro login.
-- Shell autenticado: sidebar de navegação (off-canvas no celular, agora com "Início" e "Meus
-  Bitins"), topbar com tema/configurações/usuário/sair, Home com boas-vindas + cartões de
-  resumo pessoal (rascunhos/enviados, `GET /bitins/resumo-usuario`), página de Configurações
-  ("Minha conta" + "Sobre" pra todo mundo, "Gestão de usuários" só pra admin).
-- "Meus Bitins" (`/bitins`): listagem escopada pro próprio usuário, abas por status, clique na
-  linha abre visualização só-leitura (`/bitins/:mongoId`) — ver seção acima. Validado pela
-  suíte automatizada (sem verificação visual ao vivo nesta rodada, ver nota de ambiente acima).
+- Shell autenticado: sidebar de navegação (off-canvas no celular, "Início" e "Meus Bitins"),
+  topbar com tema/configurações/usuário/sair, Home com boas-vindas + cartões de resumo pessoal
+  (rascunhos/enviados, `GET /bitins/resumo-usuario`), página de Configurações ("Minha conta" +
+  troca de senha + "Sobre" pra todo mundo, "Gestão de usuários" só pra admin).
+- "Meus Bitins" (`/bitins`): listagem escopada pro próprio usuário, abas por status, excluir
+  rascunho direto na linha, clique na linha abre o BITin (`/bitins/:mongoId`).
+- **BITin/ZBPP009/Lista Técnica** (`/bitins/:mongoId`, `/bitins/:mongoId/codigos-sap`,
+  `/bitins/:mongoId/lista-tecnica`): as três telas de edição de um rascunho, ver seção "Aba
+  BITin, ZBPP009 e Lista Técnica" acima — cadastro completo de material, colar do SAP em
+  qualquer célula, checklist manual, lista técnica independente, envio com validação de regras
+  de negócio.
 - Logout: volta pro login.
 - Tema claro/escuro (toggle no login E no topbar pós-login, padrão claro, escolha persiste no
   navegador) — testado nos dois temas, desktop e mobile.
 
 ## O que NÃO está nesta fatia ainda (próximos incrementos)
 
-- **Criar/editar rascunho, grid de materiais, checklist, botão "+ Novo BITin"** — a listagem e
-  a visualização só-leitura já existem (`MeusBitins.tsx`/`BitinDetail.tsx`, 2026-07-14), mas
-  cadastro/edição de verdade ainda não. Apagados de propósito no reset, ver "Reset" acima.
-- **RBAC visível na UI** — o backend já recusa (`403`) quem tenta editar/excluir algo sem
-  permissão; a versão anterior escondia alguns botões preventivamente, mas essa UI foi apagada
-  no reset. Refazer quando a listagem voltar.
+- **Tela de "criar usuário"** — hoje só dá pra cadastrar via `POST /auth/register` direto na
+  API (curl/Postman); "Gestão de usuários" em Configurações só lista e muda nível, não cria.
+- **"Esqueci minha senha"** — só existe troca de senha sabendo a senha atual
+  (`POST /auth/change-password`); sem fluxo de reset pra quem esqueceu.
+- **RBAC visível na UI** além do que já existe — o backend recusa (`403`) quem tenta
+  editar/excluir sem permissão; a UI não esconde botões preventivamente pra ações que vão
+  falhar no backend.
 
 ## Rodando localmente
 

@@ -20,6 +20,25 @@ export default function Login() {
     setSubmitting(true)
     try {
       await login(email, password)
+      // Credential Management API (2026-07-15): input com autoComplete já deixa o navegador
+      // oferecer salvar a senha na maioria dos casos, mas o prompt é heurístico -- em SPA
+      // (sem navegação de página cheia no submit) às vezes não dispara. Chamar
+      // navigator.credentials.store() explicitamente após um login confirmado força o prompt
+      // de forma confiável. Só existe em navegadores baseados em Chromium (não no Safari) --
+      // checagem de feature antes de usar, e nunca falha o login se o navegador não suportar.
+      if ('PasswordCredential' in window && navigator.credentials) {
+        try {
+          const cred = new (window as unknown as { PasswordCredential: new (data: { id: string; password: string; name?: string }) => Credential }).PasswordCredential({
+            id: email,
+            password,
+            name: email,
+          })
+          await navigator.credentials.store(cred)
+        } catch {
+          // Prompt de salvar senha é conveniência, não deveria travar o fluxo de login se
+          // falhar por qualquer motivo (navegador negou, API mudou, etc.).
+        }
+      }
       const from = (location.state as { from?: Location })?.from?.pathname || '/'
       navigate(from, { replace: true })
     } catch (err) {
@@ -43,9 +62,7 @@ export default function Login() {
             presa no topo, isolada, com um vão vazio grande até o texto lá embaixo; agrupados e
             centralizados, o painel lê como uma composição, não como dois elementos soltos. */}
         <div className="flex flex-1 flex-col justify-center">
-          <span className="mb-8 flex w-fit items-center rounded bg-white px-2.5 py-1.5 shadow-sm">
-            <img src="/logo.svg" className="h-9" alt="Grain & Protein Technologies" />
-          </span>
+          <img src="/logo.svg" className="mb-8 h-20 w-fit" alt="Grain & Protein Technologies" />
 
           <p className="text-2xl font-semibold leading-snug text-balance">
             BITin - Sistema de manuseamento de BITins.
@@ -70,7 +87,12 @@ export default function Login() {
           <ThemeToggle className="text-ink-muted hover:bg-surface-alt" />
         </div>
 
-        <img src="/logo.svg" className="mb-8 h-14 md:hidden" alt="Grain & Protein Technologies" />
+        {/* Fundo navy só aqui -- essa logo (texto branco, fundo transparente) fica em cima do
+            painel do formulário, que muda de cor conforme o tema (claro/escuro); sem um fundo
+            fixo escuro, o texto branco desaparece no tema claro. */}
+        <span className="mb-8 flex w-fit items-center rounded bg-brand-navy px-3 py-2 md:hidden">
+          <img src="/logo.svg" className="h-10" alt="Grain & Protein Technologies" />
+        </span>
 
         <div className="w-full max-w-sm">
           <h1 className="text-2xl font-semibold text-ink">Entrar</h1>
@@ -87,6 +109,7 @@ export default function Login() {
                 <MailIcon className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-ink-faint" />
                 <input
                   id="email"
+                  name="email"
                   type="email"
                   required
                   autoFocus
@@ -107,6 +130,7 @@ export default function Login() {
                 <LockIcon className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-ink-faint" />
                 <input
                   id="password"
+                  name="password"
                   type={mostrarSenha ? 'text' : 'password'}
                   required
                   autoComplete="current-password"

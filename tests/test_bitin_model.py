@@ -177,10 +177,6 @@ class MateriaisSchemaTest(unittest.TestCase):
         chaves_obrigatorias = {col["key"] for col in self.schema["identificacao"] if col["required"]}
         self.assertEqual(chaves_obrigatorias, {"codigo_material", "centro", "tipo_material"})
 
-    def test_impactos_condicionais_referencia_est_igual_s(self) -> None:
-        centro_custo = next(col for col in self.schema["impactos_condicionais"] if col["key"] == "centro_custo")
-        self.assertEqual(centro_custo["required_when"], {"field": "impactos_operacionais.est", "equals": "S"})
-
 
 class EndToEndBitinToPlan3Test(unittest.TestCase):
     """Prova a ponta a ponta: JSON do BITin -> linhas Plan2 -> export Winshuttle (Plan3)."""

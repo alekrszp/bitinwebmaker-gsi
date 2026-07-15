@@ -29,9 +29,13 @@ def parse_sap_paste(raw_text: str) -> list[dict[int, str]]:
 
 
 def plan1_row_to_material_atual(plan1_row: dict[int, str], vba_mapping_config: dict[str, Any]) -> dict[str, Any]:
-    """Extrai os campos de identificação + snapshot 'atual' que o BITin precisa por
-    material (ver bitin_document.determine_alt/esp e docs/BITIN_MODEL.md)."""
+    """Extrai os campos de identificação + o snapshot 'atual' completo (todos os campos de
+    dados_basicos, colados direto da ZBPP009) -- a tela Códigos SAP é idêntica à ZBPP009
+    (decisão do usuário, 2026-07-15): lista TODOS os campos SAP do material, não um recorte.
+    O 'de' de cada campo de dados_basicos vem daqui; o 'para' fica em branco até o engenheiro
+    declarar a alteração na aba BITin."""
     cols = vba_mapping_config["plan1_identificacao_columns"]
+    dados_basicos_cols = vba_mapping_config["plan1_dados_basicos_columns"]
     return {
         "tipo_material": plan1_row.get(cols["tipo_material"], ""),
         "codigo_material": plan1_row.get(cols["codigo_material"], ""),
@@ -39,6 +43,10 @@ def plan1_row_to_material_atual(plan1_row: dict[int, str], vba_mapping_config: d
         "descricao_material": plan1_row.get(cols["descricao_material"], ""),
         "grupo_mercadorias_atual": plan1_row.get(cols["grupo_mercadorias_atual"], ""),
         "tem_desenho": plan1_row.get(cols["tem_desenho_col"], "") == "SIM",
+        "dados_basicos_atual": {
+            campo: plan1_row.get(col, "")
+            for campo, col in dados_basicos_cols.items()
+        },
     }
 
 

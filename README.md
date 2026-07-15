@@ -44,7 +44,7 @@ fluxo hoje feito em Excel/VBA (`Novo_template_BITin_V2 TESTE.xlsm`) para Python 
    .venv/Scripts/python.exe scripts/lista_tecnica_export.py meu_bitin.json --out-csv lista_tecnica.csv
    ```
 
-4. Rodar a suíte de testes (158 testes cobrindo tudo acima):
+4. Rodar a suíte de testes (192 testes cobrindo tudo acima):
 
    ```powershell
    .venv/Scripts/python.exe -m unittest discover -s tests
@@ -96,6 +96,12 @@ npm run dev
 Releases são criadas manualmente no GitHub, usando `docs/RELEASE_vX.Y.Z.md` como corpo de
 cada release. O processo não é automatizado — a publicação é feita pelo GitHub web interface.
 
+- v0.8.0 — autenticação real (Alembic, sessões revogáveis, rate limit persistente, senha
+  forte, troca de senha self-service) + reformulação das telas de BITin/ZBPP009/Lista Técnica
+  (cadastro/edição completo, checklist manual) + paleta de cores oficial da marca:
+  `docs/RELEASE_v0.8.0.md` — <https://github.com/alekrszp/bitinwebmaker-gsi/releases/tag/v0.8.0>
+- v0.7.2 — tela "Meus Bitins": listagem escopada por usuário + visualização só-leitura:
+  `docs/RELEASE_v0.7.2.md` — <https://github.com/alekrszp/bitinwebmaker-gsi/releases/tag/v0.7.2>
 - v0.7.1 — shell autenticado: sidebar de navegação + topbar + Home de boas-vindas, seguindo o
   padrão visual do login; primeira mudança de UI desde a v0.5.0:
   `docs/RELEASE_v0.7.1.md` — <https://github.com/alekrszp/bitinwebmaker-gsi/releases/tag/v0.7.1>

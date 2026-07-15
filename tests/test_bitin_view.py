@@ -27,6 +27,10 @@ class RenderBitinSummaryTest(unittest.TestCase):
             "motivo": "Ajustes de Campo",
             "solicitante": "Edilson Santin",
             "data_solicitacao": "2026-02-20",
+            # Checklist é 100% manual (2026-07-15) -- o engenheiro marcou explicitamente os
+            # itens correspondentes ao que declarou nos materiais (antes eram derivados
+            # automaticamente de Alt/atualizar_dwg_sat).
+            "checklist_overrides": {"2": True, "18": True},
             "materiais": [
                 {
                     "codigo_material": "NAP-5213",
@@ -53,12 +57,15 @@ class RenderBitinSummaryTest(unittest.TestCase):
         self.assertEqual(material_resumo["impactos_operacionais"]["alt"], "D/P")
         self.assertEqual(
             material_resumo["dados_basicos_alterados"],
-            [{"campo": "Nível Revisão", "de": "C", "para": "D"}],
+            [{"campo": "Nível Revisão", "de": "C", "para": "D", "livre": False}],
         )
 
         self.assertIn("Desenho/Processo", resumo["checklist_pendencias"])
         self.assertIn("Atualizar DWG / SAT", resumo["checklist_pendencias"])
         self.assertNotIn("Desenho", resumo["checklist_pendencias"])
+
+        # Desenho/Processo (id 2) -> PCP+ENG INDUS; Atualizar DWG/SAT (id 18) -> PCP+ENG INDUS
+        self.assertEqual(resumo["setores_afetados"], ["ENG INDUS", "PCP"])
 
     def test_resumo_reflete_status_enviado(self) -> None:
         bitin = {
@@ -71,6 +78,30 @@ class RenderBitinSummaryTest(unittest.TestCase):
         self.assertEqual(resumo["data_envio"], "2026-07-10")
         self.assertEqual(resumo["materiais"], [])
         self.assertEqual(len(resumo["checklist"]), 22)
+
+    def test_resumo_inclui_ordem_cliente(self) -> None:
+        """ordem_cliente[] passa direto pro resumo -- já validado estruturalmente em
+        bitin_model.validate_ordem_cliente, sem transformação adicional. Ver seção "ORDEM DE
+        CLIENTE" do documento final (docs/BITIN_MODEL.md)."""
+        bitin = {
+            "bitin": "P2/26", "produto": "x", "motivo": "x",
+            "ordem_cliente": [
+                {
+                    "codigo": "CT30-7103",
+                    "descricao": "Pedido especial exportação",
+                    "acrescentar_no_pedido": [{"codigo_material": "COD999", "quantidade": "2 pçs"}],
+                    "retira_do_pedido": [],
+                }
+            ],
+            "materiais": [],
+        }
+        resumo = bv.render_bitin_summary(bitin, self.vba_mapping_config, self.document_config)
+        self.assertEqual(resumo["ordem_cliente"][0]["codigo"], "CT30-7103")
+
+    def test_resumo_sem_ordem_cliente_devolve_lista_vazia(self) -> None:
+        bitin = {"bitin": "P3/26", "produto": "x", "motivo": "x", "materiais": []}
+        resumo = bv.render_bitin_summary(bitin, self.vba_mapping_config, self.document_config)
+        self.assertEqual(resumo["ordem_cliente"], [])
 
 
 if __name__ == "__main__":

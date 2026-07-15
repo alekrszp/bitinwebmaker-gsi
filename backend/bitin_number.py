@@ -47,7 +47,10 @@ def gerar_e_salvar_bitin_sql(
             .scalar()
         )
         next_seq = (last_seq or 0) + 1
-        codigo = f"{prefixo}{next_seq}/{ano:02d}"
+        # Formato YXXXX/AA (Y=prefixo do setor, XXXX=sequencial com 4 dígitos, AA=ano) --
+        # confirmado com o usuário em 2026-07-14. O sequencial em si (BitinSQL.sequencial)
+        # continua um int sem padding; o zero-padding é só na hora de montar a string exibida.
+        codigo = f"{prefixo}{next_seq:04d}/{ano:02d}"
 
         bitin_sql = BitinSQL(
             codigo=codigo, prefixo=prefixo, ano=ano, sequencial=next_seq,

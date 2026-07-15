@@ -11,6 +11,16 @@ Mercadorias é vasto e muda com o tempo, então não é uma base confiável pra 
 As regras aqui validam CONSISTÊNCIA GERAL entre o que foi declarado e o que foi de fato
 alterado, sem depender de conhecer nenhum código específico -- exceto os valores válidos
 de impactos_operacionais em si, que vêm do ANEXO A do POP (não mudam com o catálogo SAP).
+
+Split entre regras bloqueantes e regras "de confiança" (decisão do usuário, 2026-07-15):
+regras inferíveis só a partir de dados que já estão no sistema (ex.: alt_desenho_sem_revisao,
+que compara Alt declarado com nivel_revisao realmente mudado em dados_basicos) continuam
+bloqueando o envio aqui. Regras que dependem de uma confirmação externa que o sistema não
+tem como saber (POP Nota 2: desenho já aprovado; POP Nota 17: NCM já aprovado pelo fiscal)
+NÃO são mais aplicadas aqui -- não existe controle na UI pra marcar esses campos como
+verdadeiros, então bloquear o envio nessas condições tornaria o envio permanentemente
+impossível sempre que a condição de gatilho ocorresse. Ficam só como lembrete no popover de
+ajuda ("?") da tela do BITin -- responsabilidade do engenheiro confirmar antes de enviar.
 """
 
 from typing import Any
@@ -107,30 +117,10 @@ def validate_business_rules(
                 f"'nivel_revisao' em dados_basicos — confira se o Alt declarado está correto",
             ))
 
-        # Nota 2: alteração de desenho exige desenho já aprovado.
-        if alt.startswith("D") and not material.get("desenho_aprovado"):
-            errors.append(make_error(
-                f"{material_field}.desenho_aprovado", "desenho_aprovado_required",
-                f"{prefix}: alteração de desenho (Alt={alt}) requer 'desenho_aprovado=true' (POP Nota 2)",
-            ))
-
-        # Nota 17: alteração de NCM exige aprovação fiscal prévia.
-        ncm_entry = dados_basicos.get("ncm")
-        if ncm_entry and ncm_entry.get("para") and not material.get("ncm_aprovado_fiscal"):
-            errors.append(make_error(
-                f"{material_field}.ncm_aprovado_fiscal", "ncm_aprovado_fiscal_required",
-                f"{prefix}: alteração de NCM requer 'ncm_aprovado_fiscal=true' (POP Nota 17)",
-            ))
-
-        # Nota 8: sucatear estoque exige centro de custo e conta razão.
-        if impactos.get("est") == "S":
-            if not impactos.get("centro_custo") or not impactos.get("conta_razao"):
-                errors.append(make_error(
-                    f"{material_field}.alteracoes.impactos_operacionais.centro_custo",
-                    "sucateamento_centro_custo_required",
-                    f"{prefix}: sucateamento de estoque (Est=S) requer 'centro_custo' e "
-                    f"'conta_razao' em impactos_operacionais (POP Nota 8)",
-                ))
+        # Nota 2 (desenho já aprovado) e Nota 17 (NCM aprovado pelo fiscal) não são validadas
+        # aqui -- exigem confirmação externa que o sistema não tem como conferir e não há
+        # controle na UI pra marcá-las (ver docstring do módulo). Ficam só como lembrete no
+        # popover de ajuda da tela do BITin.
 
         # Nota 10: afeta ordem de cliente exige entrada correspondente em ordem_cliente[].
         if impactos.get("oc") == "X" and codigo not in ordem_cliente_codigos:
@@ -139,5 +129,18 @@ def validate_business_rules(
                 f"{prefix}: Afeta Ordem de Cliente (OC=X) requer entrada correspondente em "
                 f"'ordem_cliente[]' com codigo={codigo!r} (POP Nota 10)",
             ))
+
+    # Nota 8: sucatear estoque exige registrar centro de custo e conta razão -- não é mais um
+    # campo por material, é a descrição do item 22 da checklist ("Centro de custo (se tem
+    # sucata)"), que fica "afeta" automaticamente quando algum material declara Est=S (ou por
+    # override manual, ver bitin_document.build_checklist). Decisão do usuário, 2026-07-15.
+    checklist = bitin_document.build_checklist(bitin, bitin.get("materiais", []), document_config)
+    item_centro_custo = next((item for item in checklist if item["id"] == "22"), None)
+    if item_centro_custo and item_centro_custo["afeta"] and not item_centro_custo.get("descricao", "").strip():
+        errors.append(make_error(
+            "checklist_descricoes.22", "sucateamento_centro_custo_required",
+            "Sucateamento de estoque ('Centro de custo (se tem sucata)' na checklist) requer uma "
+            "descrição com o centro de custo e a conta razão (POP Nota 8)",
+        ))
 
     return errors

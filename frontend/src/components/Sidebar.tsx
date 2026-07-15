@@ -1,4 +1,5 @@
 import { NavLink } from 'react-router-dom'
+import { version as appVersion } from '../../package.json'
 import { HomeIcon, ListIcon } from './icons'
 
 // Lista extensível de propósito -- o próximo item entra aqui sem mexer no resto do componente.
@@ -21,9 +22,9 @@ export default function Sidebar({ open, onClose }: { open: boolean; onClose: () 
           open ? 'translate-x-0' : '-translate-x-full'
         }`}
       >
-        <span className="flex w-fit items-center rounded bg-white px-2.5 py-1.5 shadow-sm">
-          <img src="/logo.svg" className="h-8" alt="Grain & Protein Technologies" />
-        </span>
+        <div className="flex justify-center py-2">
+          <img src="/logo.svg" className="h-16 w-auto" alt="Grain & Protein Technologies" />
+        </div>
 
         <nav className="mt-8 flex flex-1 flex-col gap-1">
           {NAV_ITEMS.map(({ to, label, icon: Icon, end }) => (
@@ -45,11 +46,16 @@ export default function Sidebar({ open, onClose }: { open: boolean; onClose: () 
         </nav>
 
         {/* Faixa de 3 cores -- mesma assinatura visual do login (painel de marca) e do
-            cabeçalho antigo, pra dar continuidade entre as telas. */}
-        <div className="flex gap-1.5">
-          <span className="h-1.5 w-8 rounded-full bg-brand-gold" />
-          <span className="h-1.5 w-8 rounded-full bg-brand-green" />
-          <span className="h-1.5 w-8 rounded-full bg-brand-orange" />
+            cabeçalho antigo, pra dar continuidade entre as telas. Versão centralizada abaixo,
+            com borda separando do resto (tirada de Configurações -- decisão do usuário,
+            2026-07-14: um lugar só, não duplicado). */}
+        <div className="flex flex-col items-center gap-2 border-t border-white/10 pt-3">
+          <div className="flex gap-1.5">
+            <span className="h-1.5 w-8 rounded-full bg-brand-gold" />
+            <span className="h-1.5 w-8 rounded-full bg-brand-green" />
+            <span className="h-1.5 w-8 rounded-full bg-brand-orange" />
+          </div>
+          <span className="text-xs text-white/50">v{appVersion}</span>
         </div>
       </aside>
     </>

@@ -5,6 +5,7 @@ reais disponíveis neste ambiente -- ver docs/BACKEND.md)."""
 
 import sys
 import unittest
+from datetime import datetime
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -123,6 +124,32 @@ class BitinApiTest(unittest.TestCase):
         self.assertEqual(update_resp.status_code, 200, update_resp.text)
         self.assertEqual(update_resp.json()["content"]["motivo"], "Motivo atualizado")
         self.assertEqual(update_resp.json()["mongo_id"], mongo_id)  # não cria um novo
+
+    def test_data_solicitacao_e_carimbada_pelo_sistema_na_criacao(self) -> None:
+        """data_solicitacao não é escolhida livremente pelo engenheiro -- é a data em que o
+        rascunho foi salvo pela primeira vez (ver docs/BITIN_MODEL.md, 'Regras de campo').
+        Qualquer valor mandado pelo cliente pra esse campo é ignorado."""
+        resp = self.client.post(
+            "/api/v1/bitins/draft",
+            json={"content": make_bitin_content(data_solicitacao="1999-01-01")},
+        )
+        self.assertEqual(resp.status_code, 200, resp.text)
+        hoje = datetime.now().strftime("%Y-%m-%d")
+        self.assertEqual(resp.json()["content"]["data_solicitacao"], hoje)
+
+    def test_data_solicitacao_nao_muda_ao_atualizar_rascunho(self) -> None:
+        create_resp = self.client.post("/api/v1/bitins/draft", json={"content": make_bitin_content()})
+        mongo_id = create_resp.json()["mongo_id"]
+        data_original = create_resp.json()["content"]["data_solicitacao"]
+
+        update_resp = self.client.post(
+            "/api/v1/bitins/draft",
+            json={
+                "mongo_id": mongo_id,
+                "content": make_bitin_content(motivo="Outro motivo", data_solicitacao="2000-01-01"),
+            },
+        )
+        self.assertEqual(update_resp.json()["content"]["data_solicitacao"], data_original)
 
     def test_rascunho_incompleto_nao_bloqueia_salvar(self) -> None:
         """Liberdade de edição: salvar rascunho não valida nada, mesmo incompleto."""
@@ -341,7 +368,7 @@ class BitinApiTest(unittest.TestCase):
         # o próximo envio bem-sucedido reaproveita o número (não pula o que foi desfeito)
         retry_resp = self.client.post(f"/api/v1/bitins/{mongo_id}/enviar")
         self.assertEqual(retry_resp.status_code, 200, retry_resp.text)
-        self.assertEqual(retry_resp.json()["bitin"]["codigo"], "P1/26")
+        self.assertEqual(retry_resp.json()["bitin"]["codigo"], "P0001/26")
 
     def test_resumo_bitin(self) -> None:
         create_resp = self.client.post("/api/v1/bitins/draft", json={"content": make_bitin_content()})
@@ -388,6 +415,22 @@ class BitinApiTest(unittest.TestCase):
         body = resp.json()
         self.assertEqual(len(body), 1)
         self.assertEqual(body[0]["content"]["solicitante"], "Fulano Especial")
+
+    def test_listar_com_filtro_termo_restrito_a_um_campo(self) -> None:
+        """`campo` restringe a busca só ao Motivo/Solicitante/Código -- sem ele, busca nos
+        três (test_listar_com_filtro_termo, acima)."""
+        self.client.post(
+            "/api/v1/bitins/draft", json={"content": make_bitin_content(motivo="Ajuste Especial")}
+        )
+        self.client.post(
+            "/api/v1/bitins/draft", json={"content": make_bitin_content(solicitante="Fulano Especial")}
+        )
+
+        resp = self.client.get("/api/v1/bitins", params={"termo": "especial", "campo": "motivo"})
+        self.assertEqual(resp.status_code, 200)
+        body = resp.json()
+        self.assertEqual(len(body), 1)
+        self.assertEqual(body[0]["content"]["motivo"], "Ajuste Especial")
 
     def test_listar_com_paginacao(self) -> None:
         for _ in range(5):

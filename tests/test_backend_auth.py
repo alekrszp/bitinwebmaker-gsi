@@ -16,8 +16,8 @@ from sqlalchemy import create_engine  # noqa: E402
 from sqlalchemy.orm import sessionmaker  # noqa: E402
 from sqlalchemy.pool import StaticPool  # noqa: E402
 
-from backend.auth.models import Usuario  # noqa: E402
-from backend.auth.security import create_access_token, get_password_hash  # noqa: E402
+from backend.auth.models import SessaoUsuario, TentativaLogin, Usuario  # noqa: E402
+from backend.auth.security import create_access_token, get_password_hash, hash_token  # noqa: E402
 from backend.db.mongodb import get_mongo_db  # noqa: E402
 from backend.db.session import Base, get_db  # noqa: E402
 from backend.main import app  # noqa: E402
@@ -57,7 +57,7 @@ class AuthApiTest(unittest.TestCase):
             id=user_id,
             email=f"user{user_id}@example.com",
             nome=f"Usuário {user_id}",
-            hashed_password=get_password_hash("senha123"),
+            hashed_password=get_password_hash("Senha123!"),
             permission_level=permission_level,
         )
         db.add(user)
@@ -72,7 +72,7 @@ class AuthApiTest(unittest.TestCase):
         backend/auth/routes.py)."""
         resp = self.client.post(
             "/api/v1/auth/register",
-            json={"email": "primeiro@example.com", "nome": "Primeiro", "password": "senha123"},
+            json={"email": "primeiro@example.com", "nome": "Primeiro", "password": "Senha123!"},
         )
         self.assertEqual(resp.status_code, 200, resp.text)
         self.assertEqual(resp.json()["permission_level"], 99)
@@ -80,11 +80,11 @@ class AuthApiTest(unittest.TestCase):
     def test_segundo_usuario_registrado_nao_vira_admin(self) -> None:
         self.client.post(
             "/api/v1/auth/register",
-            json={"email": "primeiro@example.com", "nome": "Primeiro", "password": "senha123"},
+            json={"email": "primeiro@example.com", "nome": "Primeiro", "password": "Senha123!"},
         )
         resp = self.client.post(
             "/api/v1/auth/register",
-            json={"email": "segundo@example.com", "nome": "Segundo", "password": "senha123"},
+            json={"email": "segundo@example.com", "nome": "Segundo", "password": "Senha123!"},
         )
         self.assertEqual(resp.json()["permission_level"], 0)
 
@@ -94,12 +94,12 @@ class AuthApiTest(unittest.TestCase):
         UserCreate nem tem esse campo, então um valor extra é simplesmente ignorado."""
         self.client.post(  # primeiro usuário -- garante que o próximo não seja bootstrap-admin
             "/api/v1/auth/register",
-            json={"email": "primeiro@example.com", "nome": "Primeiro", "password": "senha123"},
+            json={"email": "primeiro@example.com", "nome": "Primeiro", "password": "Senha123!"},
         )
         resp = self.client.post(
             "/api/v1/auth/register",
             json={
-                "email": "invasor@example.com", "nome": "Invasor", "password": "senha123",
+                "email": "invasor@example.com", "nome": "Invasor", "password": "Senha123!",
                 "permission_level": 99,
             },
         )
@@ -107,7 +107,7 @@ class AuthApiTest(unittest.TestCase):
         self.assertEqual(resp.json()["permission_level"], 0)
 
     def test_registro_com_email_duplicado_falha(self) -> None:
-        payload = {"email": "dup@example.com", "nome": "Dup", "password": "senha123"}
+        payload = {"email": "dup@example.com", "nome": "Dup", "password": "Senha123!"}
         self.client.post("/api/v1/auth/register", json=payload)
         resp = self.client.post("/api/v1/auth/register", json=payload)
         self.assertEqual(resp.status_code, 400)
@@ -115,11 +115,11 @@ class AuthApiTest(unittest.TestCase):
     def test_login_com_credenciais_corretas_devolve_token(self) -> None:
         self.client.post(
             "/api/v1/auth/register",
-            json={"email": "login@example.com", "nome": "Login", "password": "senha123"},
+            json={"email": "login@example.com", "nome": "Login", "password": "Senha123!"},
         )
         resp = self.client.post(
             "/api/v1/auth/login",
-            data={"username": "login@example.com", "password": "senha123"},
+            data={"username": "login@example.com", "password": "Senha123!"},
         )
         self.assertEqual(resp.status_code, 200, resp.text)
         self.assertIn("access_token", resp.json())
@@ -127,7 +127,7 @@ class AuthApiTest(unittest.TestCase):
     def test_login_com_senha_errada_falha(self) -> None:
         self.client.post(
             "/api/v1/auth/register",
-            json={"email": "login2@example.com", "nome": "Login2", "password": "senha123"},
+            json={"email": "login2@example.com", "nome": "Login2", "password": "Senha123!"},
         )
         resp = self.client.post(
             "/api/v1/auth/login",
@@ -136,13 +136,16 @@ class AuthApiTest(unittest.TestCase):
         self.assertEqual(resp.status_code, 400)
 
     def test_login_com_muitas_tentativas_erradas_bloqueia_temporariamente(self) -> None:
+        """Desde 2026-07-15, o limite é lastreado em TentativaLogin (backend/auth/models.py),
+        não mais num dict em memória (backend/auth/rate_limit.py virou um wrapper fino sobre
+        consultas ao banco) -- mesma política (5 tentativas/5 minutos), agora sobrevivendo a
+        um restart do processo."""
         from backend.auth import rate_limit
 
         email = "rate-limit-test@example.com"
-        self.addCleanup(rate_limit.limpar_tentativas, email)
         self.client.post(
             "/api/v1/auth/register",
-            json={"email": email, "nome": "RL", "password": "senha123"},
+            json={"email": email, "nome": "RL", "password": "Senha123!"},
         )
 
         for _ in range(rate_limit.MAX_TENTATIVAS):
@@ -154,16 +157,81 @@ class AuthApiTest(unittest.TestCase):
         # a próxima tentativa é bloqueada mesmo com a senha CERTA -- o limite é por e-mail,
         # não depende de continuar errando.
         bloqueado = self.client.post(
-            "/api/v1/auth/login", data={"username": email, "password": "senha123"},
+            "/api/v1/auth/login", data={"username": email, "password": "Senha123!"},
         )
         self.assertEqual(bloqueado.status_code, 429)
 
-        # login bem-sucedido limpa o contador (não fica bloqueado pra sempre)
-        rate_limit.limpar_tentativas(email)
-        ok = self.client.post(
-            "/api/v1/auth/login", data={"username": email, "password": "senha123"},
+    def test_rate_limit_falha_grava_tentativa_login_no_banco(self) -> None:
+        """Substitui o teste antigo que checava o dict em memória diretamente -- agora a
+        prova de que uma tentativa foi registrada é uma linha em TentativaLogin."""
+        db = self.SessionLocal()
+        self.assertEqual(db.query(TentativaLogin).count(), 0)
+        db.close()
+
+        self.client.post(
+            "/api/v1/auth/login", data={"username": "ninguem@example.com", "password": "x"},
         )
-        self.assertEqual(ok.status_code, 200, ok.text)
+
+        db = self.SessionLocal()
+        tentativas = db.query(TentativaLogin).all()
+        db.close()
+        self.assertEqual(len(tentativas), 1)
+        self.assertEqual(tentativas[0].email, "ninguem@example.com")
+        self.assertFalse(tentativas[0].sucesso)
+
+    def test_login_bem_sucedido_atualiza_ultimo_acesso_e_cria_sessao(self) -> None:
+        self.client.post(
+            "/api/v1/auth/register",
+            json={"email": "sessao@example.com", "nome": "Sessao", "password": "Senha123!"},
+        )
+        resp = self.client.post(
+            "/api/v1/auth/login",
+            data={"username": "sessao@example.com", "password": "Senha123!"},
+        )
+        self.assertEqual(resp.status_code, 200, resp.text)
+        token = resp.json()["access_token"]
+
+        db = self.SessionLocal()
+        usuario = db.query(Usuario).filter(Usuario.email == "sessao@example.com").first()
+        self.assertIsNotNone(usuario.ultimo_acesso)
+
+        sessao = db.query(SessaoUsuario).filter(SessaoUsuario.token == hash_token(token)).first()
+        self.assertIsNotNone(sessao)
+        self.assertFalse(sessao.revogada)
+        db.close()
+
+    def test_logout_revoga_sessao_e_bloqueia_uso_posterior_do_token(self) -> None:
+        self.client.post(
+            "/api/v1/auth/register",
+            json={"email": "logout@example.com", "nome": "Logout", "password": "Senha123!"},
+        )
+        login_resp = self.client.post(
+            "/api/v1/auth/login",
+            data={"username": "logout@example.com", "password": "Senha123!"},
+        )
+        token = login_resp.json()["access_token"]
+        headers = {"Authorization": f"Bearer {token}"}
+
+        # antes do logout, o token funciona normalmente
+        antes = self.client.get("/api/v1/users/me", headers=headers)
+        self.assertEqual(antes.status_code, 200, antes.text)
+
+        logout_resp = self.client.post("/api/v1/auth/logout", headers=headers)
+        self.assertEqual(logout_resp.status_code, 200, logout_resp.text)
+
+        depois = self.client.get("/api/v1/users/me", headers=headers)
+        self.assertEqual(depois.status_code, 401, depois.text)
+
+    def test_registro_com_numero_eng_faz_round_trip(self) -> None:
+        resp = self.client.post(
+            "/api/v1/auth/register",
+            json={
+                "email": "eng@example.com", "nome": "Engenheiro", "password": "Senha123!",
+                "numero_eng": "ENG-123",
+            },
+        )
+        self.assertEqual(resp.status_code, 200, resp.text)
+        self.assertEqual(resp.json()["numero_eng"], "ENG-123")
 
     def test_users_me_com_token_valido(self) -> None:
         user = self._create_user(1)
@@ -210,6 +278,127 @@ class AuthApiTest(unittest.TestCase):
     def test_sectors_listar_e_publico(self) -> None:
         resp = self.client.get("/api/v1/sectors")
         self.assertEqual(resp.status_code, 200)
+
+    def test_registro_com_senha_fraca_e_rejeitado(self) -> None:
+        """Reforço de autenticação pedido pelo usuário (2026-07-15) -- ver
+        backend/auth/security.py::validate_password_strength. Só se aplica daqui pra frente
+        (registro/troca novos), as 2 contas de exemplo com senha "123" no banco real não são
+        tocadas por isso."""
+        resp = self.client.post(
+            "/api/v1/auth/register",
+            json={"email": "fraco@example.com", "nome": "Fraco", "password": "123"},
+        )
+        self.assertEqual(resp.status_code, 422, resp.text)
+
+    def test_registro_com_senha_forte_e_aceito(self) -> None:
+        resp = self.client.post(
+            "/api/v1/auth/register",
+            json={"email": "forte@example.com", "nome": "Forte", "password": "Senha123!"},
+        )
+        self.assertEqual(resp.status_code, 200, resp.text)
+
+    def test_change_password_com_senha_atual_errada_falha(self) -> None:
+        self.client.post(
+            "/api/v1/auth/register",
+            json={"email": "troca1@example.com", "nome": "Troca1", "password": "Senha123!"},
+        )
+        login_resp = self.client.post(
+            "/api/v1/auth/login",
+            data={"username": "troca1@example.com", "password": "Senha123!"},
+        )
+        headers = {"Authorization": f"Bearer {login_resp.json()['access_token']}"}
+
+        resp = self.client.post(
+            "/api/v1/auth/change-password",
+            json={"senha_atual": "errada", "senha_nova": "OutraSenha456!"},
+            headers=headers,
+        )
+        self.assertEqual(resp.status_code, 400, resp.text)
+
+    def test_change_password_com_senha_nova_fraca_falha(self) -> None:
+        self.client.post(
+            "/api/v1/auth/register",
+            json={"email": "troca2@example.com", "nome": "Troca2", "password": "Senha123!"},
+        )
+        login_resp = self.client.post(
+            "/api/v1/auth/login",
+            data={"username": "troca2@example.com", "password": "Senha123!"},
+        )
+        headers = {"Authorization": f"Bearer {login_resp.json()['access_token']}"}
+
+        resp = self.client.post(
+            "/api/v1/auth/change-password",
+            json={"senha_atual": "Senha123!", "senha_nova": "123"},
+            headers=headers,
+        )
+        self.assertEqual(resp.status_code, 422, resp.text)
+
+    def test_change_password_com_sucesso_troca_senha_e_revoga_outras_sessoes(self) -> None:
+        self.client.post(
+            "/api/v1/auth/register",
+            json={"email": "troca3@example.com", "nome": "Troca3", "password": "Senha123!"},
+        )
+        login1 = self.client.post(
+            "/api/v1/auth/login",
+            data={"username": "troca3@example.com", "password": "Senha123!"},
+        )
+        headers1 = {"Authorization": f"Bearer {login1.json()['access_token']}"}
+
+        # Segunda "sessão" criada direto no banco (não via /auth/login de novo): o JWT só
+        # codifica sub+exp em segundos, então dois logins no mesmo segundo pro mesmo usuário
+        # gerariam tokens idênticos e violariam o UNIQUE de sessoes_usuario.token -- inserir
+        # direto simula outro dispositivo/navegador sem depender de um segundo real de
+        # diferença de relógio.
+        from datetime import datetime, timedelta, timezone
+
+        outro_token = create_access_token(1, expires_delta=timedelta(minutes=1))
+        db = self.SessionLocal()
+        db.add(
+            SessaoUsuario(
+                usuario_id=1,
+                token=hash_token(outro_token),
+                expires_at=datetime.now(timezone.utc) + timedelta(minutes=30),
+                revogada=False,
+            )
+        )
+        db.commit()
+        db.close()
+        headers2 = {"Authorization": f"Bearer {outro_token}"}
+
+        resp = self.client.post(
+            "/api/v1/auth/change-password",
+            json={"senha_atual": "Senha123!", "senha_nova": "NovaSenha789!"},
+            headers=headers1,
+        )
+        self.assertEqual(resp.status_code, 200, resp.text)
+
+        # senha antiga não funciona mais no login
+        login_antigo = self.client.post(
+            "/api/v1/auth/login",
+            data={"username": "troca3@example.com", "password": "Senha123!"},
+        )
+        self.assertEqual(login_antigo.status_code, 400)
+
+        # senha nova funciona -- sleep pra garantir um `exp` (segundos) diferente do login1,
+        # já que o JWT só codifica sub+exp: dois logins no mesmo segundo pro mesmo usuário
+        # gerariam o mesmo token e violariam o UNIQUE de sessoes_usuario.token (achado ao
+        # escrever este teste, não uma limitação nova introduzida aqui).
+        import time
+
+        time.sleep(1)
+        login_novo = self.client.post(
+            "/api/v1/auth/login",
+            data={"username": "troca3@example.com", "password": "NovaSenha789!"},
+        )
+        self.assertEqual(login_novo.status_code, 200)
+
+        # a sessão que fez a troca continua válida...
+        ainda_valido = self.client.get("/api/v1/users/me", headers=headers1)
+        self.assertEqual(ainda_valido.status_code, 200, ainda_valido.text)
+
+        # ...mas a outra sessão (login2) foi revogada
+        outra_revogada = self.client.get("/api/v1/users/me", headers=headers2)
+        self.assertEqual(outra_revogada.status_code, 401, outra_revogada.text)
 
     def test_sectors_criar_exige_admin(self) -> None:
         comum = self._create_user(1, permission_level=0)

@@ -105,21 +105,38 @@ def read_impactos_operacionais(material: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def build_campo_alterado_diffs(material: dict[str, Any], vba_mapping_config: dict[str, Any]) -> list[dict[str, str]]:
+def build_campo_alterado_diffs(material: dict[str, Any], vba_mapping_config: dict[str, Any]) -> list[dict[str, Any]]:
     """'Campo alterado / De: / Para:' por material, direto do JSON do BITin (não precisa
-    reconsultar Plan2) — replica a tabela que Módulo4 monta em Plan4 por campo mudado."""
+    reconsultar Plan2) — replica a tabela que Módulo4 monta em Plan4 por campo mudado.
+
+    Campos livres (achado ao revisar um BITin real, A263326.xlsm): o engenheiro nem sempre
+    preenche um campo SAP reconhecido — às vezes escreve uma nota solta ("Salvar DWG",
+    "Alterado peso e IS") direto na coluna "Campo alterado". Se o texto não bate com nenhuma
+    chave do crosswalk, mostra exatamente como foi escrito em vez de derrubar a requisição com
+    KeyError — decisão registrada com o usuário: "tudo que for escrito deve ficar visível"."""
     crosswalk = vba_mapping_config["bitin_schema_crosswalk"]["dados_basicos"]
     headers = vba_mapping_config["plan2_column_headers"]
     dados_basicos = material.get("alteracoes", {}).get("dados_basicos", {})
 
-    diffs: list[dict[str, str]] = []
+    diffs: list[dict[str, Any]] = []
     for campo, entry in dados_basicos.items():
+        de = entry.get("de", "")
         para = entry.get("para", "")
-        if para == "":
-            continue
-        plan2_col_novo = crosswalk[campo]
-        label = headers[plan2_col_novo - 2]  # coluna "atual" = Novo - 1; índice = col - 1
-        diffs.append({"campo": label, "de": entry.get("de", ""), "para": para})
+        plan2_col_novo = crosswalk.get(campo)
+        livre = plan2_col_novo is None
+        if not livre:
+            # Campo SAP reconhecido: "para" vazio continua sem representar uma mudança real
+            # (mesmo comportamento de sempre).
+            if para == "":
+                continue
+            label = headers[plan2_col_novo - 2]  # coluna "atual" = Novo - 1; índice = col - 1
+        else:
+            # Campo livre (não está no crosswalk): a própria chave já é a informação escrita
+            # pelo engenheiro -- nunca pula, mesmo sem de/para ("Salvar DWG" real,
+            # A263326.xlsm, é só uma nota solta, sem par de/para). "livre" marca isso pro
+            # frontend destacar visualmente (decisão do usuário, 2026-07-14).
+            label = campo  # mostra exatamente como foi escrito
+        diffs.append({"campo": label, "de": de, "para": para, "livre": livre})
     return diffs
 
 
@@ -131,36 +148,43 @@ def build_checklist_schema(config: dict[str, Any]) -> list[dict[str, str]]:
 
 
 def build_checklist(bitin: dict[str, Any], materiais: list[dict[str, Any]], config: dict[str, Any]) -> list[dict[str, Any]]:
-    ativos: set[str] = set()
-
-    if bitin.get("bitex") == "SIM":
-        ativos.add("11")
-
-    for material in materiais:
-        impactos = read_impactos_operacionais(material)
-        alt_id = config["alt_to_checklist_id"].get(impactos["alt"])
-        if alt_id:
-            ativos.add(alt_id)
-        if impactos["esp"] == "X":
-            ativos.add("6")
-        if material.get("alteracoes", {}).get("lista_tecnica"):
-            ativos.add("7")
-        if impactos["est"] not in ("", "-"):
-            ativos.add("8")
-        if impactos["est"] == "S":
-            ativos.add("22")
-        if impactos["oc"] not in ("", "-"):
-            ativos.add("10")
-        if impactos["of"] not in ("", "-"):
-            ativos.add("17")
-        if impactos["atualizar_dwg_sat"]:
-            ativos.add("18")
-        if impactos["lp"] not in ("", "-"):
-            ativos.add("19")
-        if impactos["pre"] not in ("", "-"):
-            ativos.add("20")
-
+    """Checklist 100% manual -- 'afeta' vem só de `bitin['checklist_overrides']` (dict
+    id -> bool); qualquer item nunca clicado pelo engenheiro fica 'afeta=False' por padrão.
+    Antes (até 2026-07-14) o sistema sugeria 'afeta' automaticamente a partir dos materiais
+    (Alt/Esp/Est/OC/OF/atualizar_dwg_sat/LP/Pre/bitex) e o override só existia pra corrigir a
+    sugestão; decisão do usuário, 2026-07-15: 'tirar esse autocomplete de acordo com os códigos
+    da checklist, checklist é marcada manualmente' -- a checklist é responsabilidade exclusiva
+    do engenheiro, sem inferência a partir dos códigos SAP dos materiais. `materiais` e
+    `config['alt_to_checklist_id']` deixaram de ser usados aqui (mantidos como parâmetro/config
+    por compatibilidade e porque `alt_to_checklist_id` ainda pode servir de referência, mas não
+    há mais leitura automática). Setores acionados (build_setores_afetados) sempre leem o
+    resultado final daqui, então marcar um item manualmente aciona os setores do mesmo jeito
+    que a sugestão automática acionava antes."""
+    overrides = bitin.get("checklist_overrides", {})
+    # Anotação livre por item (2026-07-15) -- ex.: "Centro de custo (se tem sucata)" (id 22)
+    # usa isso pra registrar o centro de custo/conta razão do sucateamento (POP Nota 8), no
+    # lugar de um campo estruturado por material (decisão do usuário: "isso é colocado no
+    # campo de descrição lá em cima na checklist ao lado do campo da checklist referente").
+    descricoes = bitin.get("checklist_descricoes", {})
     return [
-        {**item, "afeta": item["id"] in ativos}
+        {
+            **item,
+            "afeta": overrides.get(item["id"], False),
+            "manual": item["id"] in overrides,
+            "descricao": descricoes.get(item["id"], ""),
+        }
         for item in config["checklist_items"]
     ]
+
+
+def build_setores_afetados(checklist: list[dict[str, Any]], config: dict[str, Any]) -> list[str]:
+    """Departamentos acionados pelas etapas marcadas 'afeta' -- crosswalk fixo
+    (config['checklist_setores'], extraído de um BITin real, aba 'SETORES CHECKLIST' de
+    A263326.xlsm). Uma etapa pode acionar mais de um setor; devolve a união, sem repetir,
+    em ordem alfabética (não importa qual etapa acionou qual -- só quem precisa agir)."""
+    setores_config = config.get("checklist_setores", {})
+    setores: set[str] = set()
+    for item in checklist:
+        if item["afeta"]:
+            setores.update(setores_config.get(item["id"], []))
+    return sorted(setores)

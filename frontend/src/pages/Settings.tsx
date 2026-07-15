@@ -1,17 +1,25 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, type FormEvent } from 'react'
+import Card from '../components/Card'
+import DetailField from '../components/DetailField'
 import { useAuth } from '../context/AuthContext'
 import { api } from '../lib/api'
-import { version as appVersion } from '../../package.json'
-import type { Sector, User } from '../lib/types'
+import type { ChangePasswordRequest, Sector, User } from '../lib/types'
+
+// Extrai mensagem de erro de uma resposta da API -- duas formas possíveis: {detail: string}
+// (ex.: senha atual incorreta, backend/auth/routes.py::change_password) ou {detail: [{msg}]}
+// (erro de validação do Pydantic, ex.: senha nova fraca, backend/auth/schemas.py::
+// ChangePasswordRequest). Mesmo duck-typing de Login.tsx (não usa axios.isAxiosError).
+function extrairErro(err: unknown, fallback: string): string {
+  const detail = (err as { response?: { data?: { detail?: unknown } } })?.response?.data?.detail
+  if (typeof detail === 'string') return detail
+  if (Array.isArray(detail) && detail[0]?.msg) return String(detail[0].msg)
+  return fallback
+}
 
 // Mesmo nível usado em backend/api/bitins.py::ADMIN_LEVEL -- só espelhado aqui pra decidir o
 // que mostrar na tela; o backend continua sendo quem de fato garante a permissão (PATCH
 // /users/{id}/permission exige nível 99 pra valer, com ou sem essa checagem no frontend).
 const ADMIN_LEVEL = 99
-const NIVEL_LABEL: Record<number, string> = { 0: 'Usuário', 1: 'Gestor', 99: 'Admin' }
-function nivelLabel(nivel: number) {
-  return NIVEL_LABEL[nivel] ?? `Nível ${nivel}`
-}
 
 export default function Settings() {
   const { user } = useAuth()
@@ -27,37 +35,120 @@ export default function Settings() {
   const setorNome = sectors.find((s) => s.id === user?.sector_id)?.nome
 
   return (
-    <div className="mx-auto max-w-2xl">
+    <div className="mx-auto max-w-6xl">
       <h1 className="text-2xl font-semibold text-ink">Configurações</h1>
 
-      <section className="mt-6 rounded-lg border border-line bg-surface p-5">
-        <h2 className="text-sm font-semibold uppercase tracking-wide text-ink-muted">Minha conta</h2>
+      <Card title="Minha conta">
         <dl className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
-          <InfoField label="Nome" value={user?.nome} />
-          <InfoField label="E-mail" value={user?.email} />
-          <InfoField label="Setor" value={setorNome ?? (user?.sector_id ? `#${user.sector_id}` : 'Sem setor')} />
-          <InfoField label="Nível de permissão" value={user ? nivelLabel(user.permission_level) : undefined} />
+          <DetailField label="Nome" value={user?.nome} />
+          <DetailField label="E-mail" value={user?.email} />
+          <DetailField label="Setor" value={setorNome ?? (user?.sector_id ? `#${user.sector_id}` : 'Sem setor')} />
         </dl>
-      </section>
+
+        <TrocarSenhaForm />
+      </Card>
 
       {user && user.permission_level >= ADMIN_LEVEL && <GestaoUsuarios sectors={sectors} />}
-
-      <section className="mt-6 rounded-lg border border-line bg-surface p-5">
-        <h2 className="text-sm font-semibold uppercase tracking-wide text-ink-muted">Sobre</h2>
-        <p className="mt-3 text-sm text-ink">
-          BITin <span className="text-ink-muted">— v{appVersion}</span>
-        </p>
-      </section>
     </div>
   )
 }
 
-function InfoField({ label, value }: { label: string; value: string | undefined }) {
+// Autoatendimento de troca de senha (2026-07-15, pedido explícito do usuário: "wired into the
+// Settings screen") -- antes disso não existia nenhum jeito de trocar a própria senha sem
+// edição direta no banco. POST /auth/change-password (backend/auth/routes.py) valida a senha
+// atual e a força da nova (mesma regra de UserCreate.password no registro).
+function TrocarSenhaForm() {
+  const [senhaAtual, setSenhaAtual] = useState('')
+  const [senhaNova, setSenhaNova] = useState('')
+  const [confirmarSenha, setConfirmarSenha] = useState('')
+  const [erro, setErro] = useState<string | null>(null)
+  const [sucesso, setSucesso] = useState(false)
+  const [enviando, setEnviando] = useState(false)
+
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    setErro(null)
+    setSucesso(false)
+
+    // Checagem client-side barata -- a validação de verdade (força da senha, senha atual
+    // correta) é sempre do servidor, isso aqui só evita uma ida à API por engano de digitação.
+    if (senhaNova !== confirmarSenha) {
+      setErro('A confirmação não bate com a nova senha.')
+      return
+    }
+
+    setEnviando(true)
+    try {
+      const body: ChangePasswordRequest = { senha_atual: senhaAtual, senha_nova: senhaNova }
+      await api.post('/auth/change-password', body)
+      setSucesso(true)
+      setSenhaAtual('')
+      setSenhaNova('')
+      setConfirmarSenha('')
+    } catch (err) {
+      setErro(extrairErro(err, 'Não foi possível trocar a senha. Tente novamente.'))
+    } finally {
+      setEnviando(false)
+    }
+  }
+
   return (
-    <div>
-      <dt className="text-xs uppercase tracking-wide text-ink-muted">{label}</dt>
-      <dd className="mt-0.5 text-sm text-ink">{value ?? '—'}</dd>
-    </div>
+    <form onSubmit={handleSubmit} className="mt-6 max-w-sm border-t border-line pt-5">
+      <h3 className="text-xs font-semibold uppercase tracking-wide text-ink-muted">Trocar senha</h3>
+
+      <div className="mt-3 space-y-3">
+        <div>
+          <label htmlFor="senha-atual" className="mb-1.5 block text-xs uppercase tracking-wide text-ink-muted">
+            Senha atual
+          </label>
+          <input
+            id="senha-atual"
+            type="password"
+            autoComplete="current-password"
+            value={senhaAtual}
+            onChange={(e) => setSenhaAtual(e.target.value)}
+            className="w-full rounded-lg border border-line bg-surface px-3 py-2 text-sm text-ink focus:border-brand-navy focus:outline-none focus:ring-2 focus:ring-brand-navy/20"
+          />
+        </div>
+        <div>
+          <label htmlFor="senha-nova" className="mb-1.5 block text-xs uppercase tracking-wide text-ink-muted">
+            Nova senha
+          </label>
+          <input
+            id="senha-nova"
+            type="password"
+            autoComplete="new-password"
+            value={senhaNova}
+            onChange={(e) => setSenhaNova(e.target.value)}
+            className="w-full rounded-lg border border-line bg-surface px-3 py-2 text-sm text-ink focus:border-brand-navy focus:outline-none focus:ring-2 focus:ring-brand-navy/20"
+          />
+        </div>
+        <div>
+          <label htmlFor="confirmar-senha" className="mb-1.5 block text-xs uppercase tracking-wide text-ink-muted">
+            Confirmar nova senha
+          </label>
+          <input
+            id="confirmar-senha"
+            type="password"
+            autoComplete="new-password"
+            value={confirmarSenha}
+            onChange={(e) => setConfirmarSenha(e.target.value)}
+            className="w-full rounded-lg border border-line bg-surface px-3 py-2 text-sm text-ink focus:border-brand-navy focus:outline-none focus:ring-2 focus:ring-brand-navy/20"
+          />
+        </div>
+      </div>
+
+      {erro && <p className="mt-3 text-sm text-red-600">{erro}</p>}
+      {sucesso && <p className="mt-3 text-sm text-green-600">Senha alterada com sucesso.</p>}
+
+      <button
+        type="submit"
+        disabled={enviando || !senhaAtual || !senhaNova || !confirmarSenha}
+        className="mt-4 rounded-lg bg-brand-navy px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-brand-navy-dark disabled:cursor-not-allowed disabled:opacity-60"
+      >
+        {enviando ? 'Salvando...' : 'Salvar nova senha'}
+      </button>
+    </form>
   )
 }
 
@@ -88,21 +179,19 @@ function GestaoUsuarios({ sectors }: { sectors: Sector[] }) {
   }
 
   return (
-    <section className="mt-6 rounded-lg border border-line bg-surface p-5">
-      <h2 className="text-sm font-semibold uppercase tracking-wide text-ink-muted">Gestão de usuários</h2>
-
+    <Card title="Gestão de usuários">
       {error && <p className="mt-3 text-sm text-red-600">{error}</p>}
       {!users && !error && <p className="mt-3 text-sm text-ink-muted">Carregando...</p>}
 
       {users && (
-        <div className="mt-3 overflow-hidden rounded border border-line">
+        <div className="mt-3 overflow-x-auto rounded border border-line">
           <table className="w-full text-left text-sm">
             <thead>
               <tr className="bg-surface-alt text-xs uppercase tracking-wide text-ink-muted">
-                <th className="px-3 py-2 font-medium">Nome</th>
-                <th className="px-3 py-2 font-medium">E-mail</th>
-                <th className="px-3 py-2 font-medium">Setor</th>
-                <th className="px-3 py-2 font-medium">Nível</th>
+                <th className="whitespace-nowrap px-3 py-2 font-medium">Nome</th>
+                <th className="whitespace-nowrap px-3 py-2 font-medium">E-mail</th>
+                <th className="whitespace-nowrap px-3 py-2 font-medium">Setor</th>
+                <th className="whitespace-nowrap px-3 py-2 font-medium">Nível</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-line">
@@ -110,9 +199,9 @@ function GestaoUsuarios({ sectors }: { sectors: Sector[] }) {
                 const souEu = u.id === currentUser?.id
                 return (
                   <tr key={u.id}>
-                    <td className="px-3 py-2 text-ink">{u.nome}</td>
-                    <td className="px-3 py-2 text-ink-muted">{u.email}</td>
-                    <td className="px-3 py-2 text-ink-muted">
+                    <td className="whitespace-nowrap px-3 py-2 text-ink">{u.nome}</td>
+                    <td className="whitespace-nowrap px-3 py-2 text-ink-muted">{u.email}</td>
+                    <td className="whitespace-nowrap px-3 py-2 text-ink-muted">
                       {sectors.find((s) => s.id === u.sector_id)?.nome ?? '—'}
                     </td>
                     <td className="px-3 py-2">
@@ -135,6 +224,6 @@ function GestaoUsuarios({ sectors }: { sectors: Sector[] }) {
           </table>
         </div>
       )}
-    </section>
+    </Card>
   )
 }

@@ -4,19 +4,25 @@
    escolhe explicitamente (ver ThemeContext.jsx). */
 @custom-variant dark (&:where(.dark, .dark *));
 
-/* Paleta da marca (Grain & Protein Technologies) -- hexágonos frango/grão/porco em volta do
-   texto "GRAIN & PROTEIN TECHNOLOGIES". Navy é usado pra qualquer texto/superfície que
-   precise de bom contraste (cabeçalho, botões primários, foco); dourado é só decorativo
-   (texto sobre dourado tem contraste ruim, evitado de propósito) -- ver docs/FRONTEND.md,
-   "Identidade visual". Cores da marca não mudam entre os temas -- os tokens semânticos
-   abaixo (bg/surface/line/ink) é que se adaptam. */
+/* Paleta da marca (Grain & Protein Technologies) -- atualizada em 2026-07-15 com os valores do
+   guia de marca oficial (print com HEX/RGB/CMYK/Pantone enviado pelo usuário), que substitui a
+   aproximação anterior tirada pixel a pixel dos arquivos de logo (frontend/public/brand/) --
+   essa era só uma leitura visual, o guia de marca é a fonte de verdade de agora em diante.
+   "GPT Light Blue" (#6C8899) é reaproveitado como brand-navy-light (já existia esse papel no
+   sistema, e é uma cor oficial da marca, não mais um tom calculado à mão); brand-navy-dark
+   continua calculado (não tem um "GPT Dark Blue escuro" oficial), só escurecido a partir do
+   novo brand-navy pra manter contraste em hover. Navy é usado pra qualquer texto/superfície que
+   precise de bom contraste (cabeçalho, botões primários, foco); amarelo é só decorativo (texto
+   sobre amarelo tem contraste ruim, evitado de propósito) -- ver docs/FRONTEND.md, "Identidade
+   visual". Cores da marca não mudam entre os temas -- os tokens semânticos abaixo
+   (bg/surface/line/ink) é que se adaptam. */
 @theme {
-  --color-brand-navy: #17323c;
-  --color-brand-navy-dark: #0e2229;
-  --color-brand-navy-light: #2b5462;
-  --color-brand-gold: #f0c239;
-  --color-brand-green: #6fa032;
-  --color-brand-orange: #e2761e;
+  --color-brand-navy: #32464d;
+  --color-brand-navy-dark: #243237;
+  --color-brand-navy-light: #6c8899;
+  --color-brand-gold: #f3d148;
+  --color-brand-green: #79aa00;
+  --color-brand-orange: #ea7603;
 
   /* Tokens semânticos -- todo componente usa estes nomes (bg-app, bg-surface, border-line,
      text-ink, etc.), nunca gray-* direto, pra que os dois temas fiquem consistentes num só
@@ -33,6 +39,18 @@
   --color-ink: #16212a;
   --color-ink-muted: #5b6b74;
   --color-ink-faint: #8a97a0;
+
+  /* Destaques da tela de BITin -- pares claro/escuro próprios, pensados pra ter contraste bom
+     E chamar atenção nos dois temas (não são cores estruturais como as de cima, por isso não
+     entram no reset do .dark inteiro -- só essas). Ver components/bitin/.
+     - highlight-*: linhas "sim" do checklist.
+     - livre-text: só o texto de campos livres (nota solta do engenheiro, fora do crosswalk
+       SAP) na tabela de Alteração -- sem fundo/borda própria de propósito, é uma linha normal
+       da tabela, só a cor do texto muda. */
+  --color-highlight-bg: #fdf1d3;
+  --color-highlight-border: #e8c874;
+  --color-highlight-text: #6b4d06;
+  --color-livre-text: #b3261e;
 }
 
 .dark {
@@ -44,6 +62,11 @@
   --color-ink: #e7edf0;
   --color-ink-muted: #a3afb6;
   --color-ink-faint: #737f87;
+
+  --color-highlight-bg: #3a2f10;
+  --color-highlight-border: #6b5720;
+  --color-highlight-text: #f2cf6e;
+  --color-livre-text: #f0958c;
 }
 
 body {

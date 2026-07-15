@@ -107,8 +107,8 @@ edita o rascunho de outra pessoa), `created_at`, `updated_at`.
 | DELETE | `/bitins/{mongo_id}` | Apaga um rascunho. Recusa se já enviado. |
 | POST | `/bitins/{mongo_id}/enviar` | **O ponto-chave**: chama `bitin_lifecycle.enviar_bitin` (todas as validações de uma vez). Se falhar, devolve **200 com `ok=false` e a lista de erros estruturados** (`{field, code, message}`) no corpo — não é um erro HTTP, é um resultado de validação de negócio (a chamada em si funcionou). Se passar, gera o número sequencial (com retry seguro), cria a linha no Postgres, atualiza o Mongo. |
 | GET | `/bitins/{mongo_id}/resumo` | `bitin_view.render_bitin_summary` — pré-visualização/tela final. |
-| GET | `/bitins/schema/materiais` | `bitin_model.build_materiais_schema` — colunas do grid de materiais (identificação, snapshot, `dados_basicos` De/Para, `impactos_operacionais` com as opções válidas do POP) derivadas do `bitin_schema_crosswalk` (`config/vba_mapping.json`) e do `valores_validos` (`config/bitin_document_mapping.json`). Adicionado em 2026-07-13 (ver "Grid de materiais dirigido por schema" abaixo). |
-| POST | `/bitins/parse-sap-paste` | `sap_paste_parser.parse_sap_paste_to_materiais` — recebe o texto colado do SAP (`{"raw_text": "..."}`) e devolve `materiais[]` prontos (identificação + snapshot atual) pro frontend inserir no grid. Adicionado em 2026-07-13. |
+| GET | `/bitins/schema/materiais` | `bitin_model.build_materiais_schema` — colunas do grid de materiais (identificação, `dados_basicos` com os 30 campos reais da ZBPP009, `impactos_operacionais` com as opções válidas do POP, `impactos_condicionais`) derivadas do `bitin_schema_crosswalk` (`config/vba_mapping.json`) e do `valores_validos` (`config/bitin_document_mapping.json`). Adicionado em 2026-07-13, sem o bloco `snapshot` inventado (removido em 2026-07-15 — ver "Grid de materiais dirigido por schema" abaixo). |
+| POST | `/bitins/parse-sap-paste` | `sap_paste_parser.parse_sap_paste_to_materiais` — recebe o texto colado do SAP (`{"raw_text": "..."}`) e devolve `materiais[]` prontos (identificação + `dados_basicos_atual`, o "de" dos 30 campos, via `plan1_dados_basicos_columns`) pro frontend inserir na tabela de Códigos SAP. Adicionado em 2026-07-13, expandido em 2026-07-15 pra cobrir todos os campos (antes só extraía um recorte de 6). |
 | GET | `/bitins/schema/checklist` | `bitin_document.build_checklist_schema` — os 22 itens fixos do checklist (id + etapa, do Quadro 01 do POP), pra tela de cadastro montar a tabela de checklist editável (`ChecklistEditor.jsx`). Mesma fonte que `bitin_document.build_checklist` usa pra calcular `afeta` na tela de resumo pós-envio, só sem o cálculo em si. Adicionado em 2026-07-13. |
 | GET | `/bitins/resumo-usuario` | `{rascunhos, enviados}` — contagem de BITins do **próprio usuário logado** (`count_documents` filtrado por `criado_por`), alimenta os cartões de resumo da Home (`docs/FRONTEND.md`). Escopado por usuário de propósito ("só os meus", não o sistema inteiro) — decisão registrada com o usuário. Adicionado em 2026-07-14. |
 
@@ -136,12 +136,25 @@ e o frontend renderiza o grid a partir dela — uma fonte única de verdade.
 Pelo mesmo motivo, `POST /bitins/parse-sap-paste` reaproveita `sap_paste_parser.py` (já testado)
 em vez de reimplementar o parser de colagem em JavaScript.
 
+**Tela Códigos SAP idêntica à ZBPP009 (2026-07-15)**: `schema.dados_basicos` cobre os 30 campos
+reais do crosswalk (não um recorte) — a tela `CodigosSapPage.tsx` monta uma coluna por campo
+(igual à aba ZBPP009 do documento original) pra colar/digitar o snapshot "atual" de cada
+material. O bloco `snapshot` que existia antes (`grupo_mercadorias_atual`/`tem_desenho`/
+`desenho_aprovado`/`ncm_aprovado_fiscal`) foi removido do schema exposto — eram campos
+inventados fora do JSON canônico do BITin, não usados por nenhuma regra de negócio real.
+`config/vba_mapping.json::plan1_dados_basicos_columns` mapeia cada campo de `dados_basicos`
+pra sua coluna na grade Plan1 (ZBPP009, 36 colunas) — derivado casando `plan1_to_plan2.rules`
+pelo `plan2_col` (a coluna "atual" de cada par atual/novo é sempre `plan2_col - 1`, já que os
+pares ficam sempre em colunas adjacentes).
+
 **Auth/users/sectors** (ver seção "Autenticação" abaixo para o design completo):
 
 | Método | Rota | O que faz |
 |---|---|---|
 | POST | `/auth/register` | Público. Cria usuário, sempre `permission_level=0` (exceto bootstrap do primeiro usuário). |
-| POST | `/auth/login` | Público (`OAuth2PasswordRequestForm`: `username`=e-mail, `password`). Devolve `Token`. |
+| POST | `/auth/login` | Público (`OAuth2PasswordRequestForm`: `username`=e-mail, `password`). Devolve `Token`. Grava `TentativaLogin`, atualiza `ultimo_acesso`, cria `SessaoUsuario` no sucesso. |
+| POST | `/auth/logout` | Autenticado. Revoga a `SessaoUsuario` do token atual (ver "Tabelas de sessão e auditoria de login" abaixo) — chamadas seguintes com o mesmo token viram `401`. |
+| POST | `/auth/change-password` | Autenticado. Exige `senha_atual` correta; `senha_nova` passa pela mesma validação de força de `UserCreate.password`. Revoga as OUTRAS sessões ativas do usuário (mantém a atual válida) — ver "Troca de senha self-service" abaixo. |
 | GET | `/users/me` | Perfil do usuário autenticado. |
 | GET | `/users` | Lista usuários — exige `permission_level >= 1` (gestor/admin). |
 | GET | `/users/{id}` | Busca usuário por id — exige `permission_level >= 1`. |
@@ -217,9 +230,75 @@ só vê BITins do próprio setor) — não pedido ainda, registrado como possibi
 achado de auditoria): antes, `/auth/login` não tinha limite nenhum — força bruta contra uma
 senha fraca só era limitada pelo custo do hash `pbkdf2`. Agora, 5 tentativas erradas pro mesmo
 e-mail em 5 minutos bloqueiam novas tentativas com `429` (mesmo com a senha certa) até a janela
-passar ou até um login bem-sucedido limpar o contador. **Em memória de propósito** — é a 1ª
-linha de defesa pra um processo único; um deploy com múltiplos workers/réplicas precisaria de
-um store compartilhado (Redis etc.), registrado como limitação conhecida, não escondida.
+passar ou até um login bem-sucedido "limpar" o contador. **Lastreado no banco desde
+2026-07-15** (antes era em memória, ver abaixo) — cada tentativa de login (sucesso ou falha)
+vira uma linha em `tentativas_login`, e o limite conta as falhas depois do último sucesso pro
+mesmo e-mail (em vez de apagar linhas, o que perderia o histórico/auditoria). Isso substituiu
+o dict em memória do processo, que tinha uma limitação conhecida: não sobrevivia a um restart
+nem funcionava com múltiplos workers/réplicas sem um store compartilhado (Redis etc.) — agora
+sobrevive a restart de graça, e o "múltiplos workers" já funciona também, já que todos batem
+no mesmo Postgres/SQLite. `backend/auth/rate_limit.py` manteve os mesmos nomes de função
+(`excedeu_limite`, agora com um `db: Session` a mais) pra minimizar o blast radius em quem já
+chamava esse módulo.
+
+### Tabelas de sessão e auditoria de login (adicionado em 2026-07-15)
+
+Duas tabelas novas em `backend/auth/models.py`, além dos campos novos em `Usuario`
+(`numero_eng` — só relevante pra contas de engenheiro —, `email_verificado` — sempre `False`
+no registro, sem fluxo de verificação construído ainda —, `updated_at`, `ultimo_acesso`):
+
+```text
+sessoes_usuario: id, usuario_id (FK usuarios), token (hash sha256 do JWT, único),
+                 ip_address, user_agent, expires_at, created_at, revogada
+tentativas_login: id, email, ip_address, user_agent, sucesso, data_tentativa
+```
+
+**Por que hash do token, não o token cru**: mesmo raciocínio de nunca guardar senha em texto
+puro — um vazamento da tabela `sessoes_usuario` não pode virar bearer tokens válidos direto
+(`backend/auth/security.py::hash_token`, sha256 simples; o "segredo" aqui já é um JWT de alta
+entropia assinado com `SECRET_KEY`, não uma senha de usuário sujeita a força bruta).
+
+**Logout de verdade (`POST /auth/logout`, autenticado)**: antes não existia — JWT sozinho é
+stateless e válido até expirar naturalmente, então não tinha como invalidar um token antes da
+hora. Agora marca a `SessaoUsuario` correspondente (achada pelo hash do token atual) como
+`revogada=True`. `backend/auth/deps.py::get_current_user` passou a checar, depois de validar
+a assinatura/expiração do JWT, se existe uma `SessaoUsuario` pra aquele hash e, se existir, se
+ela não está revogada nem expirada — só então o usuário é considerado autenticado.
+
+**Compatibilidade com tokens mintados direto em teste**: `create_access_token()` sozinho (sem
+passar por `/auth/login`) não cria nenhuma `SessaoUsuario`. A checagem em `get_current_user`
+só bloqueia quando EXISTE uma sessão pro hash do token E ela está revogada/expirada — token
+sem sessão nenhuma (caso de testes que chamam `create_access_token` direto, ver
+`tests/test_backend_auth.py::_create_user` e `tests/test_backend_bitins.py`) continua
+funcionando normalmente. Só quem passa pelo fluxo real de login ganha uma sessão revogável —
+é a garantia que importa (logout funciona pra usuário real), sem forçar todo teste a simular
+login completo.
+
+**`login` (`backend/auth/routes.py`)** agora recebe `request: Request` pra capturar
+`ip_address`/`user_agent`, grava uma `TentativaLogin` em toda tentativa (sucesso ou falha),
+atualiza `Usuario.ultimo_acesso` e cria a `SessaoUsuario` no sucesso, com `expires_at` igual
+ao do próprio JWT (`ACCESS_TOKEN_EXPIRE_MINUTES`).
+
+### Política de senha forte + troca de senha self-service (adicionado em 2026-07-15)
+
+Antes, `POST /auth/register` aceitava qualquer senha (mesmo "123"), e não existia jeito
+nenhum de um usuário trocar a própria senha sem edição direta no banco. Pedido explícito do
+usuário: "vamos fazer uma autenticação melhor, segurança nas senhas etc.".
+
+- **`backend/auth/security.py::validate_password_strength`**: mínimo de 8 caracteres e pelo
+  menos 3 dos 4 tipos de caractere (maiúscula, minúscula, número, especial). Reaproveitado
+  (não duplicado) tanto por `UserCreate.password` (registro) quanto por
+  `ChangePasswordRequest.senha_nova` (troca de senha) — um validator Pydantic só, chamado dos
+  dois lugares.
+- **Não é retroativa**: a validação só roda contra senha em texto puro submetida a
+  registro/troca — nunca contra hashes já salvos. Contas criadas direto no banco antes dessa
+  regra existir (ex.: usuários de exemplo com senha `123`, propositalmente fracos pra teste)
+  continuam autenticando normalmente; só cadastros/trocas novos são obrigados a senha forte.
+- **`POST /auth/change-password`** (`ChangePasswordRequest`: `senha_atual`, `senha_nova`):
+  400 se `senha_atual` não bate (`verify_password`); se bate, troca o hash e revoga todas as
+  OUTRAS sessões ativas do usuário (mesmo padrão de revogação do logout) — troca de senha em
+  outro dispositivo/navegador desloga esses, mas não a sessão que acabou de fazer a própria
+  troca.
 
 **Checagem de segurança na subida** (`backend/main.py::lifespan`, adicionado em 2026-07-13,
 achado de auditoria): antes, um deploy sem `.env` configurado subia silenciosamente com a
@@ -267,6 +346,58 @@ desfazimento falhar, fica logado como `CRITICAL` (precisa de reconciliação man
 bastante a janela de inconsistência, mas não é uma solução de transação distribuída de verdade
 (um saga pattern ou outbox seria o próximo passo, se a taxa de falha do Mongo justificar o
 investimento).
+
+## Migrações (Alembic, adicionado em 2026-07-15)
+
+Antes disso, o schema SQL só existia como efeito colateral de `Base.metadata.create_all`
+(`backend/main.py::lifespan`) — sem histórico de mudanças, sem jeito de aplicar uma mudança
+de schema num banco com dados sem recriar tudo do zero. Agora `alembic/` (raiz do repo,
+`alembic.ini` + `migrations/`) é a fonte de verdade daqui pra frente: qualquer mudança de
+schema (coluna/tabela nova) vira uma migração, não só uma edição em
+`backend/auth/models.py`/`backend/models_sql.py`. `migrations/env.py` lê `DATABASE_URL` de
+`backend.config.settings` (mesma fonte usada pelo app em runtime) e aponta pro
+`Base.metadata` real (importa `backend.auth.models` e `backend.models_sql` explicitamente,
+senão autogenerate não veria as tabelas).
+
+`Base.metadata.create_all` continua no `lifespan` como conveniência de dev (idempotente, não
+conflita com um banco já migrado) — ver comentário em `backend/main.py`. Os testes
+(`tests/test_backend_*.py`) não usam Alembic nem o lifespan: criam um SQLite em memória e
+chamam `Base.metadata.create_all` direto por teste, então não são afetados por nada disto.
+
+**Duas migrações**:
+- `f19fae8abd7f_baseline_usuarios_setores_bitins.py` — schema como ele já existia antes desta
+  rodada (`usuarios`, `setores`, `bitins`). Existe só pra dar um ponto de partida consistente
+  ao histórico Alembic; não deve ser "upgraded" contra um banco que já tem essas tabelas (ver
+  abaixo).
+- `6c6372519927_..._novos_.py` — `sessoes_usuario`, `tentativas_login`, e os campos novos em
+  `usuarios` (`numero_eng`, `email_verificado` com `server_default='0'` — necessário porque a
+  coluna é `NOT NULL` e o banco de dev já tem usuários cadastrados —, `updated_at`,
+  `ultimo_acesso`).
+
+**Clone novo / banco vazio** — roda as duas migrações do zero:
+
+```powershell
+.venv/Scripts/python.exe -m alembic upgrade head
+```
+
+**Banco de dev já existente (`bitin_backend.db` na raiz do repo, já tem `usuarios`/`setores`/
+`bitins` com dados)** — a migração baseline faria `CREATE TABLE usuarios` e estouraria "table
+already exists" se você rodasse `upgrade head` direto nele. Em vez disso, primeiro "carimba"
+o banco como já estando na revisão baseline (sem executar SQL nenhum, só grava a revisão
+numa tabela de controle `alembic_version`), e só depois aplica a migração nova de verdade:
+
+```powershell
+.venv/Scripts/python.exe -m alembic stamp f19fae8abd7f
+.venv/Scripts/python.exe -m alembic upgrade head
+```
+
+Testado de verdade (não só em teoria) em 2026-07-15: copiei `bitin_backend.db` (5 usuários, 2
+setores, 1 bitin na época) pra um arquivo separado, rodei exatamente os dois comandos acima
+nessa cópia, e confirmei que (a) as 3 tabelas antigas continuaram com as mesmas linhas
+(`select count(*)` batendo antes/depois, dados legíveis), (b) as tabelas/colunas novas
+apareceram, e (c) o schema final é byte-a-byte igual ao de um banco vazio rodando só
+`upgrade head` (mesmo `pragma table_info`) — os dois caminhos convergem. **Nunca rode
+migração nenhuma direto no `bitin_backend.db` original sem copiar primeiro.**
 
 ## Rodando localmente (sem Postgres/MongoDB reais)
 

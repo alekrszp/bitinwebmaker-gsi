@@ -42,6 +42,51 @@ materiais[]:
 `materiais[].tipo_material`), não no cabeçalho do BITin — confirmado com o responsável do
 projeto, já que um BITin pode abranger materiais de mais de um centro.
 
+## Regras de campo (view + cadastro — consolidado em 2026-07-14)
+
+Regras confirmadas com o responsável do projeto ao revisar a visualização contra um BITin real
+(`A263326.xlsm`). **Vale tanto pra visualização (já implementada) quanto pro cadastro/edição
+(ainda não construído) — as duas telas têm que aplicar exatamente as mesmas regras**, não
+lógicas divergentes.
+
+| Campo | Quem preenche | Quando é editável | Observação |
+|---|---|---|---|
+| `bitin` (número) | Sistema, automático | Nunca (nem no rascunho) | Gerado só no envio, por `backend/bitin_number.py`. Vazio durante o rascunho. |
+| `produto` | Engenheiro, texto livre | Enquanto rascunho | Sem enum/validação de formato. |
+| `motivo` | Engenheiro, texto livre | Enquanto rascunho | Sem enum/validação de formato. |
+| `setor` | Engenheiro, escolhe entre as opções fixas | Enquanto rascunho | "Proteína Animal" ou "Armazenagem de Grãos" — define o prefixo P/A do número gerado no envio (`backend/bitin_number.py::SETOR_PREFIXO`). |
+| `solicitante` | Engenheiro, texto livre | Enquanto rascunho | |
+| `data_solicitacao` | Sistema, automático (carimbada quando o rascunho é salvo) | Enquanto rascunho | Não é escolhida livremente pelo engenheiro — é a data em que o BITin foi salvo como rascunho pela primeira vez. |
+| `data_envio` | Sistema, automático (carimbada no envio) | Nunca | Ausente/`null` até o BITin ser enviado. |
+| `checklist[]` | Sistema, calculado, **com override manual** | Enquanto rascunho (só o override) | Sugestão automática a partir dos impactos operacionais de cada material (`scripts/bitin_document.py::build_checklist`). O engenheiro pode clicar num item da checklist (aba "BITin", tela editável) e sobrescrever manualmente — o valor fica em `bitin['checklist_overrides']` (dict `id -> bool`) e tem prioridade sobre o cálculo automático quando presente. Cada item devolvido carrega `manual: bool` pra UI marcar o que foi sobrescrito. Decisão registrada com o usuário (2026-07-15): "não tem como clickar na checklist e ir mudando os setores". |
+| Setores acionados | Sistema, calculado | Nunca editado diretamente | Derivado do checklist (já com overrides aplicados) via crosswalk fixo `config/bitin_document_mapping.json::checklist_setores` (extraído de um BITin real, aba "SETORES CHECKLIST"). Clicar num item da checklist muda os setores acionados pelo mesmo motivo que a sugestão automática mudaria — não existe lógica separada pros dois casos. |
+| `materiais[].alteracoes.dados_basicos` | Engenheiro | Enquanto rascunho | Cada entrada é `{de, para}`. Se a chave bate com um campo do crosswalk (`vba_mapping.json::bitin_schema_crosswalk.dados_basicos`, 30 campos), é um **campo SAP reconhecido** — mostrado normal, com rótulo traduzido, numa tabela De/Para. Se não bate, é **texto livre** (o engenheiro digitou uma nota solta, tipo "Salvar DWG") — mostrado destacado (vermelho/`--color-livre-text`), num bloco à parte (nunca dentro da mesma tabela De/Para), com a chave exibida do jeito que foi escrita. Essa distinção é a mesma nos dois lados — visualização (`AlteracaoTable`) e edição (`MaterialEditorCard`) — reaproveitando o mesmo crosswalk (`scripts/bitin_document.py::build_campo_alterado_diffs` na visualização; `MateriaisSchema.dados_basicos` na edição), nunca reimplementada em paralelo. |
+| `materiais[].alteracoes.lista_tecnica[]` | Engenheiro | Enquanto rascunho | Cada item é `{codigo_filho, quantidade_de, quantidade_para, operacao}`. O código pai é o próprio `codigo_material` do material (não repetido no item). `operacao` (inserir/alterar/excluir) é só pro cadastro decidir a intenção — **não aparece na visualização**, o engenheiro nem precisa pensar nisso ao ler o documento. |
+| `ordem_cliente[]` | Engenheiro | Enquanto rascunho | Só relevante quando `impactos_operacionais.oc == "X"` em algum material (Nota 10 do POP). |
+| `materiais[].alteracoes.impactos_operacionais` (Alt/Est/Esp/LP/Pre/OC/OF + `atualizar_dwg_sat`/`centro_custo`/`conta_razao`) | Engenheiro declara | Enquanto rascunho | Não é derivado de código SAP (só existem sugestões opcionais não-autoritativas, ver `suggest_alt`/`suggest_dwg_sat_action`). |
+
+## Tela Códigos SAP (idêntica à ZBPP009, adicionado em 2026-07-15)
+
+A tela "Códigos SAP" (`frontend/src/pages/CodigosSapPage.tsx`, rota
+`/bitins/:mongoId/codigos-sap`) é deliberadamente **igual à aba ZBPP009** do documento
+original: uma tabela com a identificação do material (código/centro/tipo/descrição) + os 30
+campos de `dados_basicos`, pra colar do SAP (`POST /bitins/parse-sap-paste`,
+`scripts/sap_paste_parser.py::plan1_row_to_material_atual`, que agora extrai o "de" de todos
+os campos via `config/vba_mapping.json::plan1_dados_basicos_columns`) ou digitar na mão. Não
+tem indicadores nem coluna "Para" aqui — isso é declarado só na aba "BITin"
+(`MaterialEditorCard` em modo `somenteAlteracao`), material por material, reaproveitando o
+"de" já preenchido nesta tela. As colunas vêm do schema do backend
+(`GET /bitins/schema/materiais`), nunca hardcodadas no frontend.
+
+Decisão registrada com o usuário: "tudo que o engenheiro altera no bitin, ele manipula aquele
+JSON que eu te mandei" — os campos de `materiais[]` usados nas telas de edição são sempre os
+mesmos do JSON canônico (`GPT_Engineering_BITIN/schema.json`, refeito com o crosswalk real),
+nunca um campo novo inventado só pra UI.
+
+Status geral: **todas essas regras já valem pras 3 telas de edição** (`BitinDetail.tsx`,
+`CodigosSapPage.tsx`, `ListaTecnicaPage.tsx`) e pra visualização (mesma tela, travada quando
+não é mais rascunho).
+
 ## Crosswalk `dados_basicos` -> coluna "Novo" de `Plan2`
 
 O campo `para` de cada entrada em `dados_basicos` é exatamente o valor que vai para a coluna

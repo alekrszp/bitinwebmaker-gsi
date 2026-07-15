@@ -181,11 +181,16 @@ async def create_or_update_draft(
         created_at = now
         criado_por = current_user.email
 
+    # data_solicitacao é carimbada pelo sistema (data em que o rascunho foi salvo pela
+    # primeira vez), não escolhida livremente pelo engenheiro -- qualquer valor mandado pelo
+    # cliente pra esse campo é ignorado. Ver docs/BITIN_MODEL.md, "Regras de campo".
+    content = {**draft_in.content, "data_solicitacao": created_at[:10]}
+
     doc = {
         "_id": mongo_id,
         "status": STATUS_RASCUNHO,
         "titulo": draft_in.titulo or "Novo Rascunho",
-        "content": draft_in.content,
+        "content": content,
         "criado_por": criado_por,
         "created_at": created_at,
         "updated_at": now,
@@ -207,10 +212,18 @@ async def get_bitin(
     return _doc_to_response(doc, current_user)
 
 
+TERMO_CAMPO_MONGO = {
+    "motivo": "content.motivo",
+    "solicitante": "content.solicitante",
+    "codigo": "content.bitin",
+}
+
+
 @router.get("", response_model=list[BitinResponse])
 async def list_bitins(
     status: str | None = None,
     termo: str | None = None,
+    campo: str | None = None,
     limit: int = 20,
     skip: int = 0,
     current_user: Usuario = Depends(get_current_active_user),
@@ -229,11 +242,17 @@ async def list_bitins(
         # digitados pelo usuário (ex.: "(", "*") viram parte do padrão em vez de texto
         # literal, podendo causar matches inesperados ou custo de busca patológico.
         termo_escapado = re.escape(termo)
-        query["$or"] = [
-            {"content.motivo": {"$regex": termo_escapado, "$options": "i"}},
-            {"content.solicitante": {"$regex": termo_escapado, "$options": "i"}},
-            {"content.bitin": {"$regex": termo_escapado, "$options": "i"}},
-        ]
+        # `campo` restringe a busca a um campo específico (Motivo/Solicitante/Código) -- sem
+        # ele (ou com valor desconhecido), busca nos três de uma vez, como sempre foi.
+        campo_mongo = TERMO_CAMPO_MONGO.get(campo or "")
+        if campo_mongo:
+            query[campo_mongo] = {"$regex": termo_escapado, "$options": "i"}
+        else:
+            query["$or"] = [
+                {"content.motivo": {"$regex": termo_escapado, "$options": "i"}},
+                {"content.solicitante": {"$regex": termo_escapado, "$options": "i"}},
+                {"content.bitin": {"$regex": termo_escapado, "$options": "i"}},
+            ]
     cursor = collection.find(query).sort("updated_at", -1).skip(skip).limit(limit)
     docs = await cursor.to_list(length=limit)
     return [_doc_to_response(doc, current_user) for doc in docs]

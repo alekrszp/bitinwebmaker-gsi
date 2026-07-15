@@ -11,6 +11,7 @@ pydantic-settings==2.14.2
 python-jose[cryptography]==3.5.0
 passlib==1.7.4
 python-multipart==0.0.32
+alembic==1.18.5
 
 # Produção (Postgres real, ver docs/BACKEND.md) -- sem versão fixa de propósito: não está
 # instalado neste ambiente de dev (só SQLite é usado aqui), então não há uma versão "provada"

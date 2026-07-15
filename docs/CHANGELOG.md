@@ -2,6 +2,77 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v0.8.0] - 2026-07-15
+
+Rodada grande de três frentes: autenticação real (banco persistente + migrations, sessões
+revogáveis, senha forte), reformulação completa das telas de cadastro/edição de BITin
+(BITin/ZBPP009/Lista Técnica), e a paleta de cores oficial da marca. Escopo maior que os
+incrementos anteriores — bump de minor (0.7.2 → 0.8.0) em vez de patch, decisão do usuário.
+
+### Added — Autenticação
+
+- **Migrations Alembic** (`migrations/`, `alembic.ini`, novos): antes o schema era criado via
+  `Base.metadata.create_all()`, sem versionamento nenhum. Baseline + migration cobrindo os
+  campos/tabelas novos abaixo.
+- **`sessoes_usuario`**: sessão revogável por login — `POST /auth/logout` agora invalida o
+  token de verdade (antes era JWT puro, stateless, sem jeito de derrubar antes de expirar).
+- **`tentativas_login`**: rate limit de login persistido em banco (antes era um dict em
+  memória do processo — não sobrevivia a restart nem funcionava com múltiplos workers).
+- **`Usuario.numero_eng`, `email_verificado`, `updated_at`, `ultimo_acesso`** (colunas novas).
+- **Política de senha forte** (`validate_password_strength`): mínimo 8 caracteres + 3 dos 4
+  tipos de caractere, aplicada em registro e troca de senha (não retroativa).
+- **`POST /auth/change-password`** (novo): antes não existia jeito de trocar a própria senha
+  sem edição direta no banco. Revoga as outras sessões ativas ao trocar.
+- **Normalização de e-mail** (sempre minúsculo, registro e login): corrige um bug real —
+  e-mail cadastrado com maiúscula não conseguia logar se digitado diferente depois.
+
+### Added — Telas de BITin (BITin / ZBPP009 / Lista Técnica)
+
+- Cadastro e edição completos de um BITin: as três telas operam sobre o mesmo `materiais[]`,
+  nenhuma dependendo da outra pra existir.
+- **Checklist 100% manual** (`ChecklistTable.tsx`): tirada a sugestão automática a partir dos
+  campos do material — todo item precisa ser clicado pelo engenheiro. Layout em grade
+  responsiva (1–3 colunas) em vez de coluna única.
+- **ZBPP009** (renomeada de "Códigos SAP"): bug de colagem corrigido (interceptador de colar
+  agora funciona em qualquer célula da linha, não só a primeira).
+- **Lista Técnica** virou página independente estilo planilha — não depende mais de materiais
+  já cadastrados.
+- **Bloco de material simplificado**: "Atualizar DWG/SAT" e "Centro de custo"/"Conta razão"
+  saíram, viraram itens/anotação da checklist. Campo "Tipo" escondido no bloco (continua
+  visível na ZBPP009, que é a réplica fiel da grade real do SAP).
+- **`AjudaPopover.tsx`** (novo): ícone "?" com tutorial resumido nas três telas.
+- **Excluir rascunho** direto na listagem "Meus Bitins", além de dentro do BITin.
+- **Data de envio em `DD.MM.YYYY`**.
+
+### Changed — Regras de negócio
+
+- `scripts/bitin_business_rules.py` só bloqueia envio por regras verificáveis a partir do
+  próprio BITin (Nota 8, Nota 10). Regras que dependem de confirmação externa (Nota 2 —
+  desenho aprovado; Nota 17 — aprovação fiscal de NCM) não bloqueiam mais o envio — não havia
+  (nem há) campo de UI pra satisfazê-las, travar nelas era travar pra sempre.
+
+### Added — Interface
+
+- **Configurações**: "Minha conta" ganhou troca de senha self-service; layout mais largo,
+  campos longos (e-mail) não estouram mais o card, tabela de usuários rola em vez de cortar
+  colunas.
+- **Paleta de cores oficial da marca**: tokens de marca (`brand-navy`, `brand-gold`,
+  `brand-green`, `brand-orange`, `brand-navy-light` novo) atualizados pros valores do guia
+  oficial (hex/CMYK/Pantone), substituindo a aproximação anterior tirada dos arquivos de logo.
+
+### Fixed
+
+- `normalizarMaterial()`: material salvo antes de um campo existir no schema (ex.:
+  `lista_tecnica`) quebrava a tela inteira (`Cannot read properties of undefined`), sem error
+  boundary nenhum.
+
+### Validação
+
+- Backend: 192 testes (158 → 192), todos verdes.
+- `npm run typecheck`/`lint`/`test`/`build` limpos.
+- Migrations testadas contra uma cópia do `bitin_backend.db` real antes de aplicar no arquivo
+  de verdade (nunca rodadas direto no original sem cópia primeiro).
+
 ## [v0.7.2] - 2026-07-14
 
 Primeiro pedaço de verdade da tela de Bitins desde o reset da v0.5.0: listagem "Meus Bitins"

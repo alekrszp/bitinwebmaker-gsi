@@ -28,6 +28,15 @@ async def lifespan(app: FastAPI):
             "SECRET_KEY não pode ser o valor padrão com ENVIRONMENT=production. "
             "Configure uma SECRET_KEY real via .env antes de subir em produção."
         )
+    # Mantido como conveniência de dev/teste (adicionado o Alembic em 2026-07-15, ver
+    # migrations/ e docs/BACKEND.md): tests/test_backend_*.py criam um SQLite em memória por
+    # teste e chamam Base.metadata.create_all diretamente (não passam por este lifespan, nem
+    # por migração nenhuma) -- então remover esta linha não afetaria os testes, mas
+    # continuaria criando qualquer tabela nova automaticamente em dev local sem precisar
+    # rodar `alembic upgrade head` toda hora. Idempotente (CREATE TABLE IF NOT EXISTS), então
+    # não conflita com um banco já migrado via Alembic -- mas a partir de agora, Alembic é a
+    # fonte de verdade pra mudança de schema (novas colunas/tabelas viram migração, não só
+    # uma mudança em auth/models.py ou models_sql.py).
     Base.metadata.create_all(bind=engine)
     await connect_to_mongo()
     logger.info("BITin API iniciada (ambiente=%s)", settings.ENVIRONMENT)

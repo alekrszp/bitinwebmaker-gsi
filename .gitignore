@@ -2,4 +2,10 @@ __pycache__/
 *.pyc
 tmp_*
 *.db
+*.db.bak*
 .env
+
+# Rascunhos de design (ER diagram/notas de fluxo) -- cumpriram o papel (viraram o schema real
+# de auth em 2026-07-15), decisão do usuário de não versionar.
+Fluxo.md
+Diagrama do sistema de engenharia.excalidraw.*

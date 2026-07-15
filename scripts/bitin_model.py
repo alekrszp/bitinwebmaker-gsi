@@ -153,7 +153,7 @@ DADOS_BASICOS_LABELS = {
 
 def _humanize_label(campo: str) -> str:
     """Fallback só pra campo novo no crosswalk sem entrada em DADOS_BASICOS_LABELS ainda --
-    todos os 29 campos atuais já têm rótulo explícito (com acentuação correta em português,
+    todos os 30 campos atuais já têm rótulo explícito (com acentuação correta em português,
     que um capitalize() ingênuo não reproduz)."""
     return " ".join(palavra.capitalize() for palavra in campo.split("_"))
 
@@ -162,7 +162,13 @@ def build_materiais_schema(vba_mapping_config: dict[str, Any], document_config: 
     """Monta a definição de colunas do grid de materiais (frontend) a partir do crosswalk
     já existente (`bitin_schema_crosswalk`) e dos valores válidos do POP (`valores_validos`).
     Fonte única de verdade: o frontend não deve hardcodar essas colunas (ver docs/BACKEND.md,
-    'Grid de materiais dirigido por schema')."""
+    'Grid de materiais dirigido por schema').
+
+    `dados_basicos` cobre os 30 campos reais da ZBPP009 (não um recorte) -- a tela Códigos SAP
+    é idêntica à ZBPP009 (decisão do usuário, 2026-07-15) e usa essa mesma lista pra montar as
+    colunas da tabela; a aba BITin usa a mesma lista pra oferecer os campos conhecidos no
+    "+Campo" (o resto do texto digitado que não bate com nenhuma dessas chaves vira nota
+    livre, ver AlteracaoTable/MaterialEditorCard)."""
     crosswalk = vba_mapping_config["bitin_schema_crosswalk"]
     valores_validos = document_config["valores_validos"]
 
@@ -172,12 +178,6 @@ def build_materiais_schema(vba_mapping_config: dict[str, Any], document_config: 
         {"key": "centro", "label": "Centro", "required": True},
         {"key": "tipo_material", "label": "Tipo Material", "required": True},
     ]
-    snapshot = [
-        {"key": "grupo_mercadorias_atual", "label": "Grupo Mercadorias (atual)", "type": "text"},
-        {"key": "tem_desenho", "label": "Tem desenho (atual)", "type": "boolean"},
-        {"key": "desenho_aprovado", "label": "Desenho aprovado", "type": "boolean"},
-        {"key": "ncm_aprovado_fiscal", "label": "NCM aprovado (fiscal)", "type": "boolean"},
-    ]
     dados_basicos = [
         {"key": campo, "label": DADOS_BASICOS_LABELS.get(campo, _humanize_label(campo))}
         for campo in crosswalk["dados_basicos"]
@@ -186,24 +186,10 @@ def build_materiais_schema(vba_mapping_config: dict[str, Any], document_config: 
         {"key": campo, "label": IMPACTOS_OPERACIONAIS_LABELS[campo], "options": valores_validos[campo]}
         for campo in ("alt", "est", "esp", "lp", "pre", "oc", "of")
     ]
-    impactos_condicionais = [
-        {
-            "key": "centro_custo",
-            "label": "Centro de custo",
-            "required_when": {"field": "impactos_operacionais.est", "equals": "S"},
-        },
-        {
-            "key": "conta_razao",
-            "label": "Conta razão",
-            "required_when": {"field": "impactos_operacionais.est", "equals": "S"},
-        },
-    ]
     return {
         "identificacao": identificacao,
-        "snapshot": snapshot,
         "dados_basicos": dados_basicos,
         "impactos_operacionais": impactos_operacionais,
-        "impactos_condicionais": impactos_condicionais,
     }
 
 

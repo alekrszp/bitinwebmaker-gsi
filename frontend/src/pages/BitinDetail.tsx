@@ -1,148 +1,332 @@
 import { useEffect, useState } from 'react'
-import { Link, useParams } from 'react-router-dom'
+import { Link, useNavigate, useParams } from 'react-router-dom'
+import AjudaPopover from '../components/bitin/AjudaPopover'
+import DadosGeraisCard from '../components/bitin/DadosGeraisCard'
+import EdicaoBottomBar from '../components/bitin/EdicaoBottomBar'
+import ErrosEnvioBanner from '../components/bitin/ErrosEnvioBanner'
+import MateriaisSection from '../components/bitin/MateriaisSection'
+import OrdemClienteSection from '../components/bitin/OrdemClienteSection'
+import StatusBadge from '../components/bitin/StatusBadge'
+import { useAuth } from '../context/AuthContext'
 import { api } from '../lib/api'
+import { materialVazio, normalizarMaterial } from '../lib/bitinDefaults'
+import type { BitinResumo } from '../lib/bitinTypes'
+import { useEnviarBitin } from '../lib/useEnviarBitin'
+import type { Bitin, MateriaisSchema, MaterialEditavel } from '../lib/types'
 
-// Visualização mínima só-leitura (decidida com o usuário, ver docs/FRONTEND.md) -- usa
-// GET /bitins/{mongo_id}/resumo (scripts/bitin_view.py::render_bitin_summary), que já monta
-// os dados legíveis (diffs de campo, impactos operacionais) em vez de reimplementar essa
-// lógica no frontend a partir do content bruto. Edição fica pra uma rodada futura.
-interface CampoAlterado {
-  campo: string
-  de: string
-  para: string
-}
-
-interface MaterialResumo {
-  codigo_material: string
-  descricao_material: string
-  centro: string
-  tipo_material: string
-  impactos_operacionais: Record<string, unknown>
-  dados_basicos_alterados: CampoAlterado[]
-  lista_tecnica: unknown[]
-}
-
-interface BitinResumo {
-  bitin: string
-  status: string
-  data_envio: string | null
-  setor: string
-  produto: string
-  motivo: string
-  solicitante: string
-  data_solicitacao: string
-  materiais: MaterialResumo[]
-}
-
+// Visualização e edição são a mesma tela (decisão do usuário, 2026-07-14): "clicar num BITin
+// em rascunho já abre editável, não é mais só visualização". Um BITin enviado usa a mesma
+// estrutura, só que travada (sem inputs). /bitins/novo e /bitins/:mongoId caem os dois aqui --
+// sem mongoId é criação em branco, com mongoId é editar (rascunho) ou visualizar (enviado).
+//
+// GET /bitins/{mongo_id}/resumo (scripts/bitin_view.py::render_bitin_summary) continua sendo
+// a fonte dos dados legíveis (checklist, setores acionados, indicadores, diffs) pro modo
+// só-leitura -- não reimplementado aqui. GET /bitins/{mongo_id} traz o content bruto (editável)
+// + pode_editar.
+//
+// Aba "BITin" (2026-07-15, renomeada de "Dados gerais"): mesma estrutura da visualização
+// quando enviado, só que editável -- código/centro/descrição/indicadores/alteração de dados
+// básicos ficam todos num bloco por material (MaterialEditorCard, via MateriaisSection). O
+// engenheiro pode cadastrar um material inteiro à mão nesta aba ("+ Novo material") sem nunca
+// abrir Códigos SAP -- as duas telas leem/escrevem o mesmo materiais[] do JSON, nenhuma
+// depende da outra (decisão do usuário: "tudo se conecta, tudo se complementa, nada depende
+// de um do outro"). Depois de salvar, checklist/setores acionados são recalculados a partir
+// do que foi declarado.
+//
+// Esta página só cuida de estado + carregamento/salvamento -- o layout fica nos componentes
+// de components/bitin/ (DadosGeraisCard, MateriaisSection, etc.), decisão do usuário
+// (2026-07-15: "não ta nada componentizado o bitindetail, ajusta isso").
 export default function BitinDetail() {
   const { mongoId } = useParams<{ mongoId: string }>()
+  const isNovo = !mongoId
+  const navigate = useNavigate()
+  const { user } = useAuth()
+  const { enviando, errosEnvio, enviar } = useEnviarBitin(mongoId)
+
+  // Campos editáveis (dados gerais + materiais).
+  const [produto, setProduto] = useState('')
+  const [motivo, setMotivo] = useState('')
+  const [solicitante, setSolicitante] = useState(isNovo ? (user?.nome ?? '') : '')
+  const [setor, setSetor] = useState('')
+  const [materiais, setMateriais] = useState<MaterialEditavel[]>([])
+  const [checklistOverrides, setChecklistOverrides] = useState<Record<string, boolean>>({})
+  const [checklistDescricoes, setChecklistDescricoes] = useState<Record<string, string>>({})
+  const [conteudoExistente, setConteudoExistente] = useState<Record<string, unknown>>({})
+  const [schema, setSchema] = useState<MateriaisSchema | null>(null)
+
+  // Estado do documento (o que veio do backend).
+  const [status, setStatus] = useState('rascunho')
+  const [podeEditar, setPodeEditar] = useState(true)
+  const [codigo, setCodigo] = useState<string | null>(null)
   const [resumo, setResumo] = useState<BitinResumo | null>(null)
+
+  const [carregando, setCarregando] = useState(!isNovo)
+  const [bloqueado, setBloqueado] = useState(false)
   const [erro, setErro] = useState<string | null>(null)
+  const [salvando, setSalvando] = useState(false)
+  const [excluindo, setExcluindo] = useState(false)
+
+  const editavel = isNovo || (status === 'rascunho' && podeEditar)
 
   useEffect(() => {
+    if (isNovo) return
     let cancelado = false
-    setResumo(null)
-    setErro(null)
     api
-      .get(`/bitins/${mongoId}/resumo`)
+      .get<Bitin>(`/bitins/${mongoId}`)
       .then((resp) => {
-        if (!cancelado) setResumo(resp.data)
+        if (cancelado) return
+        const b = resp.data
+        if (!b.pode_editar && b.status === 'rascunho') {
+          setBloqueado(true)
+          return
+        }
+        setStatus(b.status)
+        setPodeEditar(b.pode_editar)
+        setCodigo(b.codigo)
+        const content = b.content
+        setProduto(String(content.produto ?? ''))
+        setMotivo(String(content.motivo ?? ''))
+        setSolicitante(String(content.solicitante ?? user?.nome ?? ''))
+        setSetor(String(content.setor ?? ''))
+        setMateriais(((content.materiais as MaterialEditavel[] | undefined) ?? []).map(normalizarMaterial))
+        setChecklistOverrides((content.checklist_overrides as Record<string, boolean> | undefined) ?? {})
+        setChecklistDescricoes((content.checklist_descricoes as Record<string, string> | undefined) ?? {})
+        setConteudoExistente(content)
       })
-      .catch(() => {
-        if (!cancelado) setErro('Não foi possível carregar este BITin.')
-      })
+      .catch(() => setErro('Não foi possível carregar este BITin.'))
+      .finally(() => setCarregando(false))
     return () => {
       cancelado = true
     }
-  }, [mongoId])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isNovo, mongoId])
+
+  useEffect(() => {
+    api
+      .get<MateriaisSchema>('/bitins/schema/materiais')
+      .then((resp) => setSchema(resp.data))
+      .catch(() => {})
+  }, [])
+
+  async function carregarResumo() {
+    if (isNovo) return
+    try {
+      const resp = await api.get(`/bitins/${mongoId}/resumo`)
+      setResumo(resp.data)
+    } catch {
+      // silencioso -- o resumo é complementar (checklist/setores), a tela principal já
+      // funciona sem ele
+    }
+  }
+
+  useEffect(() => {
+    carregarResumo()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isNovo, mongoId])
+
+  function atualizarMaterial(index: number, atualizado: MaterialEditavel) {
+    setMateriais((atual) => atual.map((m, i) => (i === index ? atualizado : m)))
+  }
+
+  function adicionarMaterial() {
+    setMateriais((atual) => [...atual, materialVazio()])
+  }
+
+  function removerMaterial(index: number) {
+    setMateriais((atual) => atual.filter((_, i) => i !== index))
+  }
+
+  // Sempre parte do estado atual de TODOS os campos editáveis (não só `conteudoExistente`,
+  // que só é atualizado depois de um POST bem-sucedido) -- salvar a checklist sozinha não
+  // pode reverter um material que acabou de ser adicionado e ainda não foi salvo por aqui
+  // (bug real encontrado em 2026-07-15: clicar na checklist logo após "+ Novo material"
+  // apagava o material porque usava um `conteudoExistente` desatualizado).
+  function montarConteudo(extra?: Record<string, unknown>): Record<string, unknown> {
+    // Um "+ Novo material" clicado mas ainda não preenchido não vira material de verdade no
+    // que é salvo -- só filtra o payload enviado, o card em branco continua na tela pro
+    // engenheiro terminar de preencher (bug real encontrado em 2026-07-15 no mesmo padrão em
+    // Códigos SAP: linha em branco virando "material fantasma" e disparando erros de
+    // validação bobos no envio).
+    const materiaisPreenchidos = materiais.filter((m) => m.codigo_material.trim() !== '')
+    return {
+      ...conteudoExistente,
+      produto,
+      motivo,
+      solicitante,
+      setor,
+      materiais: materiaisPreenchidos,
+      checklist_overrides: checklistOverrides,
+      checklist_descricoes: checklistDescricoes,
+      ...extra,
+    }
+  }
+
+  function alternarDescricaoChecklist(id: string, descricao: string) {
+    setChecklistDescricoes((atual) => ({ ...atual, [id]: descricao }))
+  }
+
+  async function alternarChecklist(id: string, afeta: boolean) {
+    const overridesAtualizados = { ...checklistOverrides, [id]: afeta }
+    setChecklistOverrides(overridesAtualizados)
+    if (isNovo) return
+    try {
+      const resp = await api.post('/bitins/draft', {
+        mongo_id: mongoId,
+        content: montarConteudo({ checklist_overrides: overridesAtualizados }),
+      })
+      setConteudoExistente(resp.data.content)
+      await carregarResumo()
+    } catch {
+      setErro('Não foi possível salvar a checklist. Tente novamente.')
+    }
+  }
+
+  async function salvar(): Promise<string | null> {
+    setErro(null)
+    setSalvando(true)
+    try {
+      const resp = await api.post('/bitins/draft', {
+        mongo_id: mongoId,
+        content: montarConteudo(),
+      })
+      const novoId = resp.data.mongo_id as string
+      setConteudoExistente(resp.data.content)
+      if (isNovo) {
+        navigate(`/bitins/${novoId}`, { replace: true })
+      } else {
+        await carregarResumo()
+      }
+      return novoId
+    } catch {
+      setErro('Não foi possível salvar. Tente novamente.')
+      return null
+    } finally {
+      setSalvando(false)
+    }
+  }
+
+  async function handleEnviar() {
+    const id = await salvar()
+    if (id) await enviar()
+  }
+
+  async function handleExcluir() {
+    if (!mongoId) return
+    if (!window.confirm('Excluir este rascunho? Essa ação não pode ser desfeita.')) return
+    setExcluindo(true)
+    setErro(null)
+    try {
+      await api.delete(`/bitins/${mongoId}`)
+      navigate('/bitins', { replace: true })
+    } catch {
+      setErro('Não foi possível excluir. Tente novamente.')
+      setExcluindo(false)
+    }
+  }
+
+  if (carregando) {
+    return <p className="text-sm text-ink-muted">Carregando...</p>
+  }
+
+  if (bloqueado) {
+    return (
+      <div className="mx-auto max-w-2xl">
+        <p className="text-sm text-ink-muted">
+          Este BITin já foi enviado ou você não tem permissão pra editá-lo.
+        </p>
+        <Link to="/bitins" className="mt-2 inline-block text-sm text-ink-muted hover:text-ink hover:underline">
+          Voltar pra Meus Bitins
+        </Link>
+      </div>
+    )
+  }
 
   return (
-    <div className="mx-auto max-w-3xl">
+    <div className="mx-auto max-w-[1600px] pb-24">
       <Link to="/bitins" className="text-sm text-ink-muted hover:text-ink hover:underline">
         ← Voltar pra Meus Bitins
       </Link>
 
-      {erro && <p className="mt-4 text-sm text-red-600">{erro}</p>}
-      {!resumo && !erro && <p className="mt-4 text-sm text-ink-muted">Carregando...</p>}
+      <div className="mt-3 flex flex-wrap items-center gap-3">
+        <h1 className="text-2xl font-semibold text-ink">
+          {isNovo ? 'Novo BITin' : codigo || 'Rascunho sem código'}
+        </h1>
+        {!isNovo && <StatusBadge status={status} />}
+        {editavel && (
+          <AjudaPopover titulo="Como usar a aba BITin">
+            <p>
+              A checklist é inteiramente manual -- nada é marcado automaticamente a partir dos
+              materiais. Um material pode ser cadastrado inteiramente aqui ("+ Novo material") ou
+              importado da tela ZBPP009; as duas telas operam sobre os mesmos dados e nenhuma
+              depende da outra.
+            </p>
+            <p>
+              Lembretes de envio: qualquer item da checklist marcado "Sim" que exija descrição
+              precisa dela preenchida (Nota 8). Aprovação de desenho técnico e de NCM não são
+              verificadas pelo sistema -- é responsabilidade do engenheiro confirmar antes de
+              enviar.
+            </p>
+          </AjudaPopover>
+        )}
 
-      {resumo && (
-        <>
-          <div className="mt-3 flex items-center gap-3">
-            <h1 className="text-2xl font-semibold text-ink">{resumo.bitin || 'Rascunho sem código'}</h1>
-            <StatusBadge status={resumo.status} />
-          </div>
+        {editavel && !isNovo && (
+          <button
+            type="button"
+            onClick={handleExcluir}
+            disabled={excluindo || salvando || enviando}
+            className="ml-auto rounded-lg border border-red-600/40 px-4 py-2 text-sm font-medium text-red-600 transition-colors hover:bg-red-600/10 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {excluindo ? 'Excluindo...' : 'Excluir rascunho'}
+          </button>
+        )}
 
-          <section className="mt-6 rounded-lg border border-line bg-surface p-5">
-            <h2 className="text-sm font-semibold uppercase tracking-wide text-ink-muted">Dados gerais</h2>
-            <dl className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
-              <InfoField label="Setor" value={resumo.setor} />
-              <InfoField label="Produto" value={resumo.produto} />
-              <InfoField label="Motivo" value={resumo.motivo} />
-              <InfoField label="Solicitante" value={resumo.solicitante} />
-              <InfoField label="Data da solicitação" value={resumo.data_solicitacao} />
-              <InfoField label="Data de envio" value={resumo.data_envio ?? '—'} />
-            </dl>
-          </section>
+        {editavel && (
+          <button
+            type="button"
+            onClick={salvar}
+            disabled={salvando || enviando}
+            className={`rounded-lg border border-line px-4 py-2 text-sm font-medium text-ink-muted transition-colors hover:bg-surface-alt disabled:cursor-not-allowed disabled:opacity-60 ${isNovo ? 'ml-auto' : ''}`}
+          >
+            {salvando ? 'Salvando...' : 'Salvar'}
+          </button>
+        )}
+      </div>
 
-          {resumo.materiais.map((material) => (
-            <section key={material.codigo_material} className="mt-6 rounded-lg border border-line bg-surface p-5">
-              <h2 className="text-sm font-semibold uppercase tracking-wide text-ink-muted">
-                Material {material.codigo_material}
-              </h2>
-              <dl className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-3">
-                <InfoField label="Descrição" value={material.descricao_material || '—'} />
-                <InfoField label="Centro" value={material.centro} />
-                <InfoField label="Tipo" value={material.tipo_material} />
-              </dl>
+      {erro && <p className="mt-3 text-sm text-red-600">{erro}</p>}
+      <ErrosEnvioBanner erros={errosEnvio} />
 
-              {material.dados_basicos_alterados.length > 0 && (
-                <div className="mt-4 overflow-hidden rounded border border-line">
-                  <table className="w-full text-left text-sm">
-                    <thead>
-                      <tr className="bg-surface-alt text-xs uppercase tracking-wide text-ink-muted">
-                        <th className="px-3 py-2 font-medium">Campo alterado</th>
-                        <th className="px-3 py-2 font-medium">De</th>
-                        <th className="px-3 py-2 font-medium">Para</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-line">
-                      {material.dados_basicos_alterados.map((diff) => (
-                        <tr key={diff.campo}>
-                          <td className="px-3 py-2 text-ink">{diff.campo}</td>
-                          <td className="px-3 py-2 text-ink-muted">{diff.de || '—'}</td>
-                          <td className="px-3 py-2 text-ink-muted">{diff.para}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-            </section>
-          ))}
-        </>
+      <DadosGeraisCard
+        editavel={editavel}
+        produto={produto}
+        motivo={motivo}
+        solicitante={solicitante}
+        setor={setor}
+        onProdutoChange={setProduto}
+        onMotivoChange={setMotivo}
+        onSolicitanteChange={setSolicitante}
+        onSetorChange={setSetor}
+        resumo={resumo}
+        onToggleChecklist={alternarChecklist}
+        onChecklistDescricaoChange={alternarDescricaoChecklist}
+      />
+
+      {resumo && <OrdemClienteSection itens={resumo.ordem_cliente} />}
+
+      <MateriaisSection
+        editavel={editavel}
+        schema={schema}
+        materiais={materiais}
+        onChangeMaterial={atualizarMaterial}
+        onAddMaterial={adicionarMaterial}
+        onRemoveMaterial={removerMaterial}
+        materiaisResumo={resumo?.materiais ?? null}
+        mongoId={mongoId}
+        isNovo={isNovo}
+      />
+
+      {editavel && !isNovo && mongoId && (
+        <EdicaoBottomBar mongoId={mongoId} enviando={enviando || salvando} onEnviar={handleEnviar} />
       )}
     </div>
-  )
-}
-
-function InfoField({ label, value }: { label: string; value: string }) {
-  return (
-    <div>
-      <dt className="text-xs uppercase tracking-wide text-ink-muted">{label}</dt>
-      <dd className="mt-0.5 text-sm text-ink">{value || '—'}</dd>
-    </div>
-  )
-}
-
-function StatusBadge({ status }: { status: string }) {
-  const enviado = status === 'enviado'
-  return (
-    <span
-      className={`inline-block rounded-full px-2.5 py-0.5 text-xs font-medium ${
-        enviado ? 'bg-brand-green/15 text-brand-green' : 'bg-brand-gold/15 text-brand-gold'
-      }`}
-    >
-      {enviado ? 'Enviado' : 'Rascunho'}
-    </span>
   )
 }

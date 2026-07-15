@@ -40,6 +40,14 @@ class GerarBitinSqlTest(unittest.TestCase):
         bitin_sql = gerar_e_salvar_bitin_sql(db, "Proteína Animal", "mongo-id-2")
         self.assertIsNone(bitin_sql.criado_por)
 
+    def test_codigo_segue_padrao_y_xxxx_barra_aa(self) -> None:
+        """YXXXX/AA -- Y=prefixo do setor, XXXX=sequencial com 4 dígitos (zero-padded),
+        AA=ano com 2 dígitos. Confirmado com o usuário em 2026-07-14."""
+        db = self.Session()
+        bitin_sql = gerar_e_salvar_bitin_sql(db, "Proteína Animal", "mongo-id-formato")
+        ano = str(bitin_sql.ano).zfill(2)
+        self.assertEqual(bitin_sql.codigo, f"P0001/{ano}")
+
     def test_criado_por_aceita_valor_quando_informado(self) -> None:
         db = self.Session()
         bitin_sql = gerar_e_salvar_bitin_sql(
