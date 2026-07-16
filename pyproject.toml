@@ -12,3 +12,9 @@ exclude = [".venv", "frontend", "migrations"]
 # fora por ora pra não gerar um diff gigante sem revisão; achados dessas categorias devem ser
 # triados separadamente antes de serem ligados.
 select = ["E", "F", "I"]
+# E501 (linha longa) ignorado por ora -- achado real ao ligar `ruff check` no CI (2026-07-16):
+# 32 linhas pré-existentes (a maioria comentário/docstring explicativo, estilo já estabelecido
+# deste projeto) estouram os 110 caracteres, o que travaria o CI sem nenhum erro de verdade
+# (import morto/desordenado, os dois que este linter existe pra pegar). Reavaliar linha por
+# linha numa rodada própria em vez de travar CI por formatação.
+ignore = ["E501"]

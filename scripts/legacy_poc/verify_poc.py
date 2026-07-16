@@ -8,7 +8,7 @@ ROOT = Path(__file__).resolve().parent
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from export_from_itemsheet import export_items
+from export_from_itemsheet import export_items  # noqa: E402 -- precisa vir depois do sys.path.insert acima
 
 
 def read_lines(path: Path):
