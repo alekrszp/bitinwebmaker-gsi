@@ -204,12 +204,40 @@ estrutura de dados nova, não uma célula de planilha legada. Por isso o checkli
 `config/bitin_document_mapping.json`), que bateu com os dados reais, em vez da posição de
 linha literal do `.bas`.
 
-**Itens de checklist ainda sem regra automática** (`manual_only_checklist_ids`): DPO-PAN,
-Atualizar manual, Atualizar instrução de montagem, Elétrica/Embalagem/Montagem/Helicoides,
-Estamparia, Madeira ou Plástico, Atualizar custos — nenhuma regra no `Módulo4` lido determina
-esses automaticamente a partir dos campos que temos hoje; continuam dependendo de marcação
-manual. "Atualizar BITex" (id 11) é coberto parcialmente, só via o campo `bitex` do
-cabeçalho.
+**Checklist automático, restaurado em 2026-07-16 após auditoria real da macro**: até
+2026-07-15 a automação tinha sido removida inteira ("checklist é marcada manualmente"), por
+desconfiar das regras antigas (nunca verificadas contra o `.bas`). O usuário então relatou, na
+prática, que a planilha original marca sozinha a checklist ao digitar uma nota específica
+("quando colocado no campo nota salvar dwg ele marca sozinho a checklist") — o que motivou
+reabrir o `Módulo4.bas` e conferir grep por grep (`, 3) = "SIM"`) em todos os 20 módulos de
+`artifacts/vba/`. Resultado: `Módulo4.Preencher_Bitin` (linhas ~144-202) é a ÚNICA origem de
+automação em toda a macro, com exatamente 8 regras, agora portadas em
+`bitin_document._checklist_ids_auto_sugeridos`:
+
+1. Alt declarado → id via `alt_to_checklist_id` (D/- =1, D/P=2, D/F=3, -/P=4, -/F=5).
+2. Nota livre em `dados_basicos` igual, exatamente (case-sensitive), a `"SALVAR DWG"` ou
+   `"SALVAR SAT"` → id 18 ("Atualizar DWG / SAT"). Não é mais um checkbox — o antigo campo
+   `impactos_operacionais.atualizar_dwg_sat` foi removido do frontend; o único jeito de
+   acionar isso é a nota de texto batendo exatamente com uma dessas duas strings.
+3. `Est` fora de `{"", "-"}` → id 8 ("Retrabalhar ou descartar estoque").
+4. `Est == "S"` → id 22 ("Centro de custo (se tem sucata)", sucateamento, POP Nota 8).
+5. `LP` fora de `{"", "-"}` → id 19 ("Lista de preço").
+6. `PRE` fora de `{"", "-"}` → id 20 ("Precificação").
+7. `OC` fora de `{"", "-"}` → id 10 ("Ordem de cliente").
+8. `OF` fora de `{"", "-"}` → id 17 ("Atualizar ordem de fabricação").
+
+Em todos os casos, `checklist_overrides` (clique manual do engenheiro) continua vencendo a
+sugestão automática, nos dois sentidos.
+
+**Itens de checklist ainda sem regra automática** (`manual_only_checklist_ids`): "Especificações
+técnicas" (id 6) e "Alteração lista técnica" (id 7) — confirmado na auditoria: nenhuma regra os
+ativa automaticamente, nem na macro real, apesar de serem código de item de checklist "normal"
+como os outros. Além deles: DPO-PAN, Atualizar manual, Atualizar instrução de montagem,
+Elétrica/Embalagem/Montagem/Helicoides, Estamparia, Madeira ou Plástico, Atualizar custos —
+nenhuma regra no `Módulo4` lido determina esses automaticamente a partir dos campos que temos
+hoje; continuam dependendo de marcação manual. "Atualizar BITex" (id 11) é coberto parcialmente,
+só via o campo `bitex` do cabeçalho — mas nem esse campo aciona nada sozinho (bitex não faz
+parte das 8 regras confirmadas), fica 100% manual também.
 
 **Campo `bitex` adicionado ao cabeçalho do BITin** (visto no `Template apresentação` real,
 linha 2: `"BITex" / "NÃO"`) — não estava em `schema.json`; usado só para o checklist id 11.

@@ -2,17 +2,25 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import false
 from sqlalchemy.orm import Session
 
-from backend.auth.deps import check_permission, get_current_active_user
+from backend.auth.deps import (
+    NIVEL_ADMIN,
+    NIVEL_GESTOR,
+    check_permission,
+    get_current_active_user,
+)
 from backend.auth.models import Usuario, usuario_setores
 from backend.auth.routes import _resolve_setores
-from backend.auth.schemas import AdminUserCreate, AdminUserCreateOut, UserOut, UserUpdatePermission
+from backend.auth.schemas import (
+    NIVEIS_QUE_EXIGEM_SETOR,
+    AdminUserCreate,
+    AdminUserCreateOut,
+    UserOut,
+    UserUpdatePermission,
+)
 from backend.auth.security import generate_temp_password, get_password_hash
 from backend.db.session import get_db
 
 router = APIRouter()
-
-GESTOR_LEVEL = 1
-ADMIN_LEVEL = 99
 
 
 def _setor_ids_do(db: Session, user_id: int) -> list[int]:
@@ -47,7 +55,7 @@ def read_current_user(current_user: Usuario = Depends(get_current_active_user)) 
 def create_user_by_admin(
     user_in: AdminUserCreate,
     db: Session = Depends(get_db),
-    _current_user: Usuario = Depends(check_permission(99)),  # só admin cadastra usuário
+    _current_user: Usuario = Depends(check_permission(NIVEL_ADMIN)),  # só admin cadastra usuário
 ) -> AdminUserCreateOut:
     """Cadastro de conta nova SÓ POR ADMIN (2026-07-15, pedido explícito: "tela de cadastro de
     usuário SÓ PARA ADMIN para não ter que cadastrar no banco"). Diferente de
@@ -61,6 +69,15 @@ def create_user_by_admin(
     existing = db.query(Usuario).filter(Usuario.email == email_normalizado).first()
     if existing:
         raise HTTPException(status_code=400, detail="E-mail já cadastrado")
+
+    # Usuário/Gestor/Cadastro (66/77/88) precisam de ao menos um Setor -- 2026-07-16, revisão
+    # do modelo de permissões (só Admin, 99, enxerga tudo sem escopo nenhum e por isso pode
+    # ficar sem setor). Mesmo estilo de erro 400 de _resolve_setores logo abaixo.
+    if user_in.permission_level in NIVEIS_QUE_EXIGEM_SETOR and not user_in.sector_ids:
+        raise HTTPException(
+            status_code=400,
+            detail="Este nível de permissão exige ao menos um setor -- selecione um setor antes de cadastrar.",
+        )
 
     setores = _resolve_setores(db, user_in.sector_ids)
 
@@ -90,13 +107,15 @@ def list_users(
     skip: int = 0,
     limit: int = 100,
     db: Session = Depends(get_db),
-    current_user: Usuario = Depends(check_permission(1)),  # gestor ou admin
+    # Gestor ou Admin -- NÃO Cadastro (2026-07-16, revisão do modelo de permissões: Cadastro
+    # cadastra/edita BITins mas não gerencia usuários).
+    current_user: Usuario = Depends(check_permission(NIVEL_GESTOR, NIVEL_ADMIN)),
 ) -> list[UserOut]:
     # Admin continua vendo todo mundo. Gestor (2026-07-15, pedido explícito: "gestor... só ver
     # listagem de usuários do setor que ele é gestor") só vê quem compartilha ao menos um Setor
     # com ele -- um gestor sem setor nenhum não vê ninguém (não cai pra "vê todo mundo" por
     # omissão, ver _usuarios_do_mesmo_setor_query).
-    if current_user.permission_level >= ADMIN_LEVEL:
+    if current_user.permission_level >= NIVEL_ADMIN:
         query = db.query(Usuario)
     else:
         query = _usuarios_do_mesmo_setor_query(db, current_user)
@@ -108,9 +127,9 @@ def list_users(
 def get_user(
     user_id: int,
     db: Session = Depends(get_db),
-    current_user: Usuario = Depends(check_permission(1)),
+    current_user: Usuario = Depends(check_permission(NIVEL_GESTOR, NIVEL_ADMIN)),
 ) -> UserOut:
-    if current_user.permission_level >= ADMIN_LEVEL:
+    if current_user.permission_level >= NIVEL_ADMIN:
         user = db.query(Usuario).filter(Usuario.id == user_id).first()
     else:
         # 404 (não 403) pra quem está fora do(s) setor(es) do gestor -- não vaza que o id
@@ -126,11 +145,19 @@ def update_user_permission(
     user_id: int,
     payload: UserUpdatePermission,
     db: Session = Depends(get_db),
-    _current_user: Usuario = Depends(check_permission(99)),  # só admin promove/rebaixa
+    _current_user: Usuario = Depends(check_permission(NIVEL_ADMIN)),  # só admin promove/rebaixa
 ) -> UserOut:
     user = db.query(Usuario).filter(Usuario.id == user_id).first()
     if not user:
         raise HTTPException(status_code=404, detail="Usuário não encontrado")
+    # Admin nunca pode ser rebaixado por essa rota (2026-07-16, proteção contra ficar sem
+    # nenhum admin no sistema por engano) -- vale independente de quem está chamando, mesmo
+    # outro admin. Não há rota nenhuma pra "despromover" um admin; se for realmente
+    # necessário, é edição direta no banco.
+    if user.permission_level == NIVEL_ADMIN:
+        raise HTTPException(
+            status_code=400, detail="Não é possível alterar a permissão de um administrador.",
+        )
     user.permission_level = payload.permission_level
     db.add(user)
     db.commit()

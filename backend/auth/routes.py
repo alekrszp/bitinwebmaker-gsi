@@ -13,7 +13,13 @@ from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
 
 from backend.auth import rate_limit
-from backend.auth.deps import get_current_active_user, get_current_user, oauth2_scheme
+from backend.auth.deps import (
+    NIVEL_ADMIN,
+    NIVEL_USUARIO,
+    get_current_active_user,
+    get_current_user,
+    oauth2_scheme,
+)
 from backend.auth.models import SessaoUsuario, Setor, Usuario
 from backend.auth.schemas import ChangePasswordRequest, Token, UserCreate, UserOut
 from backend.auth.security import create_access_token, get_password_hash, hash_token, verify_password
@@ -21,8 +27,6 @@ from backend.config import settings
 from backend.db.session import get_db
 
 router = APIRouter()
-
-ADMIN_LEVEL = 99
 
 
 def _resolve_setores(db: Session, sector_ids: list[int]) -> list[Setor]:
@@ -59,7 +63,7 @@ def register_user(user_in: UserCreate, db: Session = Depends(get_db)) -> UserOut
         network_id=user_in.network_id,
         setores=setores,
         numero_eng=user_in.numero_eng,
-        permission_level=ADMIN_LEVEL if is_first_user else 0,
+        permission_level=NIVEL_ADMIN if is_first_user else NIVEL_USUARIO,
         # email_verificado NUNCA vem do cliente -- mesma lição de permission_level acima.
         # Fica False no registro; não há fluxo de verificação de e-mail construído ainda,
         # só a coluna.

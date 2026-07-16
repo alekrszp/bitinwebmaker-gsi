@@ -4,6 +4,13 @@ from pydantic import BaseModel, EmailStr, field_validator
 
 from backend.auth.security import validate_password_strength
 
+# Níveis que exigem ao menos um Setor (2026-07-16, revisão do modelo de permissões) -- só
+# Admin (99) pode ficar sem setor. A checagem em si fica em
+# backend/api/users.py::create_user_by_admin (não aqui via pydantic validator) pra devolver
+# 400 com a mesma "voz" de erro de _resolve_setores, em vez do 422 genérico que um
+# field_validator/model_validator do pydantic geraria.
+NIVEIS_QUE_EXIGEM_SETOR = {66, 77, 88}
+
 
 class UserCreate(BaseModel):
     email: EmailStr

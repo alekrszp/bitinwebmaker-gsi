@@ -76,10 +76,10 @@ class BuildChecklistTest(unittest.TestCase):
     def setUp(self) -> None:
         self.config = bd.load_config(CONFIG_PATH)
 
-    def test_checklist_ignora_dados_dos_materiais_sem_override(self) -> None:
-        """Checklist é 100% manual (2026-07-15) -- mesmo com materiais que teriam ativado
-        vários itens no cálculo automático antigo (Alt/Esp/Est/OF/atualizar_dwg_sat), nada
-        fica 'afeta' sem override explícito do engenheiro (bitin teste 2.xlsm, P0812/26)."""
+    def test_checklist_ativa_automaticamente_a_partir_dos_materiais(self) -> None:
+        """Restaurado em 2026-07-16 (auditoria da macro real, Módulo4.bas): Alt/Est/OF
+        ativam os itens correspondentes automaticamente, sem precisar de override
+        (bitin teste 2.xlsm, P0812/26)."""
         bitin = {"bitin": "P0812/26", "produto": "Ninho", "motivo": "Ajustes de Campo"}
 
         nap_0734 = {
@@ -92,16 +92,18 @@ class BuildChecklistTest(unittest.TestCase):
         nap_5213 = {
             "codigo_material": "NAP-5213",
             "alteracoes": {
-                "impactos_operacionais": {"alt": "D/P", "est": "R", "of": "X", "atualizar_dwg_sat": True},
+                "impactos_operacionais": {"alt": "D/P", "est": "R", "of": "X"},
             },
         }
 
         checklist = bd.build_checklist(bitin, [nap_0734, nap_5213], self.config)
         afeta_ids = {item["id"] for item in checklist if item["afeta"]}
-        self.assertEqual(afeta_ids, set())
+        # est=R (não "-"/"") -> id 8; of=X -> id 17; alt=D/P -> id 2.
+        self.assertEqual(afeta_ids, {"8", "17", "2"})
 
-    def test_bitex_sim_nao_ativa_mais_checklist_id_11_sozinho(self) -> None:
-        # bitex=SIM não ativa mais nada sozinho -- checklist é 100% manual (2026-07-15).
+    def test_bitex_sim_nao_ativa_checklist_id_11_sozinho(self) -> None:
+        # bitex não faz parte das 8 regras confirmadas na macro real -- id 11 continua
+        # 100% manual (checklist_overrides), mesmo com bitex=SIM.
         bitin = {"bitin": "P1/26", "produto": "x", "motivo": "x", "bitex": "SIM"}
         checklist = bd.build_checklist(bitin, [], self.config)
         afeta_ids = {item["id"] for item in checklist if item["afeta"]}
@@ -131,9 +133,8 @@ class BuildChecklistTest(unittest.TestCase):
         self.assertTrue(item["manual"])
 
     def test_checklist_override_manual_desliga_item_mesmo_com_material_relacionado(self) -> None:
-        # Mesmo com um material cujo Alt indicaria alteração de desenho, sem override o item
-        # continua "não" (checklist não deriva mais de materiais); override explícito False
-        # continua marcado como "manual" (engenheiro já revisou aquele item).
+        # Material cujo Alt="D/-" auto-sugeriria o id 1 ("Desenho") -- override explícito False
+        # vence a sugestão automática e continua marcado como "manual" (engenheiro já revisou).
         nap_0734 = {
             "codigo_material": "NAP-0734",
             "alteracoes": {"impactos_operacionais": {"alt": "D/-"}},
@@ -144,9 +145,132 @@ class BuildChecklistTest(unittest.TestCase):
         self.assertFalse(item["afeta"])
         self.assertTrue(item["manual"])
 
+    def test_checklist_override_manual_liga_item_sem_sugestao_automatica(self) -> None:
+        # id 6 ("Especificações técnicas") nunca é auto-sugerido (confirmado: não existe regra
+        # pra ele na macro real) -- override manual True ainda funciona normalmente.
+        bitin = {"bitin": "x", "produto": "x", "motivo": "x", "checklist_overrides": {"6": True}}
+        checklist = bd.build_checklist(bitin, [], self.config)
+        item = next(i for i in checklist if i["id"] == "6")
+        self.assertTrue(item["afeta"])
+        self.assertTrue(item["manual"])
+
     def test_checklist_item_sem_override_nao_e_manual(self) -> None:
         checklist = bd.build_checklist({"bitin": "x", "produto": "x", "motivo": "x"}, [], self.config)
         self.assertTrue(all(not item["manual"] for item in checklist))
+
+    def test_checklist_alt_desenho_dp_ativa_id_2(self) -> None:
+        material = {"alteracoes": {"impactos_operacionais": {"alt": "D/P"}}}
+        checklist = bd.build_checklist({"bitin": "x", "produto": "x", "motivo": "x"}, [material], self.config)
+        afeta_ids = {item["id"] for item in checklist if item["afeta"]}
+        self.assertEqual(afeta_ids, {"2"})
+
+    def test_checklist_alt_variantes_ativam_ids_corretos(self) -> None:
+        casos = {"D/-": "1", "D/P": "2", "D/F": "3", "-/P": "4", "-/F": "5"}
+        for alt, esperado_id in casos.items():
+            material = {"alteracoes": {"impactos_operacionais": {"alt": alt}}}
+            checklist = bd.build_checklist({"bitin": "x", "produto": "x", "motivo": "x"}, [material], self.config)
+            afeta_ids = {item["id"] for item in checklist if item["afeta"]}
+            self.assertEqual(afeta_ids, {esperado_id}, f"alt={alt}")
+
+    def test_checklist_alt_traco_nao_ativa_nada(self) -> None:
+        material = {"alteracoes": {"impactos_operacionais": {"alt": "-"}}}
+        checklist = bd.build_checklist({"bitin": "x", "produto": "x", "motivo": "x"}, [material], self.config)
+        afeta_ids = {item["id"] for item in checklist if item["afeta"]}
+        self.assertEqual(afeta_ids, set())
+
+    def test_checklist_nota_salvar_dwg_ativa_id_18(self) -> None:
+        material = {"alteracoes": {"dados_basicos": {"SALVAR DWG": {}}}}
+        checklist = bd.build_checklist({"bitin": "x", "produto": "x", "motivo": "x"}, [material], self.config)
+        item = next(i for i in checklist if i["id"] == "18")
+        self.assertTrue(item["afeta"])
+
+    def test_checklist_nota_salvar_sat_ativa_id_18(self) -> None:
+        material = {"alteracoes": {"dados_basicos": {"SALVAR SAT": {}}}}
+        checklist = bd.build_checklist({"bitin": "x", "produto": "x", "motivo": "x"}, [material], self.config)
+        item = next(i for i in checklist if i["id"] == "18")
+        self.assertTrue(item["afeta"])
+
+    def test_checklist_nota_dwg_case_diferente_nao_ativa(self) -> None:
+        # Comparação é case-sensitive (igual à macro VBA original, `= "SALVAR DWG"`) --
+        # "salvar dwg" minúsculo não bate.
+        material = {"alteracoes": {"dados_basicos": {"salvar dwg": {}}}}
+        checklist = bd.build_checklist({"bitin": "x", "produto": "x", "motivo": "x"}, [material], self.config)
+        item = next(i for i in checklist if i["id"] == "18")
+        self.assertFalse(item["afeta"])
+
+    def test_checklist_nota_parecida_mas_diferente_nao_ativa(self) -> None:
+        # "SALVAR DESENHO" não é nenhuma das duas strings exatas -- não deve ativar.
+        material = {"alteracoes": {"dados_basicos": {"SALVAR DESENHO": {}}}}
+        checklist = bd.build_checklist({"bitin": "x", "produto": "x", "motivo": "x"}, [material], self.config)
+        item = next(i for i in checklist if i["id"] == "18")
+        self.assertFalse(item["afeta"])
+
+    def test_checklist_est_vazio_ou_traco_nao_ativa_id_8(self) -> None:
+        for valor in ("", "-"):
+            material = {"alteracoes": {"impactos_operacionais": {"est": valor}}}
+            checklist = bd.build_checklist({"bitin": "x", "produto": "x", "motivo": "x"}, [material], self.config)
+            item = next(i for i in checklist if i["id"] == "8")
+            self.assertFalse(item["afeta"], f"est={valor!r}")
+
+    def test_checklist_est_outro_valor_ativa_id_8(self) -> None:
+        material = {"alteracoes": {"impactos_operacionais": {"est": "R"}}}
+        checklist = bd.build_checklist({"bitin": "x", "produto": "x", "motivo": "x"}, [material], self.config)
+        item = next(i for i in checklist if i["id"] == "8")
+        self.assertTrue(item["afeta"])
+
+    def test_checklist_est_s_ativa_id_22_sucateamento(self) -> None:
+        material = {"alteracoes": {"impactos_operacionais": {"est": "S"}}}
+        checklist = bd.build_checklist({"bitin": "x", "produto": "x", "motivo": "x"}, [material], self.config)
+        item8 = next(i for i in checklist if i["id"] == "8")
+        item22 = next(i for i in checklist if i["id"] == "22")
+        self.assertTrue(item8["afeta"])
+        self.assertTrue(item22["afeta"])
+
+    def test_checklist_lp_pre_oc_of_thresholds(self) -> None:
+        campos_ids = {"lp": "19", "pre": "20", "oc": "10", "of": "17"}
+        for campo, esperado_id in campos_ids.items():
+            for valor in ("", "-"):
+                material = {"alteracoes": {"impactos_operacionais": {campo: valor}}}
+                checklist = bd.build_checklist({"bitin": "x", "produto": "x", "motivo": "x"}, [material], self.config)
+                item = next(i for i in checklist if i["id"] == esperado_id)
+                self.assertFalse(item["afeta"], f"{campo}={valor!r}")
+            material = {"alteracoes": {"impactos_operacionais": {campo: "X"}}}
+            checklist = bd.build_checklist({"bitin": "x", "produto": "x", "motivo": "x"}, [material], self.config)
+            item = next(i for i in checklist if i["id"] == esperado_id)
+            self.assertTrue(item["afeta"], f"{campo}=X")
+
+    def test_checklist_ids_6_e_7_nunca_sao_auto_sugeridos(self) -> None:
+        # Confirmado na auditoria da macro real: nenhuma regra automática existe pra esses
+        # dois itens, mesmo com todos os outros campos preenchidos.
+        material = {
+            "alteracoes": {
+                "impactos_operacionais": {
+                    "alt": "D/P", "est": "S", "lp": "X", "pre": "X", "oc": "X", "of": "X",
+                },
+                "dados_basicos": {"SALVAR DWG": {}},
+            }
+        }
+        checklist = bd.build_checklist({"bitin": "x", "produto": "x", "motivo": "x"}, [material], self.config)
+        afeta_ids = {item["id"] for item in checklist if item["afeta"]}
+        self.assertNotIn("6", afeta_ids)
+        self.assertNotIn("7", afeta_ids)
+
+    def test_checklist_override_vence_sugestao_automatica_desligando(self) -> None:
+        # Auto-sugere id 2 (alt=D/P), mas engenheiro desliga manualmente.
+        material = {"alteracoes": {"impactos_operacionais": {"alt": "D/P"}}}
+        bitin = {"bitin": "x", "produto": "x", "motivo": "x", "checklist_overrides": {"2": False}}
+        checklist = bd.build_checklist(bitin, [material], self.config)
+        item = next(i for i in checklist if i["id"] == "2")
+        self.assertFalse(item["afeta"])
+        self.assertTrue(item["manual"])
+
+    def test_checklist_override_vence_sugestao_automatica_ligando(self) -> None:
+        # Nenhum material sugere id 9 automaticamente, mas o engenheiro liga manualmente.
+        bitin = {"bitin": "x", "produto": "x", "motivo": "x", "checklist_overrides": {"9": True}}
+        checklist = bd.build_checklist(bitin, [], self.config)
+        item = next(i for i in checklist if i["id"] == "9")
+        self.assertTrue(item["afeta"])
+        self.assertTrue(item["manual"])
 
 
 class BuildSetoresAfetadosTest(unittest.TestCase):

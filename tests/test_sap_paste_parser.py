@@ -96,5 +96,86 @@ class ParseSapPasteTest(unittest.TestCase):
         self.assertTrue(all(m["codigo_material"] == "8661" for m in materiais))
 
 
+class ParseSapPasteEspacoTest(unittest.TestCase):
+    """Cola direta do SAP GUI (sem TAB, separado por espaço simples) -- caso real do
+    usuário, 2026-07-16: colou a grade da ZBPP009 direto do SAP GUI (não via Excel) e o
+    parser antigo (só TAB) não mapeava nada certo. 24 linhas reais, 4 centros diferentes,
+    com o mesmo material (8661, "TUBO MENOR 1/2\"") e caudas de coluna diferentes por
+    grupo de centro -- valida que o ancoramento por sufixo aguenta a variação real."""
+
+    LINHAS_REAIS = [
+        'HALB 8661 PC 2001 TUBO MENOR 1/2" MP026 LIB 00007B000300000003 0,061 0,061 KG 3,377 CM3 SIM A REVISADO/G0019/11   00.00.0000 Y  8479.90.90 120 317 F   0001 40   1 0   ',
+        'HALB 8661 PC 2001 TUBO MENOR 1/2" MP026 LIB 00007B000300000003 0,061 0,061 KG 3,377 CM3 SIM A REVISADO/G0019/11   00.00.0000 Y  8479.90.90 120 317 F   0001 40   1 0   ',
+        'HALB 8661 PC 2001 TUBO MENOR 1/2" MP026 LIB 00007B000300000003 0,061 0,061 KG 3,377 CM3 SIM A REVISADO/G0019/11   00.00.0000 Y  8479.90.90 120 317 F   0001 40   1 0   ',
+        'HALB 8661 PC 2001 TUBO MENOR 1/2" MP026 LIB 00007B000300000003 0,061 0,061 KG 3,377 CM3 SIM A REVISADO/G0019/11   00.00.0000 Y  8479.90.90 120 317 F   0001 40   1 0   ',
+        'HALB 8661 PC 2001 TUBO MENOR 1/2" MP026 LIB 00007B000300000003 0,061 0,061 KG 3,377 CM3 SIM A REVISADO/G0019/11   00.00.0000 Y  8479.90.90 120 317 F   0001 40   1 0   ',
+        'HALB 8661 PC 2001 TUBO MENOR 1/2" MP026 LIB 00007B000300000003 0,061 0,061 KG 3,377 CM3 SIM A REVISADO/G0019/11   00.00.0000 Y  8479.90.90 120 317 F   0001 40   1 0   ',
+        'HALB 8661 PC 2003 TUBO MENOR 1/2" MP026 LIB 00007B000300000003 0,061 0,061 KG 3,377 CM3 SIM A REVISADO/G0019/11   00.00.0000 Y  8479.90.90 318 412 F 41  0001 0   1 0   ',
+        'HALB 8661 PC 2003 TUBO MENOR 1/2" MP026 LIB 00007B000300000003 0,061 0,061 KG 3,377 CM3 SIM A REVISADO/G0019/11   00.00.0000 Y  8479.90.90 318 412 F 41  0001 0   1 0   ',
+        'HALB 8661 PC 2003 TUBO MENOR 1/2" MP026 LIB 00007B000300000003 0,061 0,061 KG 3,377 CM3 SIM A REVISADO/G0019/11   00.00.0000 Y  8479.90.90 318 412 F 41  0001 0   1 0   ',
+        'HALB 8661 PC 2003 TUBO MENOR 1/2" MP026 LIB 00007B000300000003 0,061 0,061 KG 3,377 CM3 SIM A REVISADO/G0019/11   00.00.0000 Y  8479.90.90 318 412 F 41  0001 0   1 0   ',
+        'HALB 8661 PC 2003 TUBO MENOR 1/2" MP026 LIB 00007B000300000003 0,061 0,061 KG 3,377 CM3 SIM A REVISADO/G0019/11   00.00.0000 Y  8479.90.90 318 412 F 41  0001 0   1 0   ',
+        'HALB 8661 PC 2003 TUBO MENOR 1/2" MP026 LIB 00007B000300000003 0,061 0,061 KG 3,377 CM3 SIM A REVISADO/G0019/11   00.00.0000 Y  8479.90.90 318 412 F 41  0001 0   1 0   ',
+        'HALB 8661 PC 2005 TUBO MENOR 1/2" MP026 LIB 00007B000300000003 0,061 0,061 KG 3,377 CM3 SIM A REVISADO/G0019/11   00.00.0000 Y  8479.90.90 121 412 F 41 1017  40   1 0   ',
+        'HALB 8661 PC 2005 TUBO MENOR 1/2" MP026 LIB 00007B000300000003 0,061 0,061 KG 3,377 CM3 SIM A REVISADO/G0019/11   00.00.0000 Y  8479.90.90 121 412 F 41 1017  40   1 0   ',
+        'HALB 8661 PC 2005 TUBO MENOR 1/2" MP026 LIB 00007B000300000003 0,061 0,061 KG 3,377 CM3 SIM A REVISADO/G0019/11   00.00.0000 Y  8479.90.90 121 412 F 41 1017  40   1 0   ',
+        'HALB 8661 PC 2005 TUBO MENOR 1/2" MP026 LIB 00007B000300000003 0,061 0,061 KG 3,377 CM3 SIM A REVISADO/G0019/11   00.00.0000 Y  8479.90.90 121 412 F 41 1017  40   1 0   ',
+        'HALB 8661 PC 2005 TUBO MENOR 1/2" MP026 LIB 00007B000300000003 0,061 0,061 KG 3,377 CM3 SIM A REVISADO/G0019/11   00.00.0000 Y  8479.90.90 121 412 F 41 1017  40   1 0   ',
+        'HALB 8661 PC 2005 TUBO MENOR 1/2" MP026 LIB 00007B000300000003 0,061 0,061 KG 3,377 CM3 SIM A REVISADO/G0019/11   00.00.0000 Y  8479.90.90 121 412 F 41 1017  40   1 0   ',
+        'HALB 8661 PC 2006 TUBO MENOR 1/2" MP026 LIB 00007B000300000003 0,061 0,061 KG 3,377 CM3 SIM A REVISADO/G0019/11   00.00.0000 Y  8479.90.90 121 412 F 41  2100 40 201 000001 1 0 X  ',
+        'HALB 8661 PC 2006 TUBO MENOR 1/2" MP026 LIB 00007B000300000003 0,061 0,061 KG 3,377 CM3 SIM A REVISADO/G0019/11   00.00.0000 Y  8479.90.90 121 412 F 41  2100 40 201 000001 1 0 X  ',
+        'HALB 8661 PC 2006 TUBO MENOR 1/2" MP026 LIB 00007B000300000003 0,061 0,061 KG 3,377 CM3 SIM A REVISADO/G0019/11   00.00.0000 Y  8479.90.90 121 412 F 41  2100 40 201 000001 1 0 X  ',
+        'HALB 8661 PC 2006 TUBO MENOR 1/2" MP026 LIB 00007B000300000003 0,061 0,061 KG 3,377 CM3 SIM A REVISADO/G0019/11   00.00.0000 Y  8479.90.90 121 412 F 41  2100 40 201 000001 1 0 X  ',
+        'HALB 8661 PC 2006 TUBO MENOR 1/2" MP026 LIB 00007B000300000003 0,061 0,061 KG 3,377 CM3 SIM A REVISADO/G0019/11   00.00.0000 Y  8479.90.90 121 412 F 41  2100 40 201 000001 1 0 X  ',
+        'HALB 8661 PC 2006 TUBO MENOR 1/2" MP026 LIB 00007B000300000003 0,061 0,061 KG 3,377 CM3 SIM A REVISADO/G0019/11   00.00.0000 Y  8479.90.90 121 412 F 41  2100 40 201 000001 1 0 X  ',
+    ]
+
+    CENTROS_ESPERADOS = ["2001"] * 6 + ["2003"] * 6 + ["2005"] * 6 + ["2006"] * 6
+
+    LINHA_TOTAL_PLANILHA = "        1,464 1,464 KG 81,048 CM3"
+
+    def setUp(self) -> None:
+        self.config = vpe.load_config(CONFIG_PATH)
+
+    def test_24_linhas_reais_mapeiam_36_colunas_cada(self) -> None:
+        texto = "\n".join(self.LINHAS_REAIS)
+        rows = spp.parse_sap_paste(texto)
+        self.assertEqual(len(rows), 24)
+
+    def test_24_linhas_reais_viram_materiais_corretos(self) -> None:
+        texto = "\n".join(self.LINHAS_REAIS)
+        materiais = spp.parse_sap_paste_to_materiais(texto, self.config)
+        self.assertEqual(len(materiais), 24)
+        for material, centro_esperado in zip(materiais, self.CENTROS_ESPERADOS):
+            self.assertEqual(material["tipo_material"], "HALB")
+            self.assertEqual(material["codigo_material"], "8661")
+            self.assertEqual(material["centro"], centro_esperado)
+            self.assertEqual(material["descricao_material"], 'TUBO MENOR 1/2"')
+            dados_basicos = material["dados_basicos_atual"]
+            self.assertEqual(dados_basicos["peso_bruto"], "0,061")
+            self.assertEqual(dados_basicos["ncm"], "8479.90.90")
+            self.assertEqual(dados_basicos["nivel_revisao"], "A")
+            self.assertEqual(dados_basicos["documento"], "REVISADO/G0019/11")
+
+    def test_linha_de_total_da_planilha_nao_gera_material_com_codigo(self) -> None:
+        """A 25a linha real que o usuário colou era uma linha de SOMA da planilha
+        (totais de peso/volume), não um material -- não pode virar um "material fantasma"
+        com codigo_material vazio."""
+        rows = spp.parse_sap_paste(self.LINHA_TOTAL_PLANILHA)
+        self.assertEqual(len(rows), 1)
+        material = spp.plan1_row_to_material_atual(rows[0], self.config)
+        self.assertEqual(material["codigo_material"], "")
+
+    def test_caminho_tab_continua_funcionando_sem_regressao(self) -> None:
+        """Linha TAB (Excel) e linha espaço (SAP GUI direto) coexistem no mesmo texto
+        colado, cada uma detectada e parseada pelo caminho certo."""
+        texto = "\n".join([make_sap_row({4: "2001"}), self.LINHAS_REAIS[6]])
+        rows = spp.parse_sap_paste(texto)
+        self.assertEqual(len(rows), 2)
+        self.assertEqual(rows[0][4], "2001")
+        self.assertEqual(rows[1][4], "2003")
+        self.assertEqual(rows[1][5], 'TUBO MENOR 1/2"')
+
+
 if __name__ == "__main__":
     unittest.main()

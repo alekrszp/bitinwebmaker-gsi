@@ -59,9 +59,25 @@ def get_current_active_user(current_user: Usuario = Depends(get_current_user)) -
     return current_user
 
 
-def check_permission(level: int):
+# Níveis nomeados de permission_level (2026-07-16, substitui o esquema antigo 0/1/99 --
+# revisão do modelo de permissões trouxe um 4º nível intermediário, "Cadastro", entre
+# Gestor e Admin). Usado em todo o backend em vez de números mágicos -- ver
+# backend/api/users.py, backend/api/sectors.py, backend/api/bitins.py.
+NIVEL_USUARIO = 66
+NIVEL_GESTOR = 77
+NIVEL_CADASTRO = 88
+NIVEL_ADMIN = 99
+
+
+def check_permission(*allowed_levels: int):
+    """Assinatura trocada de threshold numérico (`level: int`, checava `< level`) pra um
+    conjunto explícito de níveis permitidos (2026-07-16) -- com 4 níveis não-hierárquicos
+    entre si em alguns pontos (ex.: GET /users permite Gestor e Admin, mas NÃO Cadastro,
+    que fica "no meio" numericamente), um único threshold não consegue mais expressar
+    corretamente quem pode chamar cada rota. Cada call site agora passa o conjunto exato,
+    ex.: check_permission(NIVEL_GESTOR, NIVEL_ADMIN)."""
     def _dependency(user: Usuario = Depends(get_current_active_user)) -> Usuario:
-        if user.permission_level < level:
+        if user.permission_level not in allowed_levels:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Privilégio insuficiente para esta operação",

@@ -287,27 +287,31 @@ diferente do Mongo — validado ao vivo de verdade, não só por teste automatiz
 - **"Minha conta"** (somente leitura): nome, e-mail, setor(es) (nomes resolvidos via `GET
   /sectors`, público — desde 2026-07-15 um usuário pode ter vários `Setor` ao mesmo tempo,
   ver abaixo; nomes juntados por vírgula) e nível de permissão (rótulo amigável —
-  `Usuário`/`Gestor`/`Admin` — em vez do número cru). Trocar senha via `POST
-  /auth/change-password` (adicionado nesta mesma rodada); editar o próprio perfil fica pra uma
-  rodada futura.
+  `Usuário`/`Gestor`/`Cadastro`/`Admin` desde 2026-07-16, ver `docs/BACKEND.md` "Revisão do
+  modelo de permissões" — em vez do número cru). Trocar senha via `POST /auth/change-password`
+  (adicionado nesta mesma rodada); editar o próprio perfil fica pra uma rodada futura.
 - **Setores múltiplos por usuário (2026-07-15)**: pedido explícito, "um usuário poder ser
   tanto armazenagem tanto quanto proteina" — `Usuario.sector_id` (FK única) virou
   `sector_ids: number[]` (many-to-many, `Setor[]` via `usuario_setores` no backend). No
   formulário "Cadastrar usuário", o `<select>` de setor único virou um grupo de checkboxes
   (uma por `Setor` existente, sem hardcode de quantidade); a tabela de "Gestão de usuários" e
   o `DetailField` de "Minha conta" juntam os nomes com vírgula em vez de resolver um id só.
-- **"Gestão de usuários"** (só visível se `user.permission_level >= 99`, decisão explícita do
-  usuário — "só pra admin"): tabela com todos os usuários (`GET /users`, já exigia nível ≥ 1
-  no backend — a UI é mais restritiva que o mínimo do backend de propósito). Desde 2026-07-15,
-  um **gestor** (não só admin) também acessa `GET /users`, mas escopado: só vê usuários que
-  compartilham ao menos um `Setor` com ele (pedido explícito: "se um usuário for gestor, ele
-  consegue só ver listagem de usuários do setor que ele é gestor"). Essa tela em si continua
-  visível só pra admin (`Settings.tsx` não muda essa checagem de UI); o escopo por setor do
-  gestor vale pra quem consumir `GET /users` diretamente, não pra esta tela hoje. Um `<select>`
-  por linha pra trocar o nível (`PATCH /users/{id}/permission`, backend já exigia nível 99).
-  **Proteção contra auto-rebaixamento**: o `<select>` da própria linha do usuário logado fica
-  desabilitado — evita um admin se rebaixar sem querer e ficar trancado fora da própria
-  gestão.
+- **"Gestão de usuários"** (só visível se `user.permission_level === NIVEL_ADMIN` (99),
+  decisão explícita do usuário — "só pra admin"): tabela com todos os usuários (`GET /users`,
+  exige Gestor/Admin no backend — a UI é mais restritiva que o mínimo do backend de propósito).
+  Desde 2026-07-15, um **gestor** (não só admin) também acessa `GET /users`, mas escopado: só
+  vê usuários que compartilham ao menos um `Setor` com ele (pedido explícito: "se um usuário
+  for gestor, ele consegue só ver listagem de usuários do setor que ele é gestor"). Essa tela
+  em si continua visível só pra admin (`Settings.tsx` não muda essa checagem de UI); o escopo
+  por setor do gestor vale pra quem consumir `GET /users` diretamente, não pra esta tela hoje.
+  Um `<select>` por linha pra trocar o nível (`PATCH /users/{id}/permission`, backend exige
+  Admin). **Proteção contra auto-rebaixamento**: o `<select>` da própria linha do usuário
+  logado fica desabilitado — evita um admin se rebaixar sem querer e ficar trancado fora da
+  própria gestão. **Proteção contra rebaixar admin (2026-07-16)**: o `<select>` de qualquer
+  linha cujo nível atual seja Admin (99) também fica desabilitado, pra QUALQUER usuário logado
+  (não só pra si mesmo) — "ninguém pode tirar permissão dele", com o mesmo padrão de `title` de
+  tooltip explicativo já usado pro auto-rebaixamento; o backend rejeita com 400
+  independentemente do frontend.
 - **"Sobre"**: versão do app, mesma fonte que o rodapé do login (`package.json`).
 - **Achado ao validar**: para testar a seção de admin de verdade (nenhum usuário de teste
   local era admin), o usuário autorizou explicitamente promover `teste@example.com` pra nível
@@ -329,12 +333,17 @@ do usuário — "tela de cadastro de usuário SÓ PARA ADMIN para não ter que c
 substitui a nota acima ("Gestão de usuários só lista e muda nível, não cria").
 
 - **`CriarUsuarioForm`** (`Settings.tsx`, dentro de `GestaoUsuarios`): E-mail, Nome, ID/Número
-  de engenharia (opcional), Setor (`<select>` do `sectors` já carregado), Permissão (mesmo
-  mapeamento 0/1/99 do `<select>` de nível já existente na tabela). Sem campo de senha — o
-  backend gera (`POST /users`, ver `docs/BACKEND.md`). Sucesso mostra a senha gerada num
-  callout persistente (não um toast que some): "Essa senha só aparece agora — anote e repasse
-  pra [nome] antes de sair desta tela." O usuário novo entra direto na tabela abaixo via
-  atualização local (mesmo padrão otimista de `alterarNivel`, sem refetch de `GET /users`).
+  de engenharia (opcional), Setor (grupo de checkboxes do `sectors` já carregado), Permissão
+  (mesmo mapeamento 66/77/88/99 -- Usuário/Gestor/Cadastro/Admin -- do `<select>` de nível já
+  existente na tabela, ver `docs/BACKEND.md` "Revisão do modelo de permissões"). **Setor
+  obrigatório pra 66/77/88 (2026-07-16)**: submit fica desabilitado e aparece erro inline se
+  nenhum setor for marcado pra esses 3 níveis — só Admin (99) pode ficar sem setor; validação
+  client-side é só UX, o backend (`AdminUserCreate`) segue sendo quem garante a regra de
+  verdade. Sem campo de senha — o backend gera (`POST /users`, ver `docs/BACKEND.md`). Sucesso
+  mostra a senha gerada num callout persistente (não um toast que some): "Essa senha só aparece
+  agora — anote e repasse pra [nome] antes de sair desta tela." O usuário novo entra direto na
+  tabela abaixo via atualização local (mesmo padrão otimista de `alterarNivel`, sem refetch de
+  `GET /users`).
 - **Gate de senha temporária** (`RequireAuth.tsx`): se `user.senha_temporaria` (espelha
   `Usuario.senha_temporaria`) for `true`, redireciona pra `/definir-senha` em vez de renderizar
   a rota pedida — exceto quando já está em `/definir-senha` (evita loop de redirecionamento).

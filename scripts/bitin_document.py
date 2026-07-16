@@ -147,20 +147,78 @@ def build_checklist_schema(config: dict[str, Any]) -> list[dict[str, str]]:
     return [{"id": item["id"], "etapa": item["etapa"]} for item in config["checklist_items"]]
 
 
+_DWG_SAT_NOTAS = {"SALVAR DWG", "SALVAR SAT"}
+
+
+def _checklist_ids_auto_sugeridos(materiais: list[dict[str, Any]], config: dict[str, Any]) -> set[str]:
+    """Regras de automação REAIS do checklist, confirmadas em auditoria da macro VBA original
+    (2026-07-16): `Módulo4.bas`, `Sub Preencher_Bitin`, é o ÚNICO lugar em todos os 20 módulos
+    que escreve "SIM" na coluna de checklist de `Plan4` -- grep exaustivo por `, 3) = "SIM"`
+    em `artifacts/vba/*.bas` não achou mais nenhuma origem. Isso corrige uma decisão anterior
+    (2026-07-15, "tirar esse autocomplete") que tinha removido a automação inteira por não ter
+    sido verificada contra a macro real; o usuário then achou, na prática, que "quando colocado
+    no campo nota salvar dwg ele marca sozinho a checklist" -- o que levou a essa reauditoria.
+
+    As 8 regras (linhas 144-202 de Módulo4.bas):
+    1-5. Alt declarado -> id via `config['alt_to_checklist_id']` (D/- =1, D/P=2, D/F=3, -/P=4,
+         -/F=5).
+    6. Nota livre em dados_basicos igual (exato, case-sensitive, como a comparação VBA
+       `= "SALVAR DWG"`) a "SALVAR DWG" ou "SALVAR SAT" -> id 18 ("Atualizar DWG / SAT"). Não é
+       mais um checkbox (`impactos_operacionais.atualizar_dwg_sat` foi removido do frontend) --
+       o único jeito de acionar isso é a nota de texto livre batendo exatamente com uma dessas
+       duas strings.
+    7. Est fora de {"", "-"} -> id 8 ("Retrabalhar ou descartar estoque").
+    8. Est == "S" -> id 22 ("Centro de custo (se tem sucata)"), sucateamento (POP Nota 8).
+    9. LP fora de {"", "-"} -> id 19 ("Lista de preço").
+    10. PRE fora de {"", "-"} -> id 20 ("Precificação").
+    11. OC fora de {"", "-"} -> id 10 ("Ordem de cliente").
+    12. OF fora de {"", "-"} -> id 17 ("Atualizar ordem de fabricação").
+
+    Confirmado ao ler a macro pessoalmente: ids 6 ("Especificações técnicas") e 7 ("Alteração
+    lista técnica") NUNCA são automáticos, nem na macro real -- continuam 100%
+    `checklist_overrides`-only, sem sugestão automática nenhuma."""
+    alt_to_id = config.get("alt_to_checklist_id", {})
+    auto: set[str] = set()
+    for material in materiais:
+        impactos = read_impactos_operacionais(material)
+
+        alt_id = alt_to_id.get(impactos["alt"])
+        if alt_id:
+            auto.add(alt_id)
+
+        dados_basicos = material.get("alteracoes", {}).get("dados_basicos", {})
+        if any(nota in _DWG_SAT_NOTAS for nota in dados_basicos.keys()):
+            auto.add("18")
+
+        if impactos["est"] not in ("", "-"):
+            auto.add("8")
+        if impactos["est"] == "S":
+            auto.add("22")
+        if impactos["lp"] not in ("", "-"):
+            auto.add("19")
+        if impactos["pre"] not in ("", "-"):
+            auto.add("20")
+        if impactos["oc"] not in ("", "-"):
+            auto.add("10")
+        if impactos["of"] not in ("", "-"):
+            auto.add("17")
+    return auto
+
+
 def build_checklist(bitin: dict[str, Any], materiais: list[dict[str, Any]], config: dict[str, Any]) -> list[dict[str, Any]]:
-    """Checklist 100% manual -- 'afeta' vem só de `bitin['checklist_overrides']` (dict
-    id -> bool); qualquer item nunca clicado pelo engenheiro fica 'afeta=False' por padrão.
-    Antes (até 2026-07-14) o sistema sugeria 'afeta' automaticamente a partir dos materiais
-    (Alt/Esp/Est/OC/OF/atualizar_dwg_sat/LP/Pre/bitex) e o override só existia pra corrigir a
-    sugestão; decisão do usuário, 2026-07-15: 'tirar esse autocomplete de acordo com os códigos
-    da checklist, checklist é marcada manualmente' -- a checklist é responsabilidade exclusiva
-    do engenheiro, sem inferência a partir dos códigos SAP dos materiais. `materiais` e
-    `config['alt_to_checklist_id']` deixaram de ser usados aqui (mantidos como parâmetro/config
-    por compatibilidade e porque `alt_to_checklist_id` ainda pode servir de referência, mas não
-    há mais leitura automática). Setores acionados (build_setores_afetados) sempre leem o
-    resultado final daqui, então marcar um item manualmente aciona os setores do mesmo jeito
-    que a sugestão automática acionava antes."""
+    """'afeta' = sugestão automática (`_checklist_ids_auto_sugeridos`, regras 1-8 verificadas
+    contra `Módulo4.bas`) a não ser que o engenheiro tenha clicado no item explicitamente
+    (`bitin['checklist_overrides']`, dict id -> bool) -- o override sempre vence a sugestão,
+    nos dois sentidos (liga um item que a sugestão não teria ligado, ou desliga um item que a
+    sugestão ligaria). Restaurado em 2026-07-16: a versão 100% manual de 2026-07-15 tinha
+    removido a automação inteira por desconfiar das regras antigas (não verificadas); a
+    reauditoria da macro real (`Módulo4.bas`) confirmou que a automação existe e é bem mais
+    restrita do que a versão antiga -- ver `_checklist_ids_auto_sugeridos` para a lista
+    completa e a fonte de cada regra. Setores acionados (build_setores_afetados) sempre leem o
+    resultado final daqui, então tanto a sugestão automática quanto um clique manual acionam
+    os setores do mesmo jeito."""
     overrides = bitin.get("checklist_overrides", {})
+    auto_sugeridos = _checklist_ids_auto_sugeridos(materiais, config)
     # Anotação livre por item (2026-07-15) -- ex.: "Centro de custo (se tem sucata)" (id 22)
     # usa isso pra registrar o centro de custo/conta razão do sucateamento (POP Nota 8), no
     # lugar de um campo estruturado por material (decisão do usuário: "isso é colocado no
@@ -169,7 +227,7 @@ def build_checklist(bitin: dict[str, Any], materiais: list[dict[str, Any]], conf
     return [
         {
             **item,
-            "afeta": overrides.get(item["id"], False),
+            "afeta": overrides.get(item["id"], item["id"] in auto_sugeridos),
             "manual": item["id"] in overrides,
             "descricao": descricoes.get(item["id"], ""),
         }

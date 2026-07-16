@@ -48,8 +48,9 @@ class Usuario(Base):
     nome = Column(String, nullable=False)
     hashed_password = Column(String, nullable=False)
     ativo = Column(Boolean, nullable=False, default=True)
-    # 0 = usuário comum, 1 = gestor, 99 = admin (ver backend/auth/deps.py check_permission).
-    permission_level = Column(Integer, nullable=False, default=0)
+    # 66 = usuário, 77 = gestor, 88 = cadastro, 99 = admin (2026-07-16, revisão do modelo de
+    # permissões -- era 0/1/99; ver backend/auth/deps.py NIVEL_* / check_permission).
+    permission_level = Column(Integer, nullable=False, default=66)
     network_id = Column(String, nullable=True)
     # Many-to-many desde 2026-07-15 (era sector_id, FK única nullable) -- um usuário agora pode
     # pertencer a mais de um Setor ao mesmo tempo (ex.: gestor de Proteína Animal E Armazenagem

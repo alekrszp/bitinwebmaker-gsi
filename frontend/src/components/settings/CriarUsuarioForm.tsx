@@ -18,14 +18,23 @@ export default function CriarUsuarioForm({ sectors, onCriado }: { sectors: Secto
   // Vários setores marcáveis (2026-07-15, era um <select> de escolha única -- "um usuário
   // poder ser tanto armazenagem tanto quanto proteina").
   const [sectorIds, setSectorIds] = useState<number[]>([])
-  const [permissionLevel, setPermissionLevel] = useState(0)
+  const [permissionLevel, setPermissionLevel] = useState(66)
   const [erro, setErro] = useState<string | null>(null)
   const [enviando, setEnviando] = useState(false)
   const [senhaGerada, setSenhaGerada] = useState<{ nome: string; senha: string } | null>(null)
 
+  // Espelha backend/auth/schemas.py::NIVEIS_QUE_EXIGEM_SETOR (2026-07-16, revisão do modelo de
+  // permissões) -- só Admin (99) pode ficar sem setor. Checagem no cliente é só UX (evita um
+  // round-trip pra descobrir o 400); o backend continua sendo quem de fato garante a regra.
+  const exigeSetor = permissionLevel !== 99
+
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     setErro(null)
+    if (exigeSetor && sectorIds.length === 0) {
+      setErro('Selecione ao menos um setor para este nível de permissão.')
+      return
+    }
     setEnviando(true)
     try {
       const body: AdminUserCreateRequest = {
@@ -42,7 +51,7 @@ export default function CriarUsuarioForm({ sectors, onCriado }: { sectors: Secto
       setNome('')
       setNumeroEng('')
       setSectorIds([])
-      setPermissionLevel(0)
+      setPermissionLevel(66)
     } catch (err) {
       setErro(extrairErro(err, 'Não foi possível cadastrar o usuário.'))
     } finally {
@@ -84,7 +93,7 @@ export default function CriarUsuarioForm({ sectors, onCriado }: { sectors: Secto
               pode pertencer a mais de um setor ao mesmo tempo. Não hardcoda os 2 setores
               conhecidos hoje: itera `sectors`, continua correto se um 3º for cadastrado. */}
           <span className="mb-1.5 block text-xs uppercase tracking-wide text-ink-muted">
-            Setor (opcional, pode marcar mais de um)
+            Setor {exigeSetor ? '(obrigatório, pode marcar mais de um)' : '(opcional, pode marcar mais de um)'}
           </span>
           <div className="flex flex-wrap gap-x-4 gap-y-1.5 rounded-lg border border-line bg-surface px-3 py-2">
             {sectors.length === 0 && <span className="text-sm text-ink-faint">Nenhum setor cadastrado</span>}
@@ -113,8 +122,9 @@ export default function CriarUsuarioForm({ sectors, onCriado }: { sectors: Secto
             onChange={(e) => setPermissionLevel(Number(e.target.value))}
             className="w-full rounded-lg border border-line bg-surface px-3 py-2 text-sm text-ink focus:border-brand-navy focus:outline-none focus:ring-2 focus:ring-brand-navy/20"
           >
-            <option value={0}>Usuário</option>
-            <option value={1}>Gestor</option>
+            <option value={66}>Usuário</option>
+            <option value={77}>Gestor</option>
+            <option value={88}>Cadastro</option>
             <option value={99}>Admin</option>
           </select>
         </div>
@@ -124,7 +134,7 @@ export default function CriarUsuarioForm({ sectors, onCriado }: { sectors: Secto
         <div className="sm:col-span-2">
           <button
             type="submit"
-            disabled={enviando || !email || !nome}
+            disabled={enviando || !email || !nome || (exigeSetor && sectorIds.length === 0)}
             className="rounded-lg bg-brand-navy px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-brand-navy-dark disabled:cursor-not-allowed disabled:opacity-60"
           >
             {enviando ? 'Cadastrando...' : 'Cadastrar usuário'}

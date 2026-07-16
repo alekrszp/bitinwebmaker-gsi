@@ -50,7 +50,16 @@ export default function ListaTecnicaPage() {
   const [carregando, setCarregando] = useState(true)
   const [salvando, setSalvando] = useState(false)
   const [erro, setErro] = useState<string | null>(null)
-  const { enviando, errosEnvio, enviar } = useEnviarBitin(mongoId)
+  const [selecionadas, setSelecionadas] = useState<Set<number>>(new Set())
+  const { enviando, errosEnvio, bitinEnviado, enviar } = useEnviarBitin(mongoId)
+
+  // Envio bem-sucedido navega direto pra aba BITin, já travada em modo enviado (2026-07-16,
+  // mesma ideia de "Importar pra BITin" -- useEnviarBitin não navega mais sozinho, ver
+  // lib/useEnviarBitin.ts).
+  useEffect(() => {
+    if (bitinEnviado) navigate(`/bitins/${mongoId}`)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [bitinEnviado])
 
   useEffect(() => {
     if (!mongoId) return
@@ -83,6 +92,40 @@ export default function ListaTecnicaPage() {
 
   function removerLinha(index: number) {
     setLinhas((atual) => atual.filter((_, i) => i !== index))
+  }
+
+  // Mesma barra de ferramentas da ZBPP009 (CodigosSapPage.tsx), 2026-07-16 -- decisão do
+  // usuário: "faz isso tb na lista técnica". Seleção por índice; "Excluir selecionadas" filtra
+  // numa única passada (não faz .splice em loop) pra não deslocar índices e apagar a linha
+  // errada.
+  function removerSelecionadas() {
+    setLinhas((atual) => {
+      const restantes = atual.filter((_, i) => !selecionadas.has(i))
+      if (restantes.length === 0) return [linhaVazia()]
+      // Mesma regra de "sempre uma linha em branco no final" usada em atualizarLinha.
+      if (restantes.every((l) => l.codigo_pai.trim() !== '' || l.codigo_filho.trim() !== '')) restantes.push(linhaVazia())
+      return restantes
+    })
+    setSelecionadas(new Set())
+  }
+
+  function limparTudo() {
+    if (!window.confirm('Limpar toda a tabela? Essa ação não pode ser desfeita.')) return
+    setLinhas([linhaVazia()])
+    setSelecionadas(new Set())
+  }
+
+  function alternarSelecao(index: number) {
+    setSelecionadas((atual) => {
+      const copia = new Set(atual)
+      if (copia.has(index)) copia.delete(index)
+      else copia.add(index)
+      return copia
+    })
+  }
+
+  function alternarSelecaoTodas() {
+    setSelecionadas((atual) => (atual.size === linhas.length ? new Set() : new Set(linhas.map((_, i) => i))))
   }
 
   async function salvar() {
@@ -196,10 +239,46 @@ export default function ListaTecnicaPage() {
       <ErrosEnvioBanner erros={errosEnvio} />
 
       <Card title="Lista técnica">
-        <div className="mt-4 overflow-x-auto rounded border border-line">
+        <div className="mt-4 flex flex-wrap items-center gap-2 rounded-lg bg-surface-alt px-3 py-2">
+          <span className="text-xs font-medium text-ink-muted">
+            {selecionadas.size > 0 ? `${selecionadas.size} selecionada(s)` : 'Nenhuma linha selecionada'}
+          </span>
+          <button
+            type="button"
+            onClick={removerSelecionadas}
+            disabled={selecionadas.size === 0}
+            className="rounded-lg border border-red-600/40 px-3 py-1.5 text-xs font-medium text-red-600 transition-colors hover:bg-red-600/10 disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            Excluir selecionadas
+          </button>
+          <button
+            type="button"
+            onClick={limparTudo}
+            className="rounded-lg border border-line px-3 py-1.5 text-xs font-medium text-ink-muted transition-colors hover:bg-surface"
+          >
+            Limpar tudo
+          </button>
+          <button
+            type="button"
+            onClick={() => setLinhas((atual) => [...atual, linhaVazia()])}
+            className="ml-auto rounded-lg border border-dashed border-line px-3 py-1.5 text-xs font-medium text-ink-muted hover:bg-surface"
+          >
+            + Nova linha
+          </button>
+        </div>
+
+        <div className="mt-2 overflow-x-auto rounded border border-line">
           <table className="w-full text-left text-sm">
             <thead>
               <tr className="bg-surface-alt text-xs uppercase tracking-wide text-ink-muted">
+                <th className="w-8 px-3 py-2">
+                  <input
+                    type="checkbox"
+                    checked={linhas.length > 0 && selecionadas.size === linhas.length}
+                    onChange={alternarSelecaoTodas}
+                    aria-label="Selecionar todas as linhas"
+                  />
+                </th>
                 <th className="whitespace-nowrap px-3 py-2 font-medium">Código pai</th>
                 <th className="whitespace-nowrap px-3 py-2 font-medium">Operação</th>
                 <th className="whitespace-nowrap px-3 py-2 font-medium">Código filho</th>
@@ -211,6 +290,14 @@ export default function ListaTecnicaPage() {
             <tbody className="divide-y divide-line">
               {linhas.map((l, i) => (
                 <tr key={i}>
+                  <td className="px-3 py-1.5 text-center">
+                    <input
+                      type="checkbox"
+                      checked={selecionadas.has(i)}
+                      onChange={() => alternarSelecao(i)}
+                      aria-label={`Selecionar linha ${i + 1}`}
+                    />
+                  </td>
                   <td className="p-1.5">
                     <input
                       type="text"
@@ -271,14 +358,6 @@ export default function ListaTecnicaPage() {
             </tbody>
           </table>
         </div>
-
-        <button
-          type="button"
-          onClick={() => setLinhas((atual) => [...atual, linhaVazia()])}
-          className="mt-3 rounded-lg border border-dashed border-line px-4 py-2 text-sm font-medium text-ink-muted hover:bg-surface-alt"
-        >
-          + Nova linha
-        </button>
       </Card>
 
       {mongoId && <EdicaoBottomBar mongoId={mongoId} enviando={enviando || salvando} onEnviar={handleEnviar} />}

@@ -36,12 +36,17 @@ import type { Bitin, MateriaisSchema, MaterialEditavel } from '../lib/types'
 // Esta página só cuida de estado + carregamento/salvamento -- o layout fica nos componentes
 // de components/bitin/ (DadosGeraisCard, MateriaisSection, etc.), decisão do usuário
 // (2026-07-15: "não ta nada componentizado o bitindetail, ajusta isso").
+//
+// Mesmo nível usado em Settings.tsx e backend/api/bitins.py::ADMIN_LEVEL -- só espelhado aqui
+// pra decidir se mostra "Excluir BITin enviado" (2026-07-16).
+const ADMIN_LEVEL = 99
+
 export default function BitinDetail() {
   const { mongoId } = useParams<{ mongoId: string }>()
   const isNovo = !mongoId
   const navigate = useNavigate()
   const { user } = useAuth()
-  const { enviando, errosEnvio, enviar } = useEnviarBitin(mongoId)
+  const { enviando, errosEnvio, bitinEnviado, enviar } = useEnviarBitin(mongoId)
 
   // Campos editáveis (dados gerais + materiais).
   const [produto, setProduto] = useState('')
@@ -65,8 +70,10 @@ export default function BitinDetail() {
   const [erro, setErro] = useState<string | null>(null)
   const [salvando, setSalvando] = useState(false)
   const [excluindo, setExcluindo] = useState(false)
+  const [confirmacaoEnvio, setConfirmacaoEnvio] = useState<string | null>(null)
 
   const editavel = isNovo || (status === 'rascunho' && podeEditar)
+  const ehAdmin = (user?.permission_level ?? 0) >= ADMIN_LEVEL
 
   useEffect(() => {
     if (isNovo) return
@@ -123,6 +130,25 @@ export default function BitinDetail() {
     carregarResumo()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isNovo, mongoId])
+
+  // Pós-envio (2026-07-16, pedido do usuário: "coloque uma informação na tela de quando envia
+  // bitin de confirmação que atualize a pagina e vai direto no bitin já enviado"). Mesma URL
+  // (/bitins/:mongoId) antes e depois de enviar -- não navega, só troca o estado local pra
+  // travar os campos (editavel passa a depender de status==='rascunho') e recarrega o resumo
+  // (agora existe, já que o BITin está enviado). Banner de confirmação some sozinho.
+  useEffect(() => {
+    if (!bitinEnviado) return
+    setStatus(bitinEnviado.status)
+    setPodeEditar(bitinEnviado.pode_editar)
+    setCodigo(bitinEnviado.codigo)
+    setConteudoExistente(bitinEnviado.content)
+    setMateriais(((bitinEnviado.content.materiais as MaterialEditavel[] | undefined) ?? []).map(normalizarMaterial))
+    setConfirmacaoEnvio(`BITin enviado com sucesso! Código: ${bitinEnviado.codigo ?? '—'}`)
+    carregarResumo()
+    const id = setTimeout(() => setConfirmacaoEnvio(null), 8000)
+    return () => clearTimeout(id)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [bitinEnviado])
 
   function atualizarMaterial(index: number, atualizado: MaterialEditavel) {
     setMateriais((atual) => atual.map((m, i) => (i === index ? atualizado : m)))
@@ -210,9 +236,33 @@ export default function BitinDetail() {
     if (id) await enviar()
   }
 
+  // Excluir um BITin já enviado é bem mais grave que excluir rascunho -- libera o número
+  // sequencial (código pode ser reaproveitado por outro BITin depois), por isso o texto de
+  // confirmação é mais explícito e só admin (permission_level >= ADMIN_LEVEL) vê o botão pra
+  // BITin enviado (ver handleExcluirEnviado abaixo). Backend valida de novo (não confia só na
+  // UI escondendo o botão).
   async function handleExcluir() {
     if (!mongoId) return
     if (!window.confirm('Excluir este rascunho? Essa ação não pode ser desfeita.')) return
+    setExcluindo(true)
+    setErro(null)
+    try {
+      await api.delete(`/bitins/${mongoId}`)
+      navigate('/bitins', { replace: true })
+    } catch {
+      setErro('Não foi possível excluir. Tente novamente.')
+      setExcluindo(false)
+    }
+  }
+
+  async function handleExcluirEnviado() {
+    if (!mongoId) return
+    if (
+      !window.confirm(
+        `Excluir este BITin já enviado (código ${codigo ?? '—'})? Essa ação não pode ser desfeita e vai liberar o número sequencial.`,
+      )
+    )
+      return
     setExcluindo(true)
     setErro(null)
     try {
@@ -280,6 +330,21 @@ export default function BitinDetail() {
           </button>
         )}
 
+        {/* Excluir BITin já enviado (2026-07-16, pedido do usuário) -- só admin
+            (permission_level >= ADMIN_LEVEL, mesmo nível de Settings.tsx/backend/api/
+            bitins.py::ADMIN_LEVEL) vê isto; usuário comum continua só com "Excluir rascunho"
+            acima, igual sempre foi. */}
+        {!isNovo && status === 'enviado' && ehAdmin && (
+          <button
+            type="button"
+            onClick={handleExcluirEnviado}
+            disabled={excluindo || salvando || enviando}
+            className="ml-auto rounded-lg border border-red-600/40 px-4 py-2 text-sm font-medium text-red-600 transition-colors hover:bg-red-600/10 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {excluindo ? 'Excluindo...' : 'Excluir BITin enviado'}
+          </button>
+        )}
+
         {editavel && (
           <button
             type="button"
@@ -293,6 +358,7 @@ export default function BitinDetail() {
       </div>
 
       {erro && <p className="mt-3 text-sm text-red-600">{erro}</p>}
+      {confirmacaoEnvio && <p className="mt-3 text-sm text-green-600">{confirmacaoEnvio}</p>}
       <ErrosEnvioBanner erros={errosEnvio} />
 
       <DadosGeraisCard

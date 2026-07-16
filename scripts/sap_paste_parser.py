@@ -1,11 +1,31 @@
 #!/usr/bin/env python3
 """Parser do texto colado do SAP (ZBPP009/relatório equivalente) direto na interface web.
 
-Confirmado com o responsável do projeto: ao copiar a grade do SAP GUI, o Excel separa em
-colunas sozinho -- isso só acontece porque o SAP usa caracteres TAB reais entre células, não
-espaços. Por isso o parser separa por TAB (não por espaço/largura fixa), o que lida
-corretamente com campos de texto livre que têm espaços internos (ex.: descrição
-'TUBO MENOR 1/2"') sem ambiguidade nenhuma.
+Duas origens de colagem, confirmadas com dados reais:
+
+1. Cópia via Excel (o Excel intermedeia a grade do SAP GUI): usa caracteres TAB reais entre
+   células. Nesse caso o parser separa por TAB, o que lida corretamente com campos de texto
+   livre que têm espaços internos (ex.: descrição 'TUBO MENOR 1/2"') sem ambiguidade nenhuma.
+
+2. Cópia direta da grade do SAP GUI (sem passar pelo Excel) -- caso real do usuário,
+   2026-07-16: NÃO tem TAB nenhum. Duas rodadas de investigação com os dados reais do usuário
+   (material 8661, "TUBO MENOR 1/2\"", centros 2001/2003/2005/2006):
+
+   - 1ª tentativa (descartada): assumir espaço único como separador de coluna em toda a
+     linha, ancorando prefixo/sufixo por CONTAGEM DE TOKENS. Quebrou porque colunas depois
+     da 22ª (GCm em diante -- campos raramente usados: grupo compradores, planejador,
+     depósito, etc.) têm largura de verdade VARIÁVEL entre linhas (ex.: "1" vs "000001" na
+     mesma coluna) -- contagem de tokens não é estável ali.
+   - 2ª investigação (a que ficou): as colunas 1-22 (tipo até NCM) são de LARGURA FIXA de
+     verdade -- confirmado medindo a posição de caractere onde cada valor conhecido começa
+     em várias linhas reais com conteúdo diferente (ex.: "TUBO" sempre no caractere 18,
+     "REVISADO" sempre no 94, "8479.90.90" sempre no 128, não importa o quanto os campos
+     anteriores variem) -- é exportação de largura fixa típica de grade SAP GUI, cada coluna
+     ocupa um número fixo de caracteres preenchido com espaço. Da coluna 23 em diante, a
+     largura já não é fixa (valores reais variam de tamanho), então usa separação por espaço
+     simples ali (mesma lógica de ancoramento por token de antes, só que restrita ao final
+     da linha -- risco aceito de desalinhamento ocasional nesses campos pouco usados, bem
+     menor que perder dado nas colunas 1-22, que são as que o engenheiro realmente vê/usa).
 
 Cada linha colada vira uma linha de Plan1 (ZBPP009) -- mesma estrutura de 36 colunas que
 scripts/vba_port_export.py lê do arquivo .xlsm real -- e alimenta diretamente os campos de
@@ -14,17 +34,89 @@ snapshot "atual" do material no BITin (ver docs/BITIN_MODEL.md).
 
 from typing import Any
 
+TOTAL_COLUNAS_PLAN1 = 36
+
+# Offsets de caractere (início, fim exclusivo) das colunas 1-22 -- medidos contra dados reais
+# do usuário (2026-07-16), estáveis em toda a amostra (4 centros diferentes, conteúdo de
+# hierarquia/data/NCM idêntico entre linhas, mas a posição de início de cada campo bate
+# sempre no mesmo caractere independente do que vem antes). Coluna 3 (UMB) e colunas
+# 17/18 (Mat.Substitut/St) não têm mapeamento em `plan1_identificacao_columns`/
+# `plan1_dados_basicos_columns` hoje, mas os offsets ficam registrados aqui mesmo assim
+# pra não perder a análise se um dia precisarem ser expostos.
+OFFSETS_COLUNAS_FIXAS: dict[int, tuple[int, int]] = {
+    1: (0, 4),      # TMat
+    2: (5, 9),      # Material
+    3: (10, 12),    # UMB (não mapeado no crosswalk hoje)
+    4: (13, 17),    # Cen.
+    5: (18, 34),    # TxtBreveMaterial (descrição) -- única coluna com espaço interno real
+    6: (34, 40),    # GrpMercads.
+    7: (40, 44),    # L/E (status)
+    8: (44, 63),    # Hierarq.produtos
+    9: (63, 69),    # Peso bruto
+    10: (69, 74),   # Peso líquido
+    11: (74, 78),   # Un. (unidade peso)
+    12: (78, 84),   # Volume
+    13: (84, 88),   # UVl (unidade volume)
+    14: (88, 91),   # Desenho (SIM/NAO)
+    15: (91, 94),   # Nível Rev.
+    16: (94, 114),  # Doc.
+    19: (114, 125), # Vál.desde (data bloqueio vendas)
+    20: (125, 128), # EM
+    22: (128, 138), # Céd.controle (NCM)
+}
+FIM_REGIAO_FIXA = 138  # a partir daqui, largura variável de verdade -- cai pra token simples
+PRIMEIRA_COLUNA_VARIAVEL = 23
+
+
+def _parse_linha_espaco(line: str) -> dict[int, str]:
+    """Cola direta do SAP GUI (sem TAB): colunas 1-22 por posição fixa de caractere
+    (`OFFSETS_COLUNAS_FIXAS`), colunas 23-36 por separação de espaço simples no restante da
+    linha (largura real variável ali, ver docstring do módulo)."""
+    campos: dict[int, str] = {}
+    for col, (inicio, fim) in OFFSETS_COLUNAS_FIXAS.items():
+        campos[col] = line[inicio:fim].strip() if len(line) > inicio else ""
+
+    # Coluna 1 (tipo_material) sempre vem preenchida numa linha real de material -- se veio
+    # vazia, a linha não segue o layout de largura fixa esperado (achado real: uma linha de
+    # SOMA de planilha colada junto, com espaços à esquerda empurrando os números de total
+    # pra dentro da faixa de caractere onde o código do material era esperado, virando um
+    # "material fantasma" com código errado). Descarta a linha inteira nesse caso -- mesmo
+    # tratamento de linha em branco, ver `parse_sap_paste`.
+    if not campos.get(1):
+        return {}
+
+    resto = line[FIM_REGIAO_FIXA:]
+    tokens_resto = [t for t in resto.split(" ") if t != ""] if resto.strip() else []
+    # Colunas 23-36 (14 colunas) por token, na ordem em que aparecem -- best-effort: se a
+    # linha real tiver menos valores preenchidos que tokens (colunas vazias no meio), a
+    # correspondência col->valor pode desalinhar a partir daí. Aceito de propósito (ver
+    # docstring do módulo) -- são campos raramente usados, e as colunas 1-22 (as que
+    # importam de verdade pro engenheiro) já saíram corretas pela posição fixa acima.
+    for offset, valor in enumerate(tokens_resto):
+        col = PRIMEIRA_COLUNA_VARIAVEL + offset
+        if col > TOTAL_COLUNAS_PLAN1:
+            break
+        campos[col] = valor
+
+    return campos
+
 
 def parse_sap_paste(raw_text: str) -> list[dict[int, str]]:
     """Cada linha colada -> dict {coluna (1-indexada): valor}. Linhas em branco são
     ignoradas. Linhas mais curtas que o esperado ficam só com as colunas presentes
-    (não preenche com vazio o que não veio)."""
+    (não preenche com vazio o que não veio).
+
+    Detecta a origem da colagem por linha: se tem TAB, usa o caminho TAB (Excel); senão,
+    usa o ancoramento por espaço (SAP GUI direto, ver docstring do módulo)."""
     rows: list[dict[int, str]] = []
     for line in raw_text.splitlines():
         if line.strip() == "":
             continue
-        fields = line.split("\t")
-        rows.append({col: value.strip() for col, value in enumerate(fields, start=1)})
+        if "\t" in line:
+            fields = line.split("\t")
+            rows.append({col: value.strip() for col, value in enumerate(fields, start=1)})
+        else:
+            rows.append(_parse_linha_espaco(line))
     return rows
 
 

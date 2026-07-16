@@ -13,6 +13,11 @@ import type { Bitin } from '../lib/types'
 // e o rótulo de busca abaixo não presumem mais "só os meus" pra todo mundo.
 const GESTOR_LEVEL = 1
 
+// Mesmo nível usado em Settings.tsx/BitinDetail.tsx e backend/api/bitins.py::ADMIN_LEVEL --
+// só espelhado aqui pra decidir se mostra "Excluir" num BITin já enviado (2026-07-16, pedido
+// do usuário: admin pode excluir BITin enviado, não só rascunho).
+const ADMIN_LEVEL = 99
+
 type Aba = 'todos' | 'rascunho' | 'enviado'
 type CampoBusca = 'todos' | 'codigo' | 'motivo' | 'solicitante'
 
@@ -42,6 +47,7 @@ export default function MeusBitins() {
   // (decisão do usuário, 2026-07-14). Gestor passou a ver BITins de colegas de setor
   // (2026-07-15), então ganha a mesma opção que já existia só pra admin.
   const ehGestorOuAdmin = (user?.permission_level ?? 0) >= GESTOR_LEVEL
+  const ehAdmin = (user?.permission_level ?? 0) >= ADMIN_LEVEL
   const camposBusca = useMemo(() => {
     const base: { value: CampoBusca; label: string }[] = [
       { value: 'todos', label: 'Tudo' },
@@ -87,11 +93,19 @@ export default function MeusBitins() {
 
   useEffect(carregar, [aba, termo, campoBusca])
 
-  async function excluir(mongoId: string) {
-    if (!window.confirm('Excluir este rascunho? Essa ação não pode ser desfeita.')) return
+  // Excluir BITin já enviado (2026-07-16, admin-only) é mais grave que excluir rascunho --
+  // libera o número sequencial -- por isso o texto de confirmação muda pro caso "enviado"
+  // (mesma cópia usada em BitinDetail.tsx::handleExcluirEnviado, pra ficar consistente entre
+  // as duas telas onde isso aparece).
+  async function excluir(bitin: Bitin) {
+    const mensagem =
+      bitin.status === 'enviado'
+        ? `Excluir este BITin já enviado (código ${bitin.codigo ?? '—'})? Essa ação não pode ser desfeita e vai liberar o número sequencial.`
+        : 'Excluir este rascunho? Essa ação não pode ser desfeita.'
+    if (!window.confirm(mensagem)) return
     try {
-      await api.delete(`/bitins/${mongoId}`)
-      setBitins((atual) => atual?.filter((b) => b.mongo_id !== mongoId) ?? null)
+      await api.delete(`/bitins/${bitin.mongo_id}`)
+      setBitins((atual) => atual?.filter((b) => b.mongo_id !== bitin.mongo_id) ?? null)
     } catch {
       setErro('Não foi possível excluir. Tente novamente.')
     }
@@ -206,10 +220,21 @@ export default function MeusBitins() {
                     {b.status === 'rascunho' && b.pode_editar && (
                       <button
                         type="button"
-                        onClick={() => excluir(b.mongo_id)}
+                        onClick={() => excluir(b)}
                         className="text-ink-faint hover:text-red-600"
                         aria-label="Excluir rascunho"
                         title="Excluir rascunho"
+                      >
+                        ×
+                      </button>
+                    )}
+                    {b.status === 'enviado' && ehAdmin && (
+                      <button
+                        type="button"
+                        onClick={() => excluir(b)}
+                        className="text-ink-faint hover:text-red-600"
+                        aria-label="Excluir BITin enviado"
+                        title="Excluir BITin enviado"
                       >
                         ×
                       </button>

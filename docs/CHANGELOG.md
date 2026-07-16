@@ -2,6 +2,56 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v0.8.3] - 2026-07-16
+
+Checklist automática mapeada das macros reais do Excel, admin exclui BITin enviado,
+confirmação/navegação pós-envio, Lista Técnica direto na aba BITin, busca tolerante de campo
+alterado, e reformulação completa do modelo de permissões (4 níveis: Usuário/Gestor/
+Cadastro/Admin).
+
+### Added
+
+- **Checklist automática, verificada contra as macros VBA reais** (`scripts/bitin_document.py`):
+  auditoria completa dos 20 módulos do Excel original (`artifacts/vba/*.bas`) encontrou 8
+  regras reais de automação (Alt→Desenho/Processo/Fornecedor, nota "SALVAR DWG"/"SALVAR SAT"
+  por texto exato→Atualizar DWG/SAT, Est/LP/PRE/OC/OF preenchidos→itens correspondentes) —
+  restaurada a sugestão automática (removida numa rodada anterior por falta de verificação),
+  agora com regras confirmadas uma a uma contra o código real. Override manual continua tendo
+  prioridade em ambas as direções.
+- **Admin exclui BITin enviado**: `DELETE /bitins/{id}` agora permite excluir um BITin já
+  enviado quando quem pede é admin (nível 99) — limpa a linha correspondente no SQLite junto
+  com o documento no Mongo. Botão na aba BITin e em "Meus Bitins".
+- **Confirmação + navegação pós-envio**: banner de sucesso com o código gerado, a tela
+  atualiza sozinha pro estado "enviado" sem precisar recarregar a página.
+- **Lista Técnica direto na aba BITin**: botão "+ Lista técnica" ao lado de "+ Campo alterado
+  / nota" em cada material — grade inline editável (`ListaTecnicaInline.tsx`), mesma
+  `lista_tecnica[]` compartilhada com a página dedicada, sem precisar trocar de tela.
+- **Busca tolerante no "+ Campo alterado / nota"**: digitar "niv" acha "Nível de Revisão" —
+  ignora acento e maiúscula/minúscula, casa por trecho em vez de exigir o nome exato do campo.
+- **Modelo de permissões reformulado** (4 níveis numerados, substituindo 0/1/99):
+  - **99 Admin** — acesso total, ninguém consegue rebaixar (nem outro admin), sem setor
+    obrigatório.
+  - **77 Gestor** — vê rascunho+enviado só do(s) próprio(s) setor(es) (igual antes, só
+    renumerado); setor agora obrigatório.
+  - **88 Cadastro** (novo papel) — vê só os ENVIADOS do(s) próprio(s) setor(es) + os próprios
+    rascunhos; pode criar/enviar BITin normalmente; setor obrigatório.
+  - **66 Usuário** — só os próprios BITins (igual antes, renumerado de 0); setor obrigatório.
+  - `check_permission` deixou de comparar por limiar numérico (`>=`) e passou a checar
+    pertencimento a um conjunto explícito de níveis — os novos números não formam mais uma
+    hierarquia linear limpa.
+  - Migração de dados dos usuários existentes (`scripts/migrar_niveis_permissao.py`,
+    dry-run por padrão) já aplicada ao banco real: 0→66, 1→77, 99 inalterado.
+
+### Validação
+
+- Backend: 226 → **235** testes, todos verdes.
+- Frontend: `npm run typecheck`, `npx oxlint src`, `npm run test` (4/4), `npm run build` —
+  todos limpos.
+- Validação visual ao vivo cobrindo checklist automática (Alt/DWG/SAT reais), exclusão de
+  BITin enviado como admin (confirmado nos dois bancos), confirmação pós-envio, busca
+  tolerante, e as 4 permissões novas (opções no cadastro, setor obrigatório, admin
+  protegido).
+
 ## [v0.8.2] - 2026-07-16
 
 MongoDB Atlas real (destrava persistência de verdade do conteúdo de BITin, antes só rodava em

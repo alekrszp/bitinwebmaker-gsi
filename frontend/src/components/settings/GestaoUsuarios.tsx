@@ -58,6 +58,18 @@ export default function GestaoUsuarios({ sectors }: { sectors: Sector[] }) {
             <tbody className="divide-y divide-line">
               {users.map((u) => {
                 const souEu = u.id === currentUser?.id
+                // Admin (99) nunca pode ser rebaixado por ninguém, nem por outro admin
+                // (2026-07-16, "ninguém pode tirar permissão dele") -- PATCH /users/{id}/
+                // permission já rejeita isso no backend com 400; aqui só evita a chamada
+                // inútil desabilitando a linha inteira pra qualquer usuário logado, não só
+                // pra si mesmo.
+                const ehAdmin = u.permission_level === 99
+                const desabilitado = souEu || ehAdmin || salvandoId === u.id
+                const titulo = ehAdmin
+                  ? 'Não é possível alterar a permissão de um administrador.'
+                  : souEu
+                    ? 'Você não pode alterar o próprio nível'
+                    : undefined
                 return (
                   <tr key={u.id}>
                     <td className="whitespace-nowrap px-3 py-2 text-ink">{u.nome}</td>
@@ -70,13 +82,14 @@ export default function GestaoUsuarios({ sectors }: { sectors: Sector[] }) {
                     <td className="px-3 py-2">
                       <select
                         value={u.permission_level}
-                        disabled={souEu || salvandoId === u.id}
+                        disabled={desabilitado}
                         onChange={(e) => alterarNivel(u.id, Number(e.target.value))}
-                        title={souEu ? 'Você não pode alterar o próprio nível' : undefined}
+                        title={titulo}
                         className="rounded border border-line bg-surface px-2 py-1 text-sm text-ink disabled:opacity-50"
                       >
-                        <option value={0}>Usuário</option>
-                        <option value={1}>Gestor</option>
+                        <option value={66}>Usuário</option>
+                        <option value={77}>Gestor</option>
+                        <option value={88}>Cadastro</option>
                         <option value={99}>Admin</option>
                       </select>
                     </td>

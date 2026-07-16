@@ -17,16 +17,17 @@ import type { Bitin, MateriaisSchema, MaterialEditavel } from '../lib/types'
 // aqui. Colunas vêm do schema do backend (GET /bitins/schema/materiais), não hardcodadas
 // (fonte única de verdade, ver docs/BACKEND.md).
 //
-// Colar do SAP (2026-07-15, reformulado): não é uma aba/painel separado -- o engenheiro cola
-// em QUALQUER célula de uma linha em branco (não precisa ser a primeira), igual copiando/
-// colando dentro do próprio Excel. Se o texto colado tem TAB (grade real do SAP GUI, célula por
-// célula) ou várias linhas, a colagem padrão do navegador é interceptada e o texto vai pro
-// parser (`POST /bitins/parse-sap-paste`, reaproveita `sap_paste_parser.py` já testado) que
-// já sabe a posição de cada campo -- 1 linha colada vira 1 material preenchido, N linhas
-// coladas de uma vez viram N materiais, cada campo já cai na coluna certa (decisão do
-// usuário: "ele cola em 1 cria varias e já pega a posição certa de cada um, tem o mapeamento
-// dos campos"). Colar um valor só (sem TAB) num campo isolado funciona normal, sem interceptar
-// nada.
+// Colar do SAP (2026-07-15, reformulado; heurística de detecção ampliada em 2026-07-16): não
+// é uma aba/painel separado -- o engenheiro cola em QUALQUER célula de uma linha em branco
+// (não precisa ser a primeira), igual copiando/colando dentro do próprio Excel. Se o texto
+// colado tem TAB (grade colada via Excel, célula por célula), várias linhas, ou "parece" uma
+// linha da ZBPP009 colada direto do SAP GUI (sem TAB -- ver heurística em `colarNaLinha`), a
+// colagem padrão do navegador é interceptada e o texto vai pro parser
+// (`POST /bitins/parse-sap-paste`, reaproveita `sap_paste_parser.py` já testado) que já sabe a
+// posição de cada campo -- 1 linha colada vira 1 material preenchido, N linhas coladas de uma
+// vez viram N materiais, cada campo já cai na coluna certa (decisão do usuário: "ele cola em 1
+// cria varias e já pega a posição certa de cada um, tem o mapeamento dos campos"). Colar um
+// valor só e curto num campo isolado continua funcionando normal, sem interceptar nada.
 //
 // O que é colado/digitado aqui vira o "de" de materiais[].alteracoes.dados_basicos -- o
 // snapshot atual do material, exatamente como está no SAP. O "para" (o que muda) só é
@@ -62,7 +63,16 @@ export default function CodigosSapPage() {
   const [carregando, setCarregando] = useState(true)
   const [salvando, setSalvando] = useState(false)
   const [erro, setErro] = useState<string | null>(null)
-  const { enviando, errosEnvio, enviar } = useEnviarBitin(mongoId)
+  const [selecionadas, setSelecionadas] = useState<Set<number>>(new Set())
+  const { enviando, errosEnvio, bitinEnviado, enviar } = useEnviarBitin(mongoId)
+
+  // Envio bem-sucedido navega direto pra aba BITin, já travada em modo enviado (2026-07-16,
+  // mesma ideia de "Importar pra BITin" -- useEnviarBitin não navega mais sozinho, ver
+  // lib/useEnviarBitin.ts).
+  useEffect(() => {
+    if (bitinEnviado) navigate(`/bitins/${mongoId}`)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [bitinEnviado])
 
   useEffect(() => {
     if (!mongoId) return
@@ -120,17 +130,63 @@ export default function CodigosSapPage() {
     setMateriais((atual) => atual.filter((_, i) => i !== index))
   }
 
+  // Barra de ferramentas acima da tabela (2026-07-16, decisão do usuário: "esse X ta muito
+  // longe, coloca ali no cabeçalho em cima da tabela uma barra de ferramentas de manipulação")
+  // -- seleção múltipla via checkbox por linha substitui ter que clicar em cada "×" um por um
+  // pra remover vários materiais. Guardamos os índices selecionados (não os objetos, já que
+  // linhas não têm id estável) -- por isso "Excluir selecionadas" precisa filtrar por "índice
+  // não está no conjunto selecionado" numa única passada, em vez de fazer .splice em loop
+  // (índice desloca a cada remoção e apagaria a linha errada).
+  function removerSelecionadas() {
+    setMateriais((atual) => {
+      const restantes = atual.filter((_, i) => !selecionadas.has(i))
+      return restantes.length > 0 ? restantes : [materialVazio()]
+    })
+    setSelecionadas(new Set())
+  }
+
+  function limparTudo() {
+    if (!window.confirm('Limpar toda a tabela? Essa ação não pode ser desfeita.')) return
+    setMateriais([materialVazio()])
+    setSelecionadas(new Set())
+  }
+
+  function alternarSelecao(index: number) {
+    setSelecionadas((atual) => {
+      const copia = new Set(atual)
+      if (copia.has(index)) copia.delete(index)
+      else copia.add(index)
+      return copia
+    })
+  }
+
+  function alternarSelecaoTodas() {
+    setSelecionadas((atual) => (atual.size === materiais.length ? new Set() : new Set(materiais.map((_, i) => i))))
+  }
+
   // Cole em QUALQUER célula da linha (não precisa ser a primeira -- corrigido em 2026-07-15,
   // bug real: o interceptador só estava plugado na 1ª coluna de identificação, mas essa deixou
   // de ser "Tipo Material" quando o campo foi reordenado, então colar em "Tipo Material" (hoje a
   // última coluna de identificação) caía no paste padrão do navegador e despejava o texto
   // inteiro, cru, num campo só -- "mapeamento errado, vai tudo errado"). Se o texto tem TAB
-  // (grade do SAP GUI colada célula por célula) ou várias linhas, vira N materiais prontos,
-  // cada campo já na posição certa; substitui a linha onde colou e mantém uma linha em branco
-  // no final pra continuar colando. Colar um valor único (sem TAB) não intercepta nada -- o
-  // navegador cola normal, célula a célula.
+  // (grade colada via Excel), várias linhas, ou parece uma linha da ZBPP009 colada direto do
+  // SAP GUI sem TAB (heurística de espaço, ver `colarNaLinha`, bug real 2026-07-16: cola direta
+  // do SAP GUI não tem TAB nenhum), vira N materiais prontos, cada campo já na posição certa;
+  // substitui a linha onde colou e mantém uma linha em branco no final pra continuar colando.
+  // Colar um valor único curto não intercepta nada -- o navegador cola normal, célula a célula.
   async function colarNaLinha(index: number, texto: string) {
-    if (!texto.includes('\t') && !texto.includes('\n')) return false
+    // Cola direta do SAP GUI (sem passar pelo Excel) não tem TAB nenhum -- caso real do
+    // usuário, 2026-07-16: as 36 colunas da ZBPP009 vêm separadas por espaço simples numa
+    // única linha (sem \n também, se for só 1 material). Sem TAB/\n pra detectar, a
+    // heurística usada é: 2+ espaços consecutivos (colunas em branco entre valores, típico
+    // de grade tabular) OU 10+ tokens separados por espaço simples (uma linha real da
+    // ZBPP009 tem ~36 campos; um texto digitado à mão num campo só dificilmente chega
+    // nisso). Trade-off aceito: uma colagem legítima de texto livre longo (10+ palavras)
+    // num campo só seria mal-interpretada como colagem de SAP -- risco baixo pra este
+    // formulário (campos são todos curtos/códigos), e o pior caso é o texto ir pro parser
+    // e a linha ficar com poucas colunas preenchidas, não uma perda de dado silenciosa.
+    const pareceGradeSap = /  /.test(texto) || texto.trim().split(' ').length >= 10
+    if (!texto.includes('\t') && !texto.includes('\n') && !pareceGradeSap) return false
     setErro(null)
     try {
       const resp = await api.post('/bitins/parse-sap-paste', { raw_text: texto })
@@ -238,10 +294,46 @@ export default function CodigosSapPage() {
       <ErrosEnvioBanner erros={errosEnvio} />
 
       <Card title="Materiais">
-        <div className="mt-4 overflow-x-auto rounded border border-line">
+        <div className="mt-4 flex flex-wrap items-center gap-2 rounded-lg bg-surface-alt px-3 py-2">
+          <span className="text-xs font-medium text-ink-muted">
+            {selecionadas.size > 0 ? `${selecionadas.size} selecionada(s)` : 'Nenhuma linha selecionada'}
+          </span>
+          <button
+            type="button"
+            onClick={removerSelecionadas}
+            disabled={selecionadas.size === 0}
+            className="rounded-lg border border-red-600/40 px-3 py-1.5 text-xs font-medium text-red-600 transition-colors hover:bg-red-600/10 disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            Excluir selecionadas
+          </button>
+          <button
+            type="button"
+            onClick={limparTudo}
+            className="rounded-lg border border-line px-3 py-1.5 text-xs font-medium text-ink-muted transition-colors hover:bg-surface"
+          >
+            Limpar tudo
+          </button>
+          <button
+            type="button"
+            onClick={() => setMateriais((atual) => [...atual, materialVazio()])}
+            className="ml-auto rounded-lg border border-dashed border-line px-3 py-1.5 text-xs font-medium text-ink-muted hover:bg-surface"
+          >
+            + Nova linha
+          </button>
+        </div>
+
+        <div className="mt-2 overflow-x-auto rounded border border-line">
           <table className="w-full text-left text-sm">
             <thead>
               <tr className="bg-surface-alt text-xs uppercase tracking-wide text-ink-muted">
+                <th className="w-8 px-3 py-2">
+                  <input
+                    type="checkbox"
+                    checked={materiais.length > 0 && selecionadas.size === materiais.length}
+                    onChange={alternarSelecaoTodas}
+                    aria-label="Selecionar todas as linhas"
+                  />
+                </th>
                 {schema.identificacao
                   .filter((campo) => !COLUNAS_IDENTIFICACAO_OCULTAS.has(campo.key))
                   .map((campo) => (
@@ -260,6 +352,14 @@ export default function CodigosSapPage() {
             <tbody className="divide-y divide-line">
               {materiais.map((m, i) => (
                 <tr key={i}>
+                  <td className="px-3 py-1.5 text-center">
+                    <input
+                      type="checkbox"
+                      checked={selecionadas.has(i)}
+                      onChange={() => alternarSelecao(i)}
+                      aria-label={`Selecionar linha ${i + 1}`}
+                    />
+                  </td>
                   {schema.identificacao
                     .filter((campo) => !COLUNAS_IDENTIFICACAO_OCULTAS.has(campo.key))
                     .map((campo) => (
@@ -305,14 +405,6 @@ export default function CodigosSapPage() {
             </tbody>
           </table>
         </div>
-
-        <button
-          type="button"
-          onClick={() => setMateriais((atual) => [...atual, materialVazio()])}
-          className="mt-3 rounded-lg border border-dashed border-line px-4 py-2 text-sm font-medium text-ink-muted hover:bg-surface-alt"
-        >
-          + Nova linha
-        </button>
       </Card>
 
       {mongoId && <EdicaoBottomBar mongoId={mongoId} enviando={enviando || salvando} onEnviar={handleEnviar} />}

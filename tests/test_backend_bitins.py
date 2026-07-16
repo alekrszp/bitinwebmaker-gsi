@@ -86,7 +86,7 @@ class BitinApiTest(unittest.TestCase):
         app.dependency_overrides.clear()
         self.engine.dispose()
 
-    def _create_user(self, user_id: int, email: str | None = None, permission_level: int = 0) -> Usuario:
+    def _create_user(self, user_id: int, email: str | None = None, permission_level: int = 66) -> Usuario:
         db = self.SessionLocal()
         user = Usuario(
             id=user_id,
@@ -193,7 +193,7 @@ class BitinApiTest(unittest.TestCase):
         registrada em docs/FRONTEND.md)."""
         self.client.post("/api/v1/bitins/draft", json={"content": make_bitin_content()})
 
-        outro_usuario = self._create_user(2, permission_level=0)
+        outro_usuario = self._create_user(2, permission_level=66)
         resp = self.client.get(
             "/api/v1/bitins/resumo-usuario",
             headers={"Authorization": f"Bearer {self._token_for(outro_usuario)}"},
@@ -450,7 +450,7 @@ class BitinApiTest(unittest.TestCase):
         continua isolado ao próprio e-mail."""
         self.client.post("/api/v1/bitins/draft", json={"content": make_bitin_content()})
 
-        outro_usuario_comum = self._create_user(2, permission_level=0)
+        outro_usuario_comum = self._create_user(2, permission_level=66)
         resp = self.client.get(
             "/api/v1/bitins",
             headers={"Authorization": f"Bearer {self._token_for(outro_usuario_comum)}"},
@@ -488,9 +488,9 @@ class BitinApiTest(unittest.TestCase):
         db.refresh(setor_a)
         db.refresh(setor_b)
 
-        gestor = self._create_user(2, permission_level=1)
-        colega = self._create_user(3, permission_level=0)
-        de_fora = self._create_user(4, permission_level=0)
+        gestor = self._create_user(2, permission_level=77)
+        colega = self._create_user(3, permission_level=66)
+        de_fora = self._create_user(4, permission_level=66)
 
         db_gestor = db.query(Usuario).filter(Usuario.id == gestor.id).first()
         db_colega = db.query(Usuario).filter(Usuario.id == colega.id).first()
@@ -587,7 +587,7 @@ class BitinApiTest(unittest.TestCase):
         create_resp = self.client.post("/api/v1/bitins/draft", json={"content": make_bitin_content()})
         mongo_id = create_resp.json()["mongo_id"]
 
-        outro_usuario = self._create_user(2, permission_level=0)
+        outro_usuario = self._create_user(2, permission_level=66)
         update_resp = self.client.post(
             "/api/v1/bitins/draft",
             json={"mongo_id": mongo_id, "content": make_bitin_content(motivo="Tentando editar")},
@@ -610,7 +610,7 @@ class BitinApiTest(unittest.TestCase):
         create_resp = self.client.post("/api/v1/bitins/draft", json={"content": make_bitin_content()})
         mongo_id = create_resp.json()["mongo_id"]
 
-        outro_usuario = self._create_user(2, permission_level=0)
+        outro_usuario = self._create_user(2, permission_level=66)
         get_resp = self.client.get(
             f"/api/v1/bitins/{mongo_id}",
             headers={"Authorization": f"Bearer {self._token_for(outro_usuario)}"},
@@ -640,12 +640,53 @@ class BitinApiTest(unittest.TestCase):
         create_resp = self.client.post("/api/v1/bitins/draft", json={"content": make_bitin_content()})
         mongo_id = create_resp.json()["mongo_id"]
 
-        outro_usuario = self._create_user(2, permission_level=0)
+        outro_usuario = self._create_user(2, permission_level=66)
         del_resp = self.client.delete(
             f"/api/v1/bitins/{mongo_id}",
             headers={"Authorization": f"Bearer {self._token_for(outro_usuario)}"},
         )
         self.assertEqual(del_resp.status_code, 403)
+
+    def test_admin_pode_excluir_bitin_enviado_e_remove_linha_sql(self) -> None:
+        """Admin (permission_level >= 99) pode excluir um BITin já enviado -- diferente do
+        dono/não-admin, pra quem o envio continua definitivo. Precisa apagar as DUAS
+        representações (Mongo + a linha BitinSQL com o código sequencial), senão sobra uma
+        linha órfã apontando pra um documento que não existe mais."""
+        create_resp = self.client.post("/api/v1/bitins/draft", json={"content": make_bitin_content()})
+        mongo_id = create_resp.json()["mongo_id"]
+        enviar_resp = self.client.post(f"/api/v1/bitins/{mongo_id}/enviar")
+        self.assertTrue(enviar_resp.json()["ok"], enviar_resp.text)
+
+        admin = self._create_user(99, permission_level=99)
+        del_resp = self.client.delete(
+            f"/api/v1/bitins/{mongo_id}",
+            headers={"Authorization": f"Bearer {self._token_for(admin)}"},
+        )
+        self.assertEqual(del_resp.status_code, 200, del_resp.text)
+
+        get_resp = self.client.get(f"/api/v1/bitins/{mongo_id}")
+        self.assertEqual(get_resp.status_code, 404)
+
+        db = self.SessionLocal()
+        bitin_sql = db.query(BitinSQL).filter_by(mongo_document_id=mongo_id).first()
+        self.assertIsNone(bitin_sql, "BitinSQL deveria ter sido removido junto com o documento Mongo")
+        db.close()
+
+    def test_dono_nao_admin_nao_pode_excluir_bitin_enviado(self) -> None:
+        """Mesmo sendo o dono original, um usuário não-admin continua sem poder excluir um
+        BITin já enviado -- só a exclusão admin-only muda aqui, o resto do comportamento
+        anterior é preservado."""
+        create_resp = self.client.post("/api/v1/bitins/draft", json={"content": make_bitin_content()})
+        mongo_id = create_resp.json()["mongo_id"]
+        self.client.post(f"/api/v1/bitins/{mongo_id}/enviar")
+
+        del_resp = self.client.delete(f"/api/v1/bitins/{mongo_id}")
+        self.assertEqual(del_resp.status_code, 400)
+
+        db = self.SessionLocal()
+        bitin_sql = db.query(BitinSQL).filter_by(mongo_document_id=mongo_id).first()
+        self.assertIsNotNone(bitin_sql)
+        db.close()
 
     def test_enviar_registra_criado_por_na_tabela_sql(self) -> None:
         create_resp = self.client.post("/api/v1/bitins/draft", json={"content": make_bitin_content()})
@@ -701,6 +742,78 @@ class BitinApiTest(unittest.TestCase):
         resp = self.client.post("/api/v1/bitins/parse-sap-paste", json={"raw_text": ""})
         self.assertEqual(resp.status_code, 200)
         self.assertEqual(resp.json()["materiais"], [])
+
+    def test_listar_cadastro_ve_enviados_de_colega_mas_nao_rascunho_e_ve_proprio_rascunho(self) -> None:
+        """Nível Cadastro (88, NOVO 2026-07-16 -- "recebe os bitins para baixar e fazer o
+        processo por fora"): vê os ENVIADOS de quem compartilha Setor, mas não os rascunhos
+        alheios (trabalho em andamento de outra pessoa); os próprios BITins (rascunho ou
+        enviado) continuam visíveis normalmente, igual usuário comum."""
+        db = self.SessionLocal()
+        from backend.auth.models import Setor
+
+        setor_a = Setor(nome="Proteína Animal")
+        db.add(setor_a)
+        db.commit()
+        db.refresh(setor_a)
+
+        cadastro = self._create_user(2, permission_level=88)
+        colega = self._create_user(3, permission_level=66)
+
+        db_cadastro = db.query(Usuario).filter(Usuario.id == cadastro.id).first()
+        db_colega = db.query(Usuario).filter(Usuario.id == colega.id).first()
+        db_cadastro.setores = [setor_a]
+        db_colega.setores = [setor_a]
+        db.commit()
+        db.close()
+
+        # colega cria um rascunho e um BITin enviado
+        rascunho_colega = self.client.post(
+            "/api/v1/bitins/draft",
+            json={"content": make_bitin_content()},
+            headers={"Authorization": f"Bearer {self._token_for(colega)}"},
+        )
+        enviado_colega_resp = self.client.post(
+            "/api/v1/bitins/draft",
+            json={"content": make_bitin_content()},
+            headers={"Authorization": f"Bearer {self._token_for(colega)}"},
+        )
+        self.client.post(
+            f"/api/v1/bitins/{enviado_colega_resp.json()['mongo_id']}/enviar",
+            headers={"Authorization": f"Bearer {self._token_for(colega)}"},
+        )
+
+        # o próprio cadastro também tem um rascunho
+        rascunho_proprio = self.client.post(
+            "/api/v1/bitins/draft",
+            json={"content": make_bitin_content()},
+            headers={"Authorization": f"Bearer {self._token_for(cadastro)}"},
+        )
+
+        resp = self.client.get(
+            "/api/v1/bitins",
+            headers={"Authorization": f"Bearer {self._token_for(cadastro)}"},
+        )
+        self.assertEqual(resp.status_code, 200, resp.text)
+        mongo_ids = {b["mongo_id"] for b in resp.json()}
+
+        self.assertIn(enviado_colega_resp.json()["mongo_id"], mongo_ids)  # enviado do colega: vê
+        self.assertNotIn(rascunho_colega.json()["mongo_id"], mongo_ids)  # rascunho do colega: não vê
+        self.assertIn(rascunho_proprio.json()["mongo_id"], mongo_ids)  # próprio rascunho: vê
+
+    def test_listar_cadastro_sem_setor_ve_so_os_proprios(self) -> None:
+        cadastro = self._create_user(2, permission_level=88)
+        outro = self._create_user(3, permission_level=66)
+        self.client.post(
+            "/api/v1/bitins/draft",
+            json={"content": make_bitin_content()},
+            headers={"Authorization": f"Bearer {self._token_for(outro)}"},
+        )
+        resp = self.client.get(
+            "/api/v1/bitins",
+            headers={"Authorization": f"Bearer {self._token_for(cadastro)}"},
+        )
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.json(), [])
 
 
 if __name__ == "__main__":

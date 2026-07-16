@@ -52,11 +52,11 @@ class ValidateBusinessRulesTest(unittest.TestCase):
     # --- Nota 8: sucateamento exige centro de custo ---
 
     def test_nota8_sucateamento_sem_centro_custo_falha(self) -> None:
-        # Checklist é 100% manual agora (2026-07-15) -- Est=S não liga mais o item 22 sozinho,
-        # precisa de override explícito. Sem descrição preenchida ali, a regra falha.
+        # Restaurado em 2026-07-16 (auditoria da macro real): Est=S liga o item 22
+        # AUTOMATICAMENTE (Módulo4.bas), sem precisar de override. Sem descrição preenchida
+        # ali, a regra falha do mesmo jeito.
         bitin = make_bitin()
         bitin["materiais"][0]["alteracoes"]["impactos_operacionais"] = {"alt": "-", "est": "S"}
-        bitin["checklist_overrides"] = {"22": True}
         errors = self.validate(bitin)
         self.assertTrue(any("centro de custo" in e["message"].lower() for e in errors))
         self.assertTrue(any(e["field"] == "checklist_descricoes.22" for e in errors))
@@ -64,19 +64,20 @@ class ValidateBusinessRulesTest(unittest.TestCase):
     def test_nota8_sucateamento_com_centro_custo_passa(self) -> None:
         bitin = make_bitin()
         bitin["materiais"][0]["alteracoes"]["impactos_operacionais"] = {"alt": "-", "est": "S"}
-        bitin["checklist_overrides"] = {"22": True}
         bitin["checklist_descricoes"] = {"22": "Centro de custo 1010, conta razão 99999"}
         # Removendo o dados_basicos herdado de make_bitin (descricao de!=para geraria
         # inconsistência com Alt="-"); aqui o foco é só a regra de sucateamento.
         bitin["materiais"][0]["alteracoes"]["dados_basicos"] = {}
         self.assertEqual(self.validate(bitin), [])
 
-    def test_nota8_item_22_nao_marcado_manualmente_nao_exige_nada(self) -> None:
-        # Est=S sozinho (sem override manual do item 22) não ativa mais a regra -- a checklist
-        # é responsabilidade exclusiva do engenheiro (2026-07-15).
+    def test_nota8_item_22_desligado_manualmente_apesar_do_est_s_nao_exige_nada(self) -> None:
+        # Est=S auto-sugeriria o item 22, mas o engenheiro pode desligar via override manual
+        # (ex.: sucata já tratada fora do sistema) -- override vence a sugestão automática, e
+        # a regra de sucateamento não bloqueia mais (não fica "afeta").
         bitin = make_bitin()
         bitin["materiais"][0]["alteracoes"]["impactos_operacionais"] = {"alt": "-", "est": "S"}
         bitin["materiais"][0]["alteracoes"]["dados_basicos"] = {}
+        bitin["checklist_overrides"] = {"22": False}
         self.assertEqual(self.validate(bitin), [])
 
     def test_nota8_estoque_diferente_de_s_nao_exige_nada(self) -> None:

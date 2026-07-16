@@ -76,8 +76,8 @@
     "-/P": "4",
     "-/F": "5"
   },
-  "automated_checklist_ids": ["1", "2", "3", "4", "5", "6", "7", "8", "10", "17", "18", "19", "20", "22"],
-  "manual_only_checklist_ids": ["9", "11", "12", "13", "14", "15", "16", "21"],
+  "automated_checklist_ids": ["1", "2", "3", "4", "5", "8", "10", "17", "18", "19", "20", "22"],
+  "manual_only_checklist_ids": ["6", "7", "9", "11", "12", "13", "14", "15", "16", "21"],
   "valores_validos": {
     "_comment": "Valores do ANEXO A do POP_ENG_7.3.7_002 para impactos_operacionais. '-' aceito em todos como 'sem impacto' (convenção do sistema).",
     "alt": ["D/P", "D/-", "-/P", "D/F", "-/F", "-"],

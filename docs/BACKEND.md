@@ -85,7 +85,8 @@ valor legível direto, sem o frontend precisar resolver id→nome.
 **Postgres — tabelas `usuarios`/`setores`** (`backend/auth/models.py`):
 
 ```text
-usuarios:         id, email (único), nome, hashed_password, ativo, permission_level (0/1/99),
+usuarios:         id, email (único), nome, hashed_password, ativo, permission_level (66/77/88/99,
+                  ver seção "Autenticação" -- era 0/1/99 antes de 2026-07-16),
                   network_id (nullable), created_at
 setores:          id, nome (único), descricao
 usuario_setores:  usuario_id (FK usuarios), setor_id (FK setores) -- PK composta
@@ -118,7 +119,7 @@ edita o rascunho de outra pessoa), `created_at`, `updated_at`.
 | POST | `/bitins/draft` | Cria ou atualiza um rascunho — **sem validação de negócio** (liberdade de edição). Se `mongo_id` vier no corpo, atualiza; senão, cria novo. |
 | GET | `/bitins/{mongo_id}` | Busca um BITin (rascunho ou enviado) pelo id do Mongo. |
 | GET | `/bitins` | Lista rascunhos + enviados, escopado por **nível de permissão** (alimenta `MeusBitins.tsx`), com filtro adicional por status/termo. Escopo revisto em 2026-07-15 (pedido explícito: "lista de usuários e bitins de todo mundo, com filtragem de solicitante"): usuário comum (0) só os próprios (`criado_por`, como sempre); gestor (1) os de qualquer um que compartilhe ao menos um `Setor` com ele (mesma consulta de `_usuarios_do_mesmo_setor_query`, sem setor nenhum cai pra "só os meus", nunca "todo mundo"); admin (99) o **sistema inteiro, sem filtro nenhum** — antes de 2026-07-15 até admin ficava preso a "só os meus" aqui, decisão que o usuário reverteu explicitamente ("Admin vê tudo"). |
-| DELETE | `/bitins/{mongo_id}` | Apaga um rascunho. Recusa se já enviado. |
+| DELETE | `/bitins/{mongo_id}` | Apaga um rascunho (dono/admin). Um BITin já enviado só pode ser apagado por admin (`permission_level >= 99`, 2026-07-16) — nesse caso também apaga a linha `BitinSQL` correspondente (mesma ressalva de "sem transação real cobrindo os 2 bancos" do fluxo de `/enviar`, ver seção abaixo). |
 | POST | `/bitins/{mongo_id}/enviar` | **O ponto-chave**: chama `bitin_lifecycle.enviar_bitin` (todas as validações de uma vez). Se falhar, devolve **200 com `ok=false` e a lista de erros estruturados** (`{field, code, message}`) no corpo — não é um erro HTTP, é um resultado de validação de negócio (a chamada em si funcionou). Se passar, gera o número sequencial (com retry seguro), cria a linha no Postgres, atualiza o Mongo. |
 | GET | `/bitins/{mongo_id}/resumo` | `bitin_view.render_bitin_summary` — pré-visualização/tela final. |
 | GET | `/bitins/schema/materiais` | `bitin_model.build_materiais_schema` — colunas do grid de materiais (identificação, `dados_basicos` com os 30 campos reais da ZBPP009, `impactos_operacionais` com as opções válidas do POP, `impactos_condicionais`) derivadas do `bitin_schema_crosswalk` (`config/vba_mapping.json`) e do `valores_validos` (`config/bitin_document_mapping.json`). Adicionado em 2026-07-13, sem o bloco `snapshot` inventado (removido em 2026-07-15 — ver "Grid de materiais dirigido por schema" abaixo). |
@@ -165,15 +166,15 @@ pares ficam sempre em colunas adjacentes).
 
 | Método | Rota | O que faz |
 |---|---|---|
-| POST | `/auth/register` | Público. Cria usuário, sempre `permission_level=0` (exceto bootstrap do primeiro usuário). |
+| POST | `/auth/register` | Público. Cria usuário, sempre `permission_level=NIVEL_USUARIO` (66, exceto bootstrap do primeiro usuário). |
 | POST | `/auth/login` | Público (`OAuth2PasswordRequestForm`: `username`=e-mail, `password`). Devolve `Token`. Grava `TentativaLogin`, atualiza `ultimo_acesso`, cria `SessaoUsuario` no sucesso. |
 | POST | `/auth/logout` | Autenticado. Revoga a `SessaoUsuario` do token atual (ver "Tabelas de sessão e auditoria de login" abaixo) — chamadas seguintes com o mesmo token viram `401`. |
 | POST | `/auth/change-password` | Autenticado. Exige `senha_atual` correta; `senha_nova` passa pela mesma validação de força de `UserCreate.password`. Revoga as OUTRAS sessões ativas do usuário (mantém a atual válida) — ver "Troca de senha self-service" abaixo. Também zera `Usuario.senha_temporaria` no sucesso (ver "Cadastro de usuário só por admin" abaixo) — mesma rota atende tanto troca voluntária quanto o primeiro login forçado. |
 | GET | `/users/me` | Perfil do usuário autenticado. Inclui `senha_temporaria`. |
-| POST | `/users` | Cadastro de usuário — exige `permission_level >= 99` (admin). Ver "Cadastro de usuário só por admin" abaixo. |
-| GET | `/users` | Lista usuários — exige `permission_level >= 1` (gestor/admin). Escopo por setor desde 2026-07-15 (pedido explícito: "se um usuário for gestor, ele consegue só ver listagem de usuários do setor que ele é gestor"): admin vê todo mundo; gestor só vê quem compartilha ao menos um `Setor` com ele (`_usuarios_do_mesmo_setor_query`, join via `usuario_setores`) — gestor sem setor nenhum vê lista vazia, não cai pra "vê todo mundo". |
-| GET | `/users/{id}` | Busca usuário por id — exige `permission_level >= 1`. Mesmo escopo por setor de `GET /users`: gestor pedindo um id fora do(s) setor(es) dele recebe **404** (não 403 — não vaza que o id existe). |
-| PATCH | `/users/{id}/permission` | Promove/rebaixa — exige `permission_level >= 99` (admin). |
+| POST | `/users` | Cadastro de usuário — exige `NIVEL_ADMIN` (99). Ver "Cadastro de usuário só por admin" abaixo. Usuário/Gestor/Cadastro (66/77/88) exigem ao menos 1 setor no corpo, 400 se faltar. |
+| GET | `/users` | Lista usuários — exige `NIVEL_GESTOR` ou `NIVEL_ADMIN` (77/99; **não** Cadastro/88, ver "Revisão do modelo de permissões" abaixo). Escopo por setor desde 2026-07-15 (pedido explícito: "se um usuário for gestor, ele consegue só ver listagem de usuários do setor que ele é gestor"): admin vê todo mundo; gestor só vê quem compartilha ao menos um `Setor` com ele (`_usuarios_do_mesmo_setor_query`, join via `usuario_setores`) — gestor sem setor nenhum vê lista vazia, não cai pra "vê todo mundo". |
+| GET | `/users/{id}` | Busca usuário por id — mesmo gate de `GET /users` (Gestor/Admin). Mesmo escopo por setor: gestor pedindo um id fora do(s) setor(es) dele recebe **404** (não 403 — não vaza que o id existe). |
+| PATCH | `/users/{id}/permission` | Promove/rebaixa — exige `NIVEL_ADMIN` (99). Rejeita com 400 se o ALVO já é admin (99) — ninguém pode rebaixar um admin, nem outro admin. |
 | GET | `/sectors` | Público (form de registro precisa listar antes do login existir). |
 | POST | `/sectors` | Cria setor — exige admin. |
 
@@ -193,7 +194,8 @@ buscar o perfil completo do usuário) — unificar resolve isso de graça, com u
   backend também roda em Windows).
 - Cadeia de dependências `get_current_user` → `get_current_active_user` → `check_permission(nível)`
   (`backend/auth/deps.py`).
-- RBAC simples de 3 níveis: `0` usuário comum, `1` gestor, `99` admin (`Usuario.permission_level`).
+- RBAC (`Usuario.permission_level`) -- ver "Revisão do modelo de permissões" abaixo pro esquema
+  atual de 4 níveis (era 3 níveis 0/1/99 até 2026-07-15).
 - Tabela `Setor` (departamento do usuário — Engenharia, RH, TI, ... — **não confundir** com o
   `setor` do BITin em si, que define o prefixo `P`/`A`).
 
@@ -203,10 +205,10 @@ chat/commit para a lista completa):
 - **Vulnerabilidade de escalonamento de privilégio**: lá, `POST /auth/register` aceitava
   `permission_level` direto do corpo da requisição — qualquer um podia se registrar como admin.
   Aqui, `UserCreate` (`backend/auth/schemas.py`) nem tem esse campo — o nível é sempre decidido
-  no servidor (`backend/auth/routes.py`): **`0` por padrão**, exceto o **primeiro usuário já
-  registrado no sistema**, que vira admin automaticamente (bootstrap — sem isso, o sistema
-  nasceria sem nenhum admin capaz de promover ninguém). Promoções depois disso só via
-  `PATCH /users/{id}/permission`, protegido por `check_permission(99)`.
+  no servidor (`backend/auth/routes.py`): **`NIVEL_USUARIO` (66) por padrão**, exceto o
+  **primeiro usuário já registrado no sistema**, que vira admin automaticamente (bootstrap —
+  sem isso, o sistema nasceria sem nenhum admin capaz de promover ninguém). Promoções depois
+  disso só via `PATCH /users/{id}/permission`, protegido por `check_permission(NIVEL_ADMIN)`.
 - **CORS inválido**: `allow_origins=["*"]` + `allow_credentials=True` (combinação insegura,
   rejeitada por navegadores em vários cenários) — trocado por uma lista explícita de origens
   em `backend/main.py` (hoje só as portas padrão do Vite em dev; adicionar o domínio real
@@ -314,6 +316,48 @@ usuário: "vamos fazer uma autenticação melhor, segurança nas senhas etc.".
   OUTRAS sessões ativas do usuário (mesmo padrão de revogação do logout) — troca de senha em
   outro dispositivo/navegador desloga esses, mas não a sessão que acabou de fazer a própria
   troca.
+
+### Revisão do modelo de permissões (2026-07-16)
+
+Substituído o esquema antigo de 3 níveis (`0`/`1`/`99`) por 4 níveis explícitos, nomeados em
+`backend/auth/deps.py` (`NIVEL_USUARIO`, `NIVEL_GESTOR`, `NIVEL_CADASTRO`, `NIVEL_ADMIN`) e
+usados em todo o backend em vez de números mágicos. Os valores em si (66/77/88/99) foram
+escolhidos pelo usuário e **não formam uma hierarquia numérica limpa** — em particular, `88`
+(Cadastro) fica numericamente "entre" Gestor (77) e Admin (99), mas não herda os privilégios de
+nenhum dos dois. Por isso `check_permission` mudou de assinatura: em vez de um único threshold
+(`level: int`, checava `user.permission_level < level`), agora recebe um conjunto explícito de
+níveis permitidos — `check_permission(*allowed_levels: int)`, checando
+`user.permission_level in allowed_levels`. Cada rota passa o conjunto exato de quem pode
+chamá-la (ex.: `check_permission(NIVEL_GESTOR, NIVEL_ADMIN)` em `GET /users`).
+
+- **`NIVEL_USUARIO` (66)** — era `0`. Engenheiro comum: só vê/edita/envia os próprios BITins.
+- **`NIVEL_GESTOR` (77)** — era `1`. Mesmas capacidades de sempre: vê usuários e BITins (rascunho
+  e enviado) de quem compartilha ao menos 1 `Setor` com ele. Comportamento de escopo **inalterado**
+  nesta revisão, só renumerado.
+- **`NIVEL_CADASTRO` (88)** — **novo nível**. "Recebe os bitins para baixar e fazer o processo por
+  fora": vê os BITins **enviados** (não os rascunhos) de colegas de mesmo Setor, além dos
+  próprios BITins em qualquer status (como um Usuário comum). Pode criar/editar/enviar os
+  próprios BITins normalmente. **Não** tem acesso a `GET /users` (só Gestor/Admin gerenciam
+  usuários).
+- **`NIVEL_ADMIN` (99)** — inalterado: acesso total, sem escopo de setor nenhum. **Nenhum
+  usuário admin pode ser rebaixado** por `PATCH /users/{id}/permission`, nem por outro admin —
+  o endpoint rejeita com 400 se o ALVO já é nível 99, independente de quem chama. Não existe rota
+  para despromover um admin (seria edição direta no banco).
+
+**Setor obrigatório para 66/77/88**: `AdminUserCreate` (`POST /users`) agora valida que
+`sector_ids` tem ao menos 1 item quando `permission_level` é 66, 77 ou 88 — 400 se faltar
+(`backend/api/users.py::create_user_by_admin`, mesma "voz" de erro de `_resolve_setores`).
+Admin (99) é o único nível que pode ficar sem setor nenhum.
+
+**Migração de dados dos usuários existentes**: `permission_level` é uma coluna `Integer` simples
+— não precisou de migração de *schema*, só de *dados* pros usuários já cadastrados no esquema
+antigo. `scripts/migrar_niveis_permissao.py` remapeia `0→66` e `1→77` (`99` fica como está) via
+`UPDATE`, dry-run por padrão (mesmo padrão de segurança de `backend/purge_db.py`):
+
+```bash
+.venv/Scripts/python.exe scripts/migrar_niveis_permissao.py            # dry-run
+.venv/Scripts/python.exe scripts/migrar_niveis_permissao.py --confirm  # aplica de verdade
+```
 
 ### Cadastro de usuário só por admin (adicionado em 2026-07-15)
 

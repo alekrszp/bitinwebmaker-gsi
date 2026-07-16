@@ -51,7 +51,7 @@ class AuthApiTest(unittest.TestCase):
         app.dependency_overrides.clear()
         self.engine.dispose()
 
-    def _create_user(self, user_id: int, permission_level: int = 0) -> Usuario:
+    def _create_user(self, user_id: int, permission_level: int = 66) -> Usuario:
         db = self.SessionLocal()
         user = Usuario(
             id=user_id,
@@ -86,7 +86,7 @@ class AuthApiTest(unittest.TestCase):
             "/api/v1/auth/register",
             json={"email": "segundo@example.com", "nome": "Segundo", "password": "Senha123!"},
         )
-        self.assertEqual(resp.json()["permission_level"], 0)
+        self.assertEqual(resp.json()["permission_level"], 66)
 
     def test_registro_ignora_permission_level_enviado_pelo_cliente(self) -> None:
         """A vulnerabilidade encontrada na revisão do GPT_Engineering_authAPI: o cliente não
@@ -104,7 +104,7 @@ class AuthApiTest(unittest.TestCase):
             },
         )
         self.assertEqual(resp.status_code, 200, resp.text)
-        self.assertEqual(resp.json()["permission_level"], 0)
+        self.assertEqual(resp.json()["permission_level"], 66)
 
     def test_registro_com_email_duplicado_falha(self) -> None:
         payload = {"email": "dup@example.com", "nome": "Dup", "password": "Senha123!"}
@@ -297,10 +297,10 @@ class AuthApiTest(unittest.TestCase):
         setor_a = self._criar_setor("Proteína Animal")
         setor_b = self._criar_setor("Armazenagem de Grãos")
 
-        gestor = self._create_user(1, permission_level=1)
-        colega_mesmo_setor = self._create_user(2, permission_level=0)
-        colega_outro_setor = self._create_user(3, permission_level=0)
-        sem_setor = self._create_user(4, permission_level=0)
+        gestor = self._create_user(1, permission_level=77)
+        colega_mesmo_setor = self._create_user(2, permission_level=66)
+        colega_outro_setor = self._create_user(3, permission_level=66)
+        sem_setor = self._create_user(4, permission_level=66)
 
         self._atribuir_setores(gestor.id, [setor_a])
         self._atribuir_setores(colega_mesmo_setor.id, [setor_a])
@@ -319,8 +319,8 @@ class AuthApiTest(unittest.TestCase):
     def test_gestor_sem_setor_ve_lista_vazia_de_usuarios(self) -> None:
         """Um gestor sem setor nenhum não gerencia ninguém -- não cai pra "vê todo mundo" por
         omissão."""
-        gestor = self._create_user(1, permission_level=1)
-        self._create_user(2, permission_level=0)
+        gestor = self._create_user(1, permission_level=77)
+        self._create_user(2, permission_level=66)
 
         resp = self.client.get(
             "/api/v1/users", headers={"Authorization": f"Bearer {create_access_token(gestor.id)}"},
@@ -330,8 +330,8 @@ class AuthApiTest(unittest.TestCase):
 
     def test_admin_continua_vendo_todo_mundo_em_users(self) -> None:
         admin = self._create_user(1, permission_level=99)
-        self._create_user(2, permission_level=0)
-        self._create_user(3, permission_level=0)
+        self._create_user(2, permission_level=66)
+        self._create_user(3, permission_level=66)
 
         resp = self.client.get(
             "/api/v1/users", headers={"Authorization": f"Bearer {create_access_token(admin.id)}"},
@@ -343,8 +343,8 @@ class AuthApiTest(unittest.TestCase):
         setor_a = self._criar_setor("Proteína Animal")
         setor_b = self._criar_setor("Armazenagem de Grãos")
 
-        gestor = self._create_user(1, permission_level=1)
-        de_fora = self._create_user(2, permission_level=0)
+        gestor = self._create_user(1, permission_level=77)
+        de_fora = self._create_user(2, permission_level=66)
         self._atribuir_setores(gestor.id, [setor_a])
         self._atribuir_setores(de_fora.id, [setor_b])
 
@@ -364,21 +364,21 @@ class AuthApiTest(unittest.TestCase):
         self.assertEqual(resp.json()["email"], user.email)
 
     def test_users_list_exige_nivel_gestor_ou_admin(self) -> None:
-        comum = self._create_user(1, permission_level=0)
+        comum = self._create_user(1, permission_level=66)
         resp = self.client.get(
             "/api/v1/users", headers={"Authorization": f"Bearer {create_access_token(comum.id)}"},
         )
         self.assertEqual(resp.status_code, 403)
 
-        gestor = self._create_user(2, permission_level=1)
+        gestor = self._create_user(2, permission_level=77)
         resp = self.client.get(
             "/api/v1/users", headers={"Authorization": f"Bearer {create_access_token(gestor.id)}"},
         )
         self.assertEqual(resp.status_code, 200)
 
     def test_promover_usuario_exige_admin(self) -> None:
-        gestor = self._create_user(1, permission_level=1)
-        alvo = self._create_user(2, permission_level=0)
+        gestor = self._create_user(1, permission_level=77)
+        alvo = self._create_user(2, permission_level=66)
 
         resp_negado = self.client.patch(
             f"/api/v1/users/{alvo.id}/permission",
@@ -522,7 +522,7 @@ class AuthApiTest(unittest.TestCase):
         self.assertEqual(outra_revogada.status_code, 401, outra_revogada.text)
 
     def test_sectors_criar_exige_admin(self) -> None:
-        comum = self._create_user(1, permission_level=0)
+        comum = self._create_user(1, permission_level=66)
         resp = self.client.post(
             "/api/v1/sectors", json={"nome": "Engenharia"},
             headers={"Authorization": f"Bearer {create_access_token(comum.id)}"},
@@ -541,19 +541,23 @@ class AuthApiTest(unittest.TestCase):
     # para não ter que cadastrar no banco".
 
     def test_criar_usuario_por_admin_exige_permissao_99(self) -> None:
-        gestor = self._create_user(1, permission_level=1)
+        gestor = self._create_user(1, permission_level=77)
         resp = self.client.post(
             "/api/v1/users",
-            json={"email": "novo@example.com", "nome": "Novo", "permission_level": 0},
+            json={"email": "novo@example.com", "nome": "Novo", "permission_level": 66},
             headers={"Authorization": f"Bearer {create_access_token(gestor.id)}"},
         )
         self.assertEqual(resp.status_code, 403, resp.text)
 
     def test_criar_usuario_por_admin_com_sucesso_gera_senha_temporaria_valida(self) -> None:
         admin = self._create_user(1, permission_level=99)
+        setor = self._criar_setor("Engenharia")
         resp = self.client.post(
             "/api/v1/users",
-            json={"email": "Novo@Example.com", "nome": "Novo", "permission_level": 0},
+            json={
+                "email": "Novo@Example.com", "nome": "Novo", "permission_level": 66,
+                "sector_ids": [setor],
+            },
             headers={"Authorization": f"Bearer {create_access_token(admin.id)}"},
         )
         self.assertEqual(resp.status_code, 200, resp.text)
@@ -575,19 +579,23 @@ class AuthApiTest(unittest.TestCase):
 
     def test_criar_usuario_por_admin_com_email_duplicado_falha(self) -> None:
         admin = self._create_user(1, permission_level=99)
-        self._create_user(2, permission_level=0)  # email user2@example.com
+        self._create_user(2, permission_level=66)  # email user2@example.com
         resp = self.client.post(
             "/api/v1/users",
-            json={"email": "user2@example.com", "nome": "Duplicado", "permission_level": 0},
+            json={"email": "user2@example.com", "nome": "Duplicado", "permission_level": 66},
             headers={"Authorization": f"Bearer {create_access_token(admin.id)}"},
         )
         self.assertEqual(resp.status_code, 400, resp.text)
 
     def test_login_com_senha_temporaria_gerada_por_admin_funciona(self) -> None:
         admin = self._create_user(1, permission_level=99)
+        setor = self._criar_setor("Engenharia")
         criar = self.client.post(
             "/api/v1/users",
-            json={"email": "temp@example.com", "nome": "Temp", "permission_level": 0},
+            json={
+                "email": "temp@example.com", "nome": "Temp", "permission_level": 66,
+                "sector_ids": [setor],
+            },
             headers={"Authorization": f"Bearer {create_access_token(admin.id)}"},
         )
         senha_gerada = criar.json()["senha_temporaria_gerada"]
@@ -613,6 +621,94 @@ class AuthApiTest(unittest.TestCase):
         me_depois = self.client.get("/api/v1/users/me", headers=headers)
         self.assertEqual(me_depois.status_code, 200, me_depois.text)
         self.assertFalse(me_depois.json()["senha_temporaria"])
+
+    # Revisão do modelo de permissões (2026-07-16): 4 níveis -- 66 Usuário, 77 Gestor,
+    # 88 Cadastro, 99 Admin. Usuário/Gestor/Cadastro exigem ao menos 1 setor; Admin não.
+
+    def test_criar_usuario_nivel_66_sem_setor_falha(self) -> None:
+        admin = self._create_user(1, permission_level=99)
+        resp = self.client.post(
+            "/api/v1/users",
+            json={"email": "semsetor66@example.com", "nome": "Sem Setor", "permission_level": 66},
+            headers={"Authorization": f"Bearer {create_access_token(admin.id)}"},
+        )
+        self.assertEqual(resp.status_code, 400, resp.text)
+
+    def test_criar_usuario_nivel_77_sem_setor_falha(self) -> None:
+        admin = self._create_user(1, permission_level=99)
+        resp = self.client.post(
+            "/api/v1/users",
+            json={"email": "semsetor77@example.com", "nome": "Sem Setor", "permission_level": 77},
+            headers={"Authorization": f"Bearer {create_access_token(admin.id)}"},
+        )
+        self.assertEqual(resp.status_code, 400, resp.text)
+
+    def test_criar_usuario_nivel_88_sem_setor_falha(self) -> None:
+        admin = self._create_user(1, permission_level=99)
+        resp = self.client.post(
+            "/api/v1/users",
+            json={"email": "semsetor88@example.com", "nome": "Sem Setor", "permission_level": 88},
+            headers={"Authorization": f"Bearer {create_access_token(admin.id)}"},
+        )
+        self.assertEqual(resp.status_code, 400, resp.text)
+
+    def test_criar_usuario_nivel_88_com_setor_sucede(self) -> None:
+        admin = self._create_user(1, permission_level=99)
+        setor = self._criar_setor("Engenharia")
+        resp = self.client.post(
+            "/api/v1/users",
+            json={
+                "email": "cadastro88@example.com", "nome": "Cadastro", "permission_level": 88,
+                "sector_ids": [setor],
+            },
+            headers={"Authorization": f"Bearer {create_access_token(admin.id)}"},
+        )
+        self.assertEqual(resp.status_code, 200, resp.text)
+        self.assertEqual(resp.json()["permission_level"], 88)
+
+    def test_criar_usuario_nivel_99_sem_setor_sucede(self) -> None:
+        """Admin (99) é o único nível que pode ficar sem setor nenhum ("faz tudo que quiser
+        no sistema", não precisa de escopo de setor)."""
+        admin = self._create_user(1, permission_level=99)
+        resp = self.client.post(
+            "/api/v1/users",
+            json={"email": "admin99@example.com", "nome": "Outro Admin", "permission_level": 99},
+            headers={"Authorization": f"Bearer {create_access_token(admin.id)}"},
+        )
+        self.assertEqual(resp.status_code, 200, resp.text)
+
+    def test_admin_nao_pode_ser_rebaixado_nem_por_outro_admin(self) -> None:
+        """"ninguém pode tirar permissão dele" -- vale mesmo quando quem está chamando também
+        é admin. Não existe rota pra despromover um admin."""
+        admin1 = self._create_user(1, permission_level=99)
+        admin_alvo = self._create_user(2, permission_level=99)
+
+        resp = self.client.patch(
+            f"/api/v1/users/{admin_alvo.id}/permission",
+            json={"permission_level": 66},
+            headers={"Authorization": f"Bearer {create_access_token(admin1.id)}"},
+        )
+        self.assertEqual(resp.status_code, 400, resp.text)
+
+        db = self.SessionLocal()
+        ainda_admin = db.query(Usuario).filter(Usuario.id == admin_alvo.id).first()
+        db.close()
+        self.assertEqual(ainda_admin.permission_level, 99)
+
+    def test_users_list_cadastro_recebe_403_gestor_continua_ok(self) -> None:
+        """GET /users fica restrito a Gestor(77)/Admin(99) -- Cadastro(88) cadastra/edita
+        BITins mas não gerencia usuários (2026-07-16)."""
+        cadastro = self._create_user(1, permission_level=88)
+        resp = self.client.get(
+            "/api/v1/users", headers={"Authorization": f"Bearer {create_access_token(cadastro.id)}"},
+        )
+        self.assertEqual(resp.status_code, 403, resp.text)
+
+        gestor = self._create_user(2, permission_level=77)
+        resp_gestor = self.client.get(
+            "/api/v1/users", headers={"Authorization": f"Bearer {create_access_token(gestor.id)}"},
+        )
+        self.assertEqual(resp_gestor.status_code, 200, resp_gestor.text)
 
 
 if __name__ == "__main__":

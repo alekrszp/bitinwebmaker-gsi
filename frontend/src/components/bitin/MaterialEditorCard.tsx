@@ -1,6 +1,7 @@
 import { useId, useState } from 'react'
 import Card from '../Card'
-import type { MateriaisSchema, MaterialEditavel } from '../../lib/types'
+import ListaTecnicaInline from './ListaTecnicaInline'
+import type { ItemListaTecnica, MateriaisSchema, MaterialEditavel } from '../../lib/types'
 
 const COLUNAS_IMPACTO = [
   { chave: 'alt', label: 'Alt' },
@@ -56,11 +57,26 @@ export default function MaterialEditorCard({
 
   const [novoCampo, setNovoCampo] = useState('')
   const [mostrarAddCampo, setMostrarAddCampo] = useState(false)
+  // Colapsada por padrão (2026-07-16, mesmo padrão do "+ Campo alterado / nota" -- só mostra
+  // a grade de lista técnica quando o engenheiro clica, pra não poluir materiais que não têm
+  // alteração de lista técnica). Abre sozinha se já houver itens (material importado da página
+  // Lista Técnica, ou reaberto depois de salvo).
+  const [mostrarListaTecnica, setMostrarListaTecnica] = useState(material.alteracoes.lista_tecnica.length > 0)
+
+  function setListaTecnica(itens: ItemListaTecnica[]) {
+    onChange({ ...material, alteracoes: { ...material.alteracoes, lista_tecnica: itens } })
+  }
+  // Campo com "de" preenchido (vindo da ZBPP009, snapshot atual do SAP) também entra na
+  // tabela editável, não só campo que já tem "para" -- achado real (2026-07-16): importar da
+  // ZBPP009 preenche só o "de" de propósito (o "para" é declarado aqui, na aba BITin), mas
+  // antes disso o material chegava com os 30 campos de dados_basicos preenchidos e a tabela
+  // "Alteração de dados básicos" aparecia vazia -- o engenheiro tinha que readicionar cada
+  // campo na mão, perdendo o "de" que a ZBPP009 já tinha capturado certinho.
   const [camposEmEdicao, setCamposEmEdicao] = useState<Set<string>>(
     () =>
       new Set(
         Object.entries(material.alteracoes.dados_basicos)
-          .filter(([campo, entry]) => camposSapConhecidos.has(campo) && entry.para !== '')
+          .filter(([campo, entry]) => camposSapConhecidos.has(campo) && (entry.de !== '' || entry.para !== ''))
           .map(([campo]) => campo),
       ),
   )
@@ -120,9 +136,16 @@ export default function MaterialEditorCard({
     const texto = textoDigitado.trim()
     if (!texto) return
 
-    const campoConhecido = schema.dados_basicos.find(
-      (c) => c.key === texto || c.label.toLowerCase() === texto.toLowerCase(),
-    )
+    // Busca tolerante (2026-07-16, pedido do usuário: "não precisa ser exatamente o nome do
+    // campo (letra maiúscula acentro etc)... se escrever niv vai achar Nível de Revisão") --
+    // ignora acento/maiúscula e casa por trecho, não só igualdade exata. Prioriza: chave exata
+    // > label exata (já tolerante a acento/caixa) > label que CONTÉM o texto digitado.
+    const normalizar = (s: string) => s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase()
+    const textoNormalizado = normalizar(texto)
+    const campoConhecido =
+      schema.dados_basicos.find((c) => c.key === texto) ??
+      schema.dados_basicos.find((c) => normalizar(c.label) === textoNormalizado) ??
+      schema.dados_basicos.find((c) => normalizar(c.label).includes(textoNormalizado))
 
     if (campoConhecido) {
       const existente = material.alteracoes.dados_basicos[campoConhecido.key]
@@ -303,7 +326,7 @@ export default function MaterialEditorCard({
         </div>
       )}
 
-      <div className="mt-3">
+      <div className="mt-3 flex flex-wrap items-center gap-2">
         {!mostrarAddCampo ? (
           <button
             type="button"
@@ -346,7 +369,26 @@ export default function MaterialEditorCard({
             </button>
           </div>
         )}
+
+        {/* "+ Lista técnica" (2026-07-16, ao lado de "+ Campo alterado / nota", pedido do
+            usuário): edita `material.alteracoes.lista_tecnica` sem sair da aba BITin. Mesmo
+            array que a página dedicada Lista Técnica lê/escreve (ver ListaTecnicaInline.tsx) --
+            nenhuma das duas depende da outra, igual ao resto desta tela. */}
+        <button
+          type="button"
+          onClick={() => setMostrarListaTecnica((atual) => !atual)}
+          className="rounded-lg border border-line px-3 py-1.5 text-sm font-medium text-ink-muted hover:bg-surface-alt"
+        >
+          {mostrarListaTecnica ? 'Ocultar lista técnica' : '+ Lista técnica'}
+        </button>
       </div>
+
+      {mostrarListaTecnica && (
+        <div className="mt-3">
+          <h3 className="text-xs font-semibold uppercase tracking-wide text-ink-muted">Lista técnica</h3>
+          <ListaTecnicaInline itens={material.alteracoes.lista_tecnica} editavel onChange={setListaTecnica} />
+        </div>
+      )}
     </Card>
   )
 }

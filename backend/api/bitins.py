@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 
 import backend.scripts_path as scripts_path  # noqa: F401  (garante sys.path antes dos imports abaixo)
 from backend.api.users import _usuarios_do_mesmo_setor_query
-from backend.auth.deps import get_current_active_user
+from backend.auth.deps import NIVEL_ADMIN, NIVEL_CADASTRO, NIVEL_GESTOR, get_current_active_user
 from backend.auth.models import Usuario
 from backend.bitin_number import SetorInvalido, gerar_e_salvar_bitin_sql
 from backend.db.mongodb import get_mongo_db
@@ -39,7 +39,6 @@ router = APIRouter()
 
 STATUS_RASCUNHO = bitin_lifecycle.STATUS_RASCUNHO
 STATUS_ENVIADO = bitin_lifecycle.STATUS_ENVIADO
-ADMIN_LEVEL = 99
 
 
 class DraftRequest(BaseModel):
@@ -81,7 +80,7 @@ def _pode_editar(doc: dict[str, Any], current_user: Usuario) -> bool:
     if doc.get("status") == STATUS_ENVIADO:
         return False
     criado_por = doc.get("criado_por")
-    if criado_por and criado_por != current_user.email and current_user.permission_level < ADMIN_LEVEL:
+    if criado_por and criado_por != current_user.email and current_user.permission_level < NIVEL_ADMIN:
         return False
     return True
 
@@ -104,7 +103,7 @@ def _require_owner_or_admin(doc: dict[str, Any], current_user: Usuario) -> None:
     """Só quem criou o rascunho (ou um admin) pode editar/excluir. Docs sem 'criado_por'
     (nenhum registrado) não são bloqueados -- não há dono conhecido pra comparar."""
     criado_por = doc.get("criado_por")
-    if criado_por and criado_por != current_user.email and current_user.permission_level < ADMIN_LEVEL:
+    if criado_por and criado_por != current_user.email and current_user.permission_level < NIVEL_ADMIN:
         raise HTTPException(
             status_code=403,
             detail="Só quem criou o rascunho (ou um admin) pode editar/excluir",
@@ -237,29 +236,52 @@ async def list_bitins(
     mongo_db=Depends(get_mongo_db),
 ):
     collection = mongo_db["bitin_contents"]
-    # Escopo por nível (revisto em 2026-07-15, pedido explícito: "lista de usuários e bitins de
-    # todo mundo, com filtragem de solicitante"):
-    # - Usuário comum: só os próprios BITins (criado_por == e-mail), como sempre foi.
-    # - Gestor: BITins de qualquer um que compartilhe ao menos um Setor com ele (mesma consulta
-    #   SQL de backend/api/users.py::_usuarios_do_mesmo_setor_query, "quem o gestor gerencia").
-    #   Gestor sem setor nenhum não ganha acesso a mais ninguém -- cai pra "só os próprios",
-    #   pra não perder o acesso ao próprio trabalho (mesmo raciocínio de list_users, mas aqui a
-    #   consequência de "não vê nada" seria pior: perderia os rascunhos que ele mesmo criou).
-    # - Admin: sem restrição nenhuma -- vê o sistema inteiro (decisão MUDOU nesta rodada: antes
-    #   admin também ficava preso a "só os meus" aqui; usuário confirmou "Admin vê tudo").
-    if current_user.permission_level >= ADMIN_LEVEL:
-        query: dict[str, Any] = {}
-    elif current_user.permission_level >= 1:
+    # Escopo por nível (revisto em 2026-07-16, revisão do modelo de permissões -- 4 níveis
+    # agora: Usuário/Gestor/Cadastro/Admin):
+    # - Usuário (66): só os próprios BITins (criado_por == e-mail), como sempre foi.
+    # - Gestor (77): BITins de qualquer um que compartilhe ao menos um Setor com ele (mesma
+    #   consulta SQL de backend/api/users.py::_usuarios_do_mesmo_setor_query, "quem o gestor
+    #   gerencia"), draft+enviado. Gestor sem setor nenhum não ganha acesso a mais ninguém --
+    #   cai pra "só os próprios", pra não perder o acesso ao próprio trabalho (mesmo raciocínio
+    #   de list_users, mas aqui a consequência de "não vê nada" seria pior: perderia os
+    #   rascunhos que ele mesmo criou).
+    # - Cadastro (88, NOVO 2026-07-16): cadastra/edita BITins mas não é gestor de ninguém --
+    #   vê os PRÓPRIOS BITins em qualquer status (incl. rascunho), e dos colegas de mesmo
+    #   Setor só os já ENVIADOS (rascunho alheio continua privado). Sem setor nenhum, cai pra
+    #   "só os próprios", mesmo raciocínio do Gestor acima.
+    # - Admin (99): sem restrição nenhuma -- vê o sistema inteiro (decisão de 2026-07-15:
+    #   antes admin também ficava preso a "só os meus" aqui; usuário confirmou "Admin vê tudo").
+    #
+    # Construído como uma lista de condições combinadas com $and (em vez de ir setando chaves
+    # direto num dict só) porque o nível Cadastro E o filtro de termo (abaixo) precisam cada um
+    # do seu próprio "$or" -- setar os dois na mesma chave "$or" faria o segundo sobrescrever o
+    # primeiro (achado ao implementar o nível Cadastro).
+    condicoes: list[dict[str, Any]] = []
+    if current_user.permission_level >= NIVEL_ADMIN:
+        pass  # sem restrição -- nenhuma condição de escopo
+    elif current_user.permission_level == NIVEL_CADASTRO:
+        colegas = _usuarios_do_mesmo_setor_query(db, current_user).all()
+        emails_colegas = [u.email for u in colegas if u.email != current_user.email]
+        if emails_colegas:
+            condicoes.append({
+                "$or": [
+                    {"criado_por": current_user.email},
+                    {"criado_por": {"$in": emails_colegas}, "status": STATUS_ENVIADO},
+                ]
+            })
+        else:
+            condicoes.append({"criado_por": current_user.email})
+    elif current_user.permission_level >= NIVEL_GESTOR:
         colegas = _usuarios_do_mesmo_setor_query(db, current_user).all()
         emails = [u.email for u in colegas]
         if emails:
-            query = {"criado_por": {"$in": emails}}
+            condicoes.append({"criado_por": {"$in": emails}})
         else:
-            query = {"criado_por": current_user.email}
+            condicoes.append({"criado_por": current_user.email})
     else:
-        query = {"criado_por": current_user.email}
+        condicoes.append({"criado_por": current_user.email})
     if status:
-        query["status"] = status
+        condicoes.append({"status": status})
     if termo:
         # re.escape antes de virar $regex do Mongo -- sem isso, metacaracteres de regex
         # digitados pelo usuário (ex.: "(", "*") viram parte do padrão em vez de texto
@@ -269,13 +291,16 @@ async def list_bitins(
         # ele (ou com valor desconhecido), busca nos três de uma vez, como sempre foi.
         campo_mongo = TERMO_CAMPO_MONGO.get(campo or "")
         if campo_mongo:
-            query[campo_mongo] = {"$regex": termo_escapado, "$options": "i"}
+            condicoes.append({campo_mongo: {"$regex": termo_escapado, "$options": "i"}})
         else:
-            query["$or"] = [
-                {"content.motivo": {"$regex": termo_escapado, "$options": "i"}},
-                {"content.solicitante": {"$regex": termo_escapado, "$options": "i"}},
-                {"content.bitin": {"$regex": termo_escapado, "$options": "i"}},
-            ]
+            condicoes.append({
+                "$or": [
+                    {"content.motivo": {"$regex": termo_escapado, "$options": "i"}},
+                    {"content.solicitante": {"$regex": termo_escapado, "$options": "i"}},
+                    {"content.bitin": {"$regex": termo_escapado, "$options": "i"}},
+                ]
+            })
+    query: dict[str, Any] = {"$and": condicoes} if condicoes else {}
     cursor = collection.find(query).sort("updated_at", -1).skip(skip).limit(limit)
     docs = await cursor.to_list(length=limit)
     return [_doc_to_response(doc, current_user) for doc in docs]
@@ -285,17 +310,40 @@ async def list_bitins(
 async def delete_bitin(
     mongo_id: str,
     current_user: Usuario = Depends(get_current_active_user),
+    db: Session = Depends(get_db),
     mongo_db=Depends(get_mongo_db),
 ):
+    """Rascunho: qualquer dono/admin pode excluir, como sempre. BITin já enviado: só admin
+    (permission_level >= NIVEL_ADMIN) pode excluir -- pra não-admin (mesmo o dono original) o
+    envio continua definitivo, sem mudança nenhuma aí (decisão do usuário, 2026-07-16).
+
+    Um BITin enviado tem uma linha real em `BitinSQL` (código sequencial gerado em /enviar) --
+    deletar só o documento Mongo deixaria essa linha órfã, quebrando a sequência/histórico (o
+    código nunca mais apareceria em nenhum lugar, mas o número continuaria "gasto"). Por isso
+    o admin apaga os dois na mesma operação, buscando por `mongo_document_id` (mesmo campo
+    usado em /enviar pra detectar envio duplicado concorrente).
+
+    Mesma ressalva já documentada pro dual-write de /enviar (ver docs/BACKEND.md): não há uma
+    transação real cobrindo Mongo+Postgres aqui. Apaga primeiro o Postgres (BitinSQL) e só
+    depois o Mongo -- se a 2ª etapa falhar, o BitinSQL já foi removido mas o documento Mongo
+    ainda existe (não fica número "fantasma" reservado apontando pra um documento apagado, que
+    seria pior; na pior hipótese sobra um doc Mongo "enviado" sem BitinSQL correspondente,
+    facilmente detectável e resolvido numa nova tentativa de exclusão)."""
     collection = mongo_db["bitin_contents"]
     doc = await collection.find_one({"_id": mongo_id})
     if not doc:
         raise HTTPException(status_code=404, detail="BITin não encontrado")
     if doc.get("status") == STATUS_ENVIADO:
-        raise HTTPException(status_code=400, detail="BITin já enviado — não pode ser excluído")
-    _require_owner_or_admin(doc, current_user)
+        if current_user.permission_level < NIVEL_ADMIN:
+            raise HTTPException(status_code=400, detail="BITin já enviado — não pode ser excluído")
+        bitin_sql = db.query(BitinSQL).filter(BitinSQL.mongo_document_id == mongo_id).first()
+        if bitin_sql is not None:
+            db.delete(bitin_sql)
+            db.commit()
+    else:
+        _require_owner_or_admin(doc, current_user)
     await collection.delete_one({"_id": mongo_id})
-    return {"message": "Rascunho excluído", "mongo_id": mongo_id}
+    return {"message": "BITin excluído", "mongo_id": mongo_id}
 
 
 @router.get("/{mongo_id}/resumo")

@@ -44,7 +44,7 @@ fluxo hoje feito em Excel/VBA (`Novo_template_BITin_V2 TESTE.xlsm`) para Python 
    .venv/Scripts/python.exe scripts/lista_tecnica_export.py meu_bitin.json --out-csv lista_tecnica.csv
    ```
 
-4. Rodar a suíte de testes (205 testes cobrindo tudo acima):
+4. Rodar a suíte de testes (235 testes cobrindo tudo acima):
 
    ```powershell
    .venv/Scripts/python.exe -m unittest discover -s tests
@@ -96,6 +96,10 @@ npm run dev
 Releases são criadas manualmente no GitHub, usando `docs/RELEASE_vX.Y.Z.md` como corpo de
 cada release. O processo não é automatizado — a publicação é feita pelo GitHub web interface.
 
+- v0.8.3 — checklist automática mapeada das macros VBA reais, admin exclui BITin enviado,
+  Lista Técnica direto na aba BITin, modelo de permissões reformulado (Usuário/Gestor/
+  Cadastro/Admin):
+  `docs/RELEASE_v0.8.3.md` — <https://github.com/alekrszp/bitinwebmaker-gsi/releases/tag/v0.8.3>
 - v0.8.2 — MongoDB Atlas real (conteúdo de BITin passa a persistir de verdade), limpeza de
   código (componentização de `Settings.tsx`, `ruff` no backend, avisos de lint zerados):
   `docs/RELEASE_v0.8.2.md` — <https://github.com/alekrszp/bitinwebmaker-gsi/releases/tag/v0.8.2>
