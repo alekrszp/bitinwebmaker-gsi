@@ -5,6 +5,7 @@ Uso:
   python scripts/inspect_xlsm_local.py "Novo_template_BITin_V2 TESTE.xlsm" --out docs/inventory.md
 """
 import argparse
+
 from openpyxl import load_workbook
 
 

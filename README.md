@@ -96,6 +96,9 @@ npm run dev
 Releases são criadas manualmente no GitHub, usando `docs/RELEASE_vX.Y.Z.md` como corpo de
 cada release. O processo não é automatizado — a publicação é feita pelo GitHub web interface.
 
+- v0.8.2 — MongoDB Atlas real (conteúdo de BITin passa a persistir de verdade), limpeza de
+  código (componentização de `Settings.tsx`, `ruff` no backend, avisos de lint zerados):
+  `docs/RELEASE_v0.8.2.md` — <https://github.com/alekrszp/bitinwebmaker-gsi/releases/tag/v0.8.2>
 - v0.8.1 — setores múltiplos por usuário + escopo por setor/nível em usuários e BITins
   (gestor vê só o próprio setor, admin vê o sistema inteiro):
   `docs/RELEASE_v0.8.1.md` — <https://github.com/alekrszp/bitinwebmaker-gsi/releases/tag/v0.8.1>

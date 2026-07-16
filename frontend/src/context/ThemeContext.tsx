@@ -1,13 +1,6 @@
-import { createContext, useContext, useEffect, useState, type ReactNode } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
+import { ThemeContext, type Theme } from './themeContextObject'
 
-type Theme = 'light' | 'dark'
-
-interface ThemeContextValue {
-  theme: Theme
-  toggleTheme: () => void
-}
-
-const ThemeContext = createContext<ThemeContextValue | null>(null)
 const STORAGE_KEY = 'bitin_theme'
 
 // Padrão é sempre claro -- não detecta prefers-color-scheme do sistema (decisão explícita:
@@ -30,10 +23,4 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
   }
 
   return <ThemeContext.Provider value={{ theme, toggleTheme }}>{children}</ThemeContext.Provider>
-}
-
-export function useTheme() {
-  const ctx = useContext(ThemeContext)
-  if (!ctx) throw new Error('useTheme precisa estar dentro de <ThemeProvider>')
-  return ctx
 }

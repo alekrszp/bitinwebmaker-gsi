@@ -2,6 +2,59 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v0.8.2] - 2026-07-16
+
+MongoDB Atlas real (destrava persistência de verdade do conteúdo de BITin, antes só rodava em
+mongomock) + limpeza geral de código pedida explicitamente pelo usuário: "remova coisas
+inúteis, limpa ele, deixa ele 100% otimizado... deixa clean code, componetiza bem direitinho
+tudo".
+
+### Added
+
+- **MongoDB Atlas configurado** (`MONGO_URL` real via `.env`, gitignorado): primeira vez que o
+  conteúdo de BITin persiste de verdade entre restarts do backend, fora do ambiente de teste.
+  Validado ao vivo: BITin criado, servidor reiniciado do zero, BITin continuou lá.
+- **`ruff`** — primeiro linter Python do projeto (`backend/requirements.txt`, `pyproject.toml`
+  na raiz, `E`/`F`/`I`). Roda em CI. 54 → 32 achados corrigidos mecanicamente (imports
+  mortos/desorganizados); os 32 restantes são estilo/tamanho de linha, deixados de propósito
+  pra não gerar um diff gigante sem revisão.
+
+### Fixed
+
+- **Handshake TLS instável com MongoDB Atlas** (`backend/db/mongodb.py`): conexão falhava de
+  forma intermitente nesta máquina (Windows + Python 3.14 + OpenSSL 3.0.18) com
+  `SSL: TLSV1_ALERT_INTERNAL_ERROR`. Corrigido passando `tlsCAFile=certifi.where()`
+  explicitamente ao invés de depender do trust store do SO — resolveu de forma consistente nos
+  testes.
+
+### Changed — Componentização/limpeza (comportamento preservado, zero mudança funcional)
+
+- **`Settings.tsx`**: 401 → 46 linhas — `TrocarSenhaForm`, `GestaoUsuarios`,
+  `CriarUsuarioForm` viraram arquivos próprios em `components/settings/`.
+- **`extrairErro`** (duplicado em `Settings.tsx`/`DefinirSenha.tsx`) → `lib/errors.ts`,
+  compartilhado.
+- **Lógica de troca de senha** (duplicada entre `TrocarSenhaForm` e `DefinirSenha.tsx`) →
+  `hooks/usePasswordChangeForm.ts` compartilhado; cada tela continua com a própria
+  cópia/comportamento pós-sucesso.
+- **`FormLabel.tsx`/`TextInput.tsx`** (novos): label repetida 12× e input repetido 11× ao pé
+  da letra em `frontend/src` viram componentes compartilhados.
+- **`AuthContext.tsx`/`ThemeContext.tsx`** separados em Provider + hook (`hooks/useAuth.ts`,
+  `hooks/useTheme.ts`) + arquivo do context object cru — corrige os 2 avisos de Fast Refresh
+  do oxlint (zero avisos agora).
+
+### Validação
+
+- Backend: 205 testes, inalterado (rodada de refactor/config, sem teste novo). `ruff check`
+  limpo dos achados mecânicos.
+- Frontend: `npm run typecheck`, `npx oxlint src` (**0 avisos**, antes 2), `npm run test`
+  (4/4), `npm run build` — todos limpos.
+- Validação visual ao vivo (Playwright): login, tema, Settings inteira (Minha conta, trocar
+  senha, gestão de usuários, cadastrar usuário) e a restrição de admin — tudo funcionando após
+  o refactor, zero erro de console.
+- Migrations pendentes de rodadas anteriores (`senha_temporaria`, `usuario_setores`)
+  finalmente aplicadas ao `bitin_backend.db` real nesta rodada (estavam causando 500 em
+  qualquer login — banco preso 2 migrations atrás do código). Backup feito antes.
+
 ## [v0.8.1] - 2026-07-15
 
 Setores múltiplos por usuário + escopo por setor/nível em usuários e BITins. Pedido explícito:

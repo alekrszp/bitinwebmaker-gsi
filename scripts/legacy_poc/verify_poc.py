@@ -2,7 +2,6 @@
 import argparse
 import sys
 from pathlib import Path
-import csv
 
 # Ensure local scripts/ directory can be imported when running directly
 ROOT = Path(__file__).resolve().parent

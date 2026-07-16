@@ -7,7 +7,6 @@ quanto de tela final depois de enviado. Ver docs/BITIN_MODEL.md, seção "Ciclo 
 from typing import Any
 
 import bitin_document
-
 from bitin_lifecycle import STATUS_RASCUNHO
 
 

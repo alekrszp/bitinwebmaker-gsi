@@ -1,5 +1,7 @@
 import Card from '../Card'
 import DetailField from '../DetailField'
+import FormLabel from '../FormLabel'
+import TextInput from '../TextInput'
 import type { BitinResumo } from '../../lib/bitinTypes'
 import { formatarDataEnvio } from '../../lib/format'
 import ChecklistTable from './ChecklistTable'
@@ -44,46 +46,25 @@ export default function DadosGeraisCard({
       {editavel ? (
         <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
           <div>
-            <label htmlFor="produto" className="mb-1.5 block text-xs uppercase tracking-wide text-ink-muted">
-              Produto
-            </label>
-            <input
-              id="produto"
-              type="text"
-              value={produto}
-              onChange={(e) => onProdutoChange(e.target.value)}
-              className="w-full rounded-lg border border-line bg-surface px-3 py-2 text-sm text-ink focus:border-brand-navy focus:outline-none focus:ring-2 focus:ring-brand-navy/20"
-            />
+            <FormLabel htmlFor="produto">Produto</FormLabel>
+            <TextInput id="produto" type="text" value={produto} onChange={(e) => onProdutoChange(e.target.value)} />
           </div>
           <div>
-            <label htmlFor="motivo" className="mb-1.5 block text-xs uppercase tracking-wide text-ink-muted">
-              Motivo
-            </label>
-            <input
-              id="motivo"
-              type="text"
-              value={motivo}
-              onChange={(e) => onMotivoChange(e.target.value)}
-              className="w-full rounded-lg border border-line bg-surface px-3 py-2 text-sm text-ink focus:border-brand-navy focus:outline-none focus:ring-2 focus:ring-brand-navy/20"
-            />
+            <FormLabel htmlFor="motivo">Motivo</FormLabel>
+            <TextInput id="motivo" type="text" value={motivo} onChange={(e) => onMotivoChange(e.target.value)} />
           </div>
           <div>
-            <label htmlFor="solicitante" className="mb-1.5 block text-xs uppercase tracking-wide text-ink-muted">
-              Solicitante
-            </label>
-            <input
+            <FormLabel htmlFor="solicitante">Solicitante</FormLabel>
+            <TextInput
               id="solicitante"
               type="text"
               required
               value={solicitante}
               onChange={(e) => onSolicitanteChange(e.target.value)}
-              className="w-full rounded-lg border border-line bg-surface px-3 py-2 text-sm text-ink focus:border-brand-navy focus:outline-none focus:ring-2 focus:ring-brand-navy/20"
             />
           </div>
           <div>
-            <label htmlFor="setor" className="mb-1.5 block text-xs uppercase tracking-wide text-ink-muted">
-              Setor
-            </label>
+            <FormLabel htmlFor="setor">Setor</FormLabel>
             <select
               id="setor"
               required

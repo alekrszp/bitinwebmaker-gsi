@@ -5,6 +5,7 @@ fastapi==0.139.0
 uvicorn==0.51.0
 sqlalchemy==2.0.51
 motor==3.7.1
+certifi==2026.6.17
 pydantic==2.13.4
 pydantic[email]==2.13.4
 pydantic-settings==2.14.2
@@ -21,3 +22,6 @@ psycopg2-binary
 # Só para testes (tests/test_backend_bitins.py) -- não usados em produção:
 mongomock-motor==0.0.36
 httpx==0.28.1
+
+# Lint (2026-07-16) -- primeiro linter Python do projeto, ver pyproject.toml na raiz pra config.
+ruff==0.15.21

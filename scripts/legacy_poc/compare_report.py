@@ -1,5 +1,6 @@
-from pathlib import Path
 import sys
+from pathlib import Path
+
 
 def read_lines(p: Path):
     return p.read_text(encoding='utf-8-sig').splitlines()

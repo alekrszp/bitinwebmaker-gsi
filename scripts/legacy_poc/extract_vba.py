@@ -10,7 +10,7 @@ import os
 def extract_with_olevba(path, outdir):
     try:
         from oletools.olevba import VBA_Parser
-    except Exception as e:
+    except Exception:
         print('oletools não está instalado. Instale com: pip install oletools')
         raise
 

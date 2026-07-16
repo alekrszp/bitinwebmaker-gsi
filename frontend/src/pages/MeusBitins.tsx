@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { ChevronDownIcon, SearchIcon } from '../components/icons'
 import StatusBadge from '../components/bitin/StatusBadge'
-import { useAuth } from '../context/AuthContext'
+import { useAuth } from '../hooks/useAuth'
 import { api } from '../lib/api'
 import type { Bitin } from '../lib/types'
 

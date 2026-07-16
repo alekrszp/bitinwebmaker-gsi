@@ -61,6 +61,11 @@ backend/
 `backend/` importa direto de `scripts/` (mesmo padrão de `sys.path.insert` usado em
 `tests/`) — não duplica nenhuma lógica de validação/export, só orquestra.
 
+**Lint (2026-07-16)**: `ruff` — primeiro linter Python do projeto (`backend/requirements.txt`).
+Config em `pyproject.toml` na raiz (`E`/`F`/`I`: pycodestyle erros + pyflakes + import sorting,
+conjunto conservador de propósito). Roda em CI (`.github/workflows/ci.yml`) via
+`ruff check backend scripts`.
+
 ## Modelo de dados
 
 **Postgres — tabela `bitins`** (só existe uma linha por BITin **enviado**, nunca por

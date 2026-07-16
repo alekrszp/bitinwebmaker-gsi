@@ -17,11 +17,16 @@ from backend.db.mongodb import get_mongo_db
 from backend.db.session import get_db
 from backend.models_sql import BitinSQL
 
+# Estes imports de scripts/ precisam vir DEPOIS de backend.scripts_path acima, que injeta
+# scripts/ em sys.path; ruff/isort alfabetizaria pra antes se deixado como um bloco só (achado
+# ao rodar `ruff check --fix`, revertido manualmente).
+# isort: off
 import bitin_document
 import bitin_lifecycle
 import bitin_model
 import bitin_view
 import sap_paste_parser
+# isort: on
 
 logger = logging.getLogger(__name__)
 

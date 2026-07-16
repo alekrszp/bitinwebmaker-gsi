@@ -22,9 +22,8 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
-import pandas as pd
-
 import csv_safety
+import pandas as pd
 
 QUIRK_LABELS = {
     1: "coluna 106 (TIPO MATERIAL fora do intervalo normal do Plan3)",

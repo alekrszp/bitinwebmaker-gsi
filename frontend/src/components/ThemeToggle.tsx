@@ -1,4 +1,4 @@
-import { useTheme } from '../context/ThemeContext'
+import { useTheme } from '../hooks/useTheme'
 
 // Botão sol/lua reutilizável -- extraído de Layout.jsx pra também aparecer no login (a
 // escolha de tema deve valer antes de autenticar, não só depois). `className` deixa cada

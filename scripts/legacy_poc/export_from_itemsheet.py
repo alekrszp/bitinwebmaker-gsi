@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 import re
-import pandas as pd
 from pathlib import Path
+
+import pandas as pd
 
 CODE_RE = re.compile(r'^[A-Za-z]{2}\d{2}-[A-Za-z0-9\-/]+$')
 
@@ -52,7 +53,6 @@ def export_items(file, sheet='dados teste winshuttle', out_csv='poc_winshuttle_e
 
 
 if __name__ == '__main__':
-    import sys
     import argparse
     parser = argparse.ArgumentParser()
     parser.add_argument('file')

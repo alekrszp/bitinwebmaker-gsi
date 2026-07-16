@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 import argparse
 import re
-from openpyxl import load_workbook
 
+from openpyxl import load_workbook
 
 CODE_RE = re.compile(r'[A-Za-z]{2}\d{2}-[A-Za-z0-9\-/]+')
 

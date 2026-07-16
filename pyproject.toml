@@ -1,0 +1,14 @@
+# Config do ruff (2026-07-16) -- primeiro linter Python do projeto (antes disso, zero lint
+# automatizado no backend/scripts). Sem outra config de packaging aqui de propósito: o projeto
+# não empacota nada, `pyproject.toml` só existe pra hospedar esta seção `[tool.ruff]`.
+[tool.ruff]
+target-version = "py314"
+line-length = 110
+exclude = [".venv", "frontend", "migrations"]
+
+[tool.ruff.lint]
+# Conjunto inicial deliberadamente conservador -- pyflakes (F) + pycodestyle erros (E) +
+# import sorting (I). Regras mais opiniosas (estilo de docstring, complexidade, etc.) ficam de
+# fora por ora pra não gerar um diff gigante sem revisão; achados dessas categorias devem ser
+# triados separadamente antes de serem ligados.
+select = ["E", "F", "I"]

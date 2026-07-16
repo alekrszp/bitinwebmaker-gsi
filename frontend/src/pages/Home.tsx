@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import StatusBadge from '../components/bitin/StatusBadge'
-import { useAuth } from '../context/AuthContext'
+import { useAuth } from '../hooks/useAuth'
 import { api } from '../lib/api'
 import type { Bitin, ResumoUsuario } from '../lib/types'
 

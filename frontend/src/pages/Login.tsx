@@ -1,7 +1,7 @@
 import { useState, type FormEvent, type SVGProps } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import ThemeToggle from '../components/ThemeToggle'
-import { useAuth } from '../context/AuthContext'
+import { useAuth } from '../hooks/useAuth'
 import { version as appVersion } from '../../package.json'
 
 export default function Login() {
@@ -71,9 +71,6 @@ export default function Login() {
           <img src="/logo.svg" className="mb-6 h-20 w-fit" alt="Grain & Protein Technologies" />
           <div className="flex items-baseline gap-2">
             <h1 className="text-3xl font-bold leading-none tracking-tight">BITin</h1>
-            <span className="rounded bg-white/15 px-1.5 py-0.5 text-xs font-bold tracking-wide text-white/80">
-              DOCS
-            </span>
           </div>
           <p className="mt-2.5 text-sm text-white/70">
             Sistema interno Grain &amp; Protein Technologies.

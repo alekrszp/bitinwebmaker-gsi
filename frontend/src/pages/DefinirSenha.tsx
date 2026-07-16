@@ -1,57 +1,24 @@
-import { useState, type FormEvent } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { useAuth } from '../context/AuthContext'
-import { api } from '../lib/api'
-import type { ChangePasswordRequest } from '../lib/types'
-
-// Extrai mensagem de erro de uma resposta da API -- mesmo duck-typing de Settings.tsx::
-// extrairErro/Login.tsx (não usa axios.isAxiosError).
-function extrairErro(err: unknown, fallback: string): string {
-  const detail = (err as { response?: { data?: { detail?: unknown } } })?.response?.data?.detail
-  if (typeof detail === 'string') return detail
-  if (Array.isArray(detail) && detail[0]?.msg) return String(detail[0].msg)
-  return fallback
-}
+import { useAuth } from '../hooks/useAuth'
+import { usePasswordChangeForm } from '../hooks/usePasswordChangeForm'
 
 // Tela obrigatória de primeiro login com senha temporária (2026-07-15, cadastro de usuário só
 // por admin -- ver backend/api/users.py::create_user_by_admin e RequireAuth.tsx, que redireciona
 // pra cá enquanto Usuario.senha_temporaria for True). Reusa a mesma chamada de
-// POST /auth/change-password de Settings.tsx::TrocarSenhaForm -- a senha temporária que o
-// admin passou fora do sistema É a senha_atual dessa primeira troca; não existe endpoint
-// separado pra "definir senha pela primeira vez". Tela standalone (sem sidebar/topbar), mesmo
-// espírito "não dá pra pular" de Login.tsx.
+// POST /auth/change-password de Settings.tsx::TrocarSenhaForm (via usePasswordChangeForm) -- a
+// senha temporária que o admin passou fora do sistema É a senha_atual dessa primeira troca; não
+// existe endpoint separado pra "definir senha pela primeira vez". Tela standalone (sem
+// sidebar/topbar), mesmo espírito "não dá pra pular" de Login.tsx.
 export default function DefinirSenha() {
   const { refreshUser, logout } = useAuth()
   const navigate = useNavigate()
-  const [senhaAtual, setSenhaAtual] = useState('')
-  const [senhaNova, setSenhaNova] = useState('')
-  const [confirmarSenha, setConfirmarSenha] = useState('')
-  const [erro, setErro] = useState<string | null>(null)
-  const [enviando, setEnviando] = useState(false)
-
-  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault()
-    setErro(null)
-
-    if (senhaNova !== confirmarSenha) {
-      setErro('A confirmação não bate com a nova senha.')
-      return
-    }
-
-    setEnviando(true)
-    try {
-      const body: ChangePasswordRequest = { senha_atual: senhaAtual, senha_nova: senhaNova }
-      await api.post('/auth/change-password', body)
+  const { senhaAtual, setSenhaAtual, senhaNova, setSenhaNova, confirmarSenha, setConfirmarSenha, erro, enviando, handleSubmit } =
+    usePasswordChangeForm(async () => {
       // Servidor já zerou Usuario.senha_temporaria -- rebusca /users/me pra RequireAuth.tsx
       // parar de redirecionar pra cá, e só então navega pra home.
       await refreshUser()
       navigate('/', { replace: true })
-    } catch (err) {
-      setErro(extrairErro(err, 'Não foi possível definir a nova senha. Tente novamente.'))
-    } finally {
-      setEnviando(false)
-    }
-  }
+    })
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-app-bg px-4 py-12">

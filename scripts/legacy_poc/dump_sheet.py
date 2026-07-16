@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 import sys
-import pandas as pd
 from pathlib import Path
+
+import pandas as pd
 
 if len(sys.argv) < 4:
     print('Usage: dump_sheet.py <xlsm> <sheet_name> <rows> [out]')

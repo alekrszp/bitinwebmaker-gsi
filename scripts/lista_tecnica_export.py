@@ -17,9 +17,8 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
-import pandas as pd
-
 import csv_safety
+import pandas as pd
 from bitin_errors import BitinError, make_error
 
 

@@ -1,4 +1,5 @@
 from pathlib import Path
+
 A=Path('poc_winshuttle_export_aligned.csv')
 B=Path('exported_winshuttle.csv')
 sa=A.read_text(encoding='utf-8-sig').splitlines()

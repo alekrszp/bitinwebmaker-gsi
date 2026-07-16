@@ -5,9 +5,9 @@ Uso:
   python scripts/poc_export.py Novo_template_BITin_V2\ TESTE.xlsm --source-sheet Planilha1 --out poc_winshuttle_export.csv
 """
 import argparse
-import pandas as pd
 from pathlib import Path
 
+import pandas as pd
 
 # mapping: plan2_col_index (1-based) -> plan1_col_index (1-based)
 PLAN1_TO_PLAN2 = {
@@ -219,8 +219,6 @@ def main():
         print('Full extract from sheet:', src_sheet)
         ncols = 24
         rows = []
-        import re
-        code_re = re.compile(r'^[A-Za-z0-9\-_/]+$')
         # find start of item block: look for first row where any of probable item cols is non-empty
         cols_to_check = [4, 2, 0, 6]  # prefer column 5 (index 4), fallback to others
         start_idx = None

@@ -1,5 +1,5 @@
 import { Link, useNavigate } from 'react-router-dom'
-import { useAuth } from '../context/AuthContext'
+import { useAuth } from '../hooks/useAuth'
 import ThemeToggle from './ThemeToggle'
 import { LogoutIcon, MenuIcon, SettingsIcon } from './icons'
 

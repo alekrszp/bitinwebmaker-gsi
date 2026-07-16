@@ -1,6 +1,6 @@
 import { Navigate, useLocation } from 'react-router-dom'
 import type { ReactNode } from 'react'
-import { useAuth } from '../context/AuthContext'
+import { useAuth } from '../hooks/useAuth'
 
 // Rota pra onde quem está com senha temporária (Usuario.senha_temporaria, backend/auth/
 // models.py) é forçado antes de conseguir usar o resto do app -- ver frontend/src/pages/
