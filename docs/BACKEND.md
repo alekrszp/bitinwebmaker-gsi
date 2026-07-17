@@ -175,6 +175,7 @@ pares ficam sempre em colunas adjacentes).
 | GET | `/users` | Lista usuários — exige `NIVEL_GESTOR` ou `NIVEL_ADMIN` (77/99; **não** Cadastro/88, ver "Revisão do modelo de permissões" abaixo). Escopo por setor desde 2026-07-15 (pedido explícito: "se um usuário for gestor, ele consegue só ver listagem de usuários do setor que ele é gestor"): admin vê todo mundo; gestor só vê quem compartilha ao menos um `Setor` com ele (`_usuarios_do_mesmo_setor_query`, join via `usuario_setores`) — gestor sem setor nenhum vê lista vazia, não cai pra "vê todo mundo". |
 | GET | `/users/{id}` | Busca usuário por id — mesmo gate de `GET /users` (Gestor/Admin). Mesmo escopo por setor: gestor pedindo um id fora do(s) setor(es) dele recebe **404** (não 403 — não vaza que o id existe). |
 | PATCH | `/users/{id}/permission` | Promove/rebaixa — exige `NIVEL_ADMIN` (99). Rejeita com 400 se o ALVO já é admin (99) — ninguém pode rebaixar um admin, nem outro admin. |
+| DELETE | `/users/{id}` | "Excluir" usuário (2026-07-17) — exige `NIVEL_ADMIN` (99). **Soft-delete**: marca `Usuario.ativo=False`, não apaga a linha. `GET /users` já filtra `ativo=True`, então some da listagem; login e todo request autenticado já checam `ativo` (ver "Tabelas de sessão e auditoria de login" abaixo), então a conta para de funcionar na hora. Rejeita com 400 se o alvo é o próprio chamador ou já é admin (99) — mesmas proteções de `PATCH /users/{id}/permission`. |
 | GET | `/sectors` | Público (form de registro precisa listar antes do login existir). |
 | POST | `/sectors` | Cria setor — exige admin. |
 

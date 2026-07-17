@@ -56,23 +56,19 @@ export default function Login() {
   return (
     <div className="flex min-h-screen bg-app-bg">
       {/* Painel de marca -- só em telas médias+; no celular a logo aparece compacta em cima do
-          formulário (ver abaixo), pra não gastar metade da tela com algo só decorativo. */}
-      <div className="relative hidden w-[42%] max-w-md flex-col overflow-hidden bg-brand-navy px-10 py-10 text-white md:flex lg:w-[38%]">
-        {/* Redesenhado em 2026-07-15, várias rodadas no mesmo dia -- 1ª (logo + "BITIN" lado a
-            lado) feia demais; 2ª (fontes de impacto Anton/Mulish) descartada; 3ª (grande,
-            centralizada) grande e baixa demais; 4ª (bem pequena, encostada no topo) pequena e
-            alta demais. Meio-termo: tamanho moderado, encostada perto do topo mas com respiro
-            (não colada na borda). Nome do sistema virou "BITin DOCS" -- mesmo padrão já usado
-            internamente pra outros sistemas da empresa (ex.: "Sisven Docs", que todo mundo
-            chama só de "Sisven" no dia a dia): nome oficial com sufixo "DOCS", encurtado na
-            fala. "DOCS" como selo pequeno ao lado do nome grande, não competindo com ele --
-            a aba do navegador (`index.html`) continua só "BITin", sem o sufixo. */}
+          formulário (ver abaixo), pra não gastar metade da tela com algo só decorativo.
+          Fundo branco + logo colorida (2026-07-16, a pedido do usuário -- versão anterior com
+          painel navy foi revertida por não ter ficado boa). `bg-surface` em vez de `bg-white`
+          fixo (2026-07-17, correção de cor "estranha" no modo escuro) -- em claro os dois são o
+          mesmo branco (#ffffff), mas `bg-white` fica sempre branco mesmo em dark, brigando com
+          o `text-ink` claro do tema escuro (baixo contraste); `bg-surface` acompanha o tema. */}
+      <div className="relative hidden w-[42%] max-w-md flex-col overflow-hidden border-r border-line bg-surface px-10 py-10 text-ink md:flex lg:w-[38%]">
         <div className="flex flex-col pt-16">
-          <img src="/logo.svg" className="mb-6 h-20 w-fit" alt="Grain & Protein Technologies" />
+          <img src="/brand/gpt-color.png" className="mb-6 h-20 w-fit" alt="Grain & Protein Technologies" />
           <div className="flex items-baseline gap-2">
-            <h1 className="text-3xl font-bold leading-none tracking-tight">BITin</h1>
+            <h1 className="text-3xl font-bold leading-none tracking-tight text-brand-navy">BITin</h1>
           </div>
-          <p className="mt-2.5 text-sm text-white/70">
+          <p className="mt-2.5 text-sm text-ink-muted">
             Sistema interno Grain &amp; Protein Technologies.
           </p>
         </div>
@@ -94,11 +90,8 @@ export default function Login() {
           <ThemeToggle className="text-ink-muted hover:bg-surface-alt" />
         </div>
 
-        {/* Fundo navy só aqui -- essa logo (texto branco, fundo transparente) fica em cima do
-            painel do formulário, que muda de cor conforme o tema (claro/escuro); sem um fundo
-            fixo escuro, o texto branco desaparece no tema claro. */}
-        <span className="mb-8 flex w-fit items-center rounded bg-brand-navy px-3 py-2 md:hidden">
-          <img src="/logo.svg" className="h-10" alt="Grain & Protein Technologies" />
+        <span className="mb-8 flex w-fit items-center md:hidden">
+          <img src="/brand/gpt-color.png" className="h-10" alt="Grain & Protein Technologies" />
         </span>
 
         <div className="w-full max-w-sm">
@@ -157,7 +150,7 @@ export default function Login() {
             </div>
 
             {error && (
-              <p role="alert" className="flex items-start gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2.5 text-sm text-red-700">
+              <p role="alert" className="flex items-start gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2.5 text-sm text-red-700 dark:border-red-900 dark:bg-red-950 dark:text-red-300">
                 <AlertIcon className="mt-0.5 h-4 w-4 shrink-0" />
                 {error}
               </p>

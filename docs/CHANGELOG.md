@@ -2,7 +2,31 @@
 
 All notable changes to this project will be documented in this file.
 
-## [v0.8.3] - 2026-07-16
+## [v0.8.4] - 2026-07-17
+
+Admin pode excluir usuário (soft-delete) na tela de Gestão de usuários; correção de cores
+"estranhas" no modo escuro nas telas de login (Login e Definir senha).
+
+### Added
+
+- **Excluir usuário** (`DELETE /users/{id}`, `backend/api/users.py::delete_user`): botão de
+  lixeira em cada linha de Gestão de usuários, admin-only. É soft-delete (`Usuario.ativo =
+  False`), não apaga a linha do banco — a conta some da listagem (`GET /users` já filtra
+  `ativo=True`) e para de conseguir logar/usar a API imediatamente (`ativo` já era checado em
+  todo request autenticado e no login). Mesmas proteções de `PATCH /users/{id}/permission`:
+  ninguém se auto-exclui, admin (nível 99) não pode ser excluído por ninguém. Decisão de
+  soft- em vez de hard-delete: BITins não têm FK pro usuário (dono é só um campo solto no
+  documento do Mongo) mas `SessaoUsuario` tem, e soft-delete evita lidar com essa cascata,
+  além de manter reversível e preservar o rastro de quem criou o quê.
+
+### Fixed
+
+- **Cores erradas no modo escuro nas telas pré-login** (`Login.tsx`, `DefinirSenha.tsx`):
+  painel de marca da tela de Entrar usava `bg-white` fixo (nunca escurecia, brigando com o
+  texto claro do tema escuro) — trocado por `bg-surface` (token que já se adapta ao tema,
+  mesmo branco no claro). Caixas de erro (`role="alert"`) nas duas telas usavam só
+  `red-50/red-200/red-700`, sem variante escura — adicionado `dark:bg-red-950
+  dark:border-red-900 dark:text-red-300`.
 
 Checklist automática mapeada das macros reais do Excel, admin exclui BITin enviado,
 confirmação/navegação pós-envio, Lista Técnica direto na aba BITin, busca tolerante de campo

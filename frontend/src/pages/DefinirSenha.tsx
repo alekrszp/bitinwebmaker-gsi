@@ -45,6 +45,15 @@ export default function DefinirSenha() {
               className="w-full rounded-lg border border-line bg-surface px-3 py-2.5 text-sm text-ink focus:border-brand-navy focus:outline-none focus:ring-2 focus:ring-brand-navy/20"
             />
           </div>
+          {/* Regra explícita ANTES do campo, não só depois de um 400 (2026-07-16, pedido explícito:
+              "mostrar a regra em palavras, antes de digitar"). Texto espelha exatamente
+              backend/auth/security.py::validate_password_strength -- min 8 caracteres + pelo
+              menos 3 dos 4 tipos de caractere. */}
+          <p className="rounded-lg border border-line bg-surface px-3 py-2 text-xs text-ink-muted">
+            A senha precisa ter pelo menos 8 caracteres e incluir pelo menos 3 destes 4 tipos:
+            letra maiúscula, letra minúscula, número, caractere especial.
+          </p>
+
           <div>
             <label htmlFor="senha-nova" className="mb-1.5 block text-sm font-medium text-ink">
               Nova senha
@@ -75,7 +84,7 @@ export default function DefinirSenha() {
           </div>
 
           {erro && (
-            <p role="alert" className="rounded-lg border border-red-200 bg-red-50 px-3 py-2.5 text-sm text-red-700">
+            <p role="alert" className="rounded-lg border border-red-200 bg-red-50 px-3 py-2.5 text-sm text-red-700 dark:border-red-900 dark:bg-red-950 dark:text-red-300">
               {erro}
             </p>
           )}
