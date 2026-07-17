@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import StatusBadge from '../components/bitin/StatusBadge'
 import { useAuth } from '../hooks/useAuth'
 import { api } from '../lib/api'
+import { criarRascunhoENavegar } from '../lib/criarBitin'
 import type { Bitin, ResumoUsuario } from '../lib/types'
 
 // Upgrade da Home (2026-07-14): "Meus Bitins" (listagem + detalhe + cadastro) já existe agora,
@@ -13,9 +14,22 @@ import type { Bitin, ResumoUsuario } from '../lib/types'
 // (decisão do usuário, 2026-07-14).
 export default function Home() {
   const { user } = useAuth()
+  const navigate = useNavigate()
   const primeiroNome = user?.nome?.split(' ')[0]
   const [resumo, setResumo] = useState<ResumoUsuario | null>(null)
   const [recentes, setRecentes] = useState<Bitin[] | null>(null)
+  const [erroNovo, setErroNovo] = useState<string | null>(null)
+
+  // "+ Novo BITin" cria o rascunho na hora e navega direto pro editor completo -- sem tela
+  // intermediária em branco (ver lib/criarBitin.ts).
+  async function novoBitin() {
+    setErroNovo(null)
+    try {
+      await criarRascunhoENavegar(navigate)
+    } catch {
+      setErroNovo('Não foi possível criar um novo BITin. Tente novamente.')
+    }
+  }
 
   useEffect(() => {
     let cancelado = false
@@ -45,13 +59,16 @@ export default function Home() {
           </h1>
           <p className="mt-1 text-sm text-ink-muted">Seu resumo de BITins e atividade recente.</p>
         </div>
-        <Link
-          to="/bitins/novo"
+        <button
+          type="button"
+          onClick={novoBitin}
           className="whitespace-nowrap rounded-lg bg-brand-navy px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-brand-navy-dark"
         >
           + Novo BITin
-        </Link>
+        </button>
       </div>
+
+      {erroNovo && <p className="mt-2 text-sm text-red-600">{erroNovo}</p>}
 
       <div className="mt-6 flex flex-wrap gap-4">
         <StatCard label="Rascunhos" value={resumo?.rascunhos} to="/bitins?status=rascunho" />

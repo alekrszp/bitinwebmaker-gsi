@@ -202,14 +202,21 @@ export default function MaterialEditorCard({
           <label htmlFor={`${idPrefixo}-centro`} className="mb-1 block text-[0.65rem] uppercase tracking-wide text-ink-muted">
             Centro *
           </label>
-          <input
+          {/* Centro é a planta SAP -- só existem duas em que o BITin opera (2026-07-16,
+              restrição pedida pelo usuário): 2001 Marau e 2005 Passo Fundo. NÃO confundir com
+              "depósito" (SAP storage location, ex.: deposito_producao/deposito_suprimento_externo
+              acima em alteracoes.dados_basicos -- conceito diferente, sem essa restrição). */}
+          <select
             id={`${idPrefixo}-centro`}
-            type="text"
             required
             value={material.centro}
             onChange={(e) => set('centro', e.target.value)}
-            className="w-full rounded border border-line bg-surface px-2 py-1.5 text-sm text-ink focus:border-brand-navy focus:outline-none"
-          />
+            className="dark:[color-scheme:dark] [color-scheme:light] w-full rounded border border-line bg-surface px-2 py-1.5 text-sm text-ink focus:border-brand-navy focus:outline-none"
+          >
+            <option value="">--</option>
+            <option value="2001">2001 — Marau</option>
+            <option value="2005">2005 — Passo Fundo</option>
+          </select>
         </div>
         <div className="min-w-[12rem] flex-1">
           <label htmlFor={`${idPrefixo}-descricao`} className="mb-1 block text-[0.65rem] uppercase tracking-wide text-ink-muted">

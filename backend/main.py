@@ -69,11 +69,11 @@ def root():
 
 
 from backend.api.bitins import router as bitins_router  # noqa: E402
-from backend.api.sectors import router as sectors_router  # noqa: E402
+from backend.api.subgrupos import router as subgrupos_router  # noqa: E402
 from backend.api.users import router as users_router  # noqa: E402
 from backend.auth.routes import router as auth_router  # noqa: E402
 
 app.include_router(bitins_router, prefix=f"{settings.API_V1_STR}/bitins", tags=["bitins"])
 app.include_router(auth_router, prefix=f"{settings.API_V1_STR}/auth", tags=["auth"])
 app.include_router(users_router, prefix=f"{settings.API_V1_STR}/users", tags=["users"])
-app.include_router(sectors_router, prefix=f"{settings.API_V1_STR}/sectors", tags=["sectors"])
+app.include_router(subgrupos_router, prefix=f"{settings.API_V1_STR}/subgrupos", tags=["subgrupos"])

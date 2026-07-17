@@ -78,6 +78,30 @@ class ValidateBitinTest(unittest.TestCase):
         errors = bm.validate_bitin(bitin, self.config)
         self.assertTrue(any("centro" in e["message"] for e in errors))
 
+    def test_centro_2001_e_aceito(self) -> None:
+        bitin = make_bitin()
+        bitin["materiais"][0]["centro"] = "2001"
+        errors = bm.validate_bitin(bitin, self.config)
+        self.assertEqual(errors, [])
+
+    def test_centro_2005_e_aceito(self) -> None:
+        bitin = make_bitin()
+        bitin["materiais"][0]["centro"] = "2005"
+        errors = bm.validate_bitin(bitin, self.config)
+        self.assertEqual(errors, [])
+
+    def test_centro_fora_do_conjunto_valido_falha(self) -> None:
+        """Centro é a planta SAP (2001 Marau / 2005 Passo Fundo) -- só essas duas, NÃO
+        confundir com "depósito" (outro conceito SAP, tem códigos tipo 2003 etc mas não é
+        centro)."""
+        bitin = make_bitin()
+        bitin["materiais"][0]["centro"] = "2003"
+        errors = bm.validate_bitin(bitin, self.config)
+        self.assertTrue(any(
+            e["code"] == "invalid_centro_value" and "2001" in e["message"] and "2005" in e["message"]
+            for e in errors
+        ))
+
     def test_no_materiais(self) -> None:
         errors = bm.validate_bitin(make_bitin(materiais=[]), self.config)
         self.assertTrue(any("nenhum material" in e["message"] for e in errors))

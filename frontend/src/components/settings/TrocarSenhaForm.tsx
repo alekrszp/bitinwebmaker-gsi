@@ -43,6 +43,12 @@ export default function TrocarSenhaForm() {
             value={senhaNova}
             onChange={(e) => setSenhaNova(e.target.value)}
           />
+          {/* Regra explícita ANTES de errar (2026-07-16), mesma redação de DefinirSenha.tsx --
+              espelha backend/auth/security.py::validate_password_strength. */}
+          <p className="mt-1 text-xs text-ink-muted">
+            Pelo menos 8 caracteres e 3 destes 4 tipos: maiúscula, minúscula, número, caractere
+            especial.
+          </p>
         </div>
         <div>
           <FormLabel htmlFor="confirmar-senha">Confirmar nova senha</FormLabel>

@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Link, useSearchParams } from 'react-router-dom'
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { ChevronDownIcon, SearchIcon } from '../components/icons'
 import StatusBadge from '../components/bitin/StatusBadge'
 import { useAuth } from '../hooks/useAuth'
 import { api } from '../lib/api'
-import type { Bitin } from '../lib/types'
+import { criarRascunhoENavegar } from '../lib/criarBitin'
+import type { Bitin, CadastroEmail } from '../lib/types'
 
 // Escopo desta rodada (decidido com o usuário, ver docs/FRONTEND.md): listagem + clique na
 // linha abre uma visualização só-leitura (BitinDetail.tsx). GET /bitins vem escopado por
@@ -31,6 +32,7 @@ const ABAS_VALIDAS = new Set<Aba>(['todos', 'rascunho', 'enviado'])
 
 export default function MeusBitins() {
   const { user } = useAuth()
+  const navigate = useNavigate()
   const [searchParams] = useSearchParams()
   const abaInicial = searchParams.get('status')
   const [aba, setAba] = useState<Aba>(
@@ -41,6 +43,9 @@ export default function MeusBitins() {
   const [termo, setTermo] = useState('')
   const [bitins, setBitins] = useState<Bitin[] | null>(null)
   const [erro, setErro] = useState<string | null>(null)
+  // Id do BITin cujo PDF/e-mail está sendo preparado agora -- desabilita só o botão daquela
+  // linha (2026-07-16, "Enviar e-mail" em BITins já enviados).
+  const [enviandoEmailId, setEnviandoEmailId] = useState<string | null>(null)
 
   // "Solicitante" como opção de busca só faz sentido pra quem lida com BITins de várias
   // pessoas -- um engenheiro comum normalmente é o próprio solicitante dos seus BITins
@@ -97,6 +102,64 @@ export default function MeusBitins() {
   // libera o número sequencial -- por isso o texto de confirmação muda pro caso "enviado"
   // (mesma cópia usada em BitinDetail.tsx::handleExcluirEnviado, pra ficar consistente entre
   // as duas telas onde isso aparece).
+  // "+ Novo BITin" cria o rascunho na hora (sem tela intermediária em branco, ver
+  // lib/criarBitin.ts) e navega direto pro editor completo.
+  async function novoBitin() {
+    setErro(null)
+    try {
+      await criarRascunhoENavegar(navigate)
+    } catch {
+      setErro('Não foi possível criar um novo BITin. Tente novamente.')
+    }
+  }
+
+  // "Enviar e-mail" (2026-07-16, pedido explícito) -- baixa o PDF do BITin já enviado pro
+  // computador do usuário e abre um rascunho de e-mail pro time de Cadastro (GET /users/
+  // cadastro-emails, setor=='cadastro'); não existe servidor de e-mail integrado, então o PDF
+  // precisa ser anexado manualmente antes de enviar (mesmo espírito de mailto: já usado em
+  // CriarUsuarioForm.tsx::montarMailto).
+  function montarMailtoEnvio(bitin: Bitin, emails: string[]): string {
+    const codigo = bitin.codigo ?? '—'
+    const destinatarios = emails.join(',')
+    const assunto = `BITin ${codigo} — envio para Cadastro`
+    const corpo =
+      `Olá,\n\n` +
+      `O PDF do BITin ${codigo} acabou de ser baixado para o seu computador (verifique a pasta ` +
+      `de downloads).\n\n` +
+      `Antes de enviar este e-mail, anexe manualmente esse arquivo PDF baixado.\n\n` +
+      `Obrigado.`
+    return `mailto:${destinatarios}?subject=${encodeURIComponent(assunto)}&body=${encodeURIComponent(corpo)}`
+  }
+
+  async function enviarEmail(bitin: Bitin) {
+    setErro(null)
+    setEnviandoEmailId(bitin.mongo_id)
+    try {
+      const [pdfResp, emailsResp] = await Promise.all([
+        api.get(`/bitins/${bitin.mongo_id}/pdf`, { responseType: 'blob' }),
+        api.get<CadastroEmail[]>('/users/cadastro-emails'),
+      ])
+      const emails = emailsResp.data.map((c) => c.email)
+      if (emails.length === 0) {
+        setErro('Nenhum usuário do setor Cadastro está cadastrado -- não é possível montar o e-mail.')
+        return
+      }
+      const url = window.URL.createObjectURL(new Blob([pdfResp.data]))
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `BITin-${bitin.codigo ?? bitin.mongo_id}.pdf`
+      document.body.appendChild(a)
+      a.click()
+      a.remove()
+      window.URL.revokeObjectURL(url)
+      window.location.href = montarMailtoEnvio(bitin, emails)
+    } catch {
+      setErro('Não foi possível preparar o e-mail. Tente novamente.')
+    } finally {
+      setEnviandoEmailId(null)
+    }
+  }
+
   async function excluir(bitin: Bitin) {
     const mensagem =
       bitin.status === 'enviado'
@@ -149,12 +212,13 @@ export default function MeusBitins() {
               <ChevronDownIcon className="pointer-events-none absolute right-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-ink-faint" />
             </div>
           </div>
-          <Link
-            to="/bitins/novo"
+          <button
+            type="button"
+            onClick={novoBitin}
             className="whitespace-nowrap rounded-lg bg-brand-navy px-4 py-3 text-sm font-medium text-white transition-colors hover:bg-brand-navy-dark"
           >
             + Novo BITin
-          </Link>
+          </button>
         </div>
       </div>
 
@@ -217,6 +281,16 @@ export default function MeusBitins() {
                     </Link>
                   </td>
                   <td className="px-4 py-2 text-center">
+                    {b.status === 'enviado' && (
+                      <button
+                        type="button"
+                        onClick={() => enviarEmail(b)}
+                        disabled={enviandoEmailId === b.mongo_id}
+                        className="mr-2 whitespace-nowrap text-xs font-medium text-brand-navy hover:underline disabled:cursor-not-allowed disabled:opacity-60"
+                      >
+                        {enviandoEmailId === b.mongo_id ? 'Preparando...' : 'Enviar e-mail'}
+                      </button>
+                    )}
                     {b.status === 'rascunho' && b.pode_editar && (
                       <button
                         type="button"

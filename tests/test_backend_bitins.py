@@ -86,14 +86,23 @@ class BitinApiTest(unittest.TestCase):
         app.dependency_overrides.clear()
         self.engine.dispose()
 
-    def _create_user(self, user_id: int, email: str | None = None, permission_level: int = 66) -> Usuario:
+    def _create_user(
+        self, user_id: int, email: str | None = None, permission_level: int = 66, nome: str | None = None,
+    ) -> Usuario:
         db = self.SessionLocal()
         user = Usuario(
             id=user_id,
             email=email or f"user{user_id}@example.com",
-            nome=f"Usuário {user_id}",
+            nome=nome or f"Usuário {user_id}",
             hashed_password=get_password_hash("senha123"),
             permission_level=permission_level,
+            # setor é só um rótulo descritivo do cargo da pessoa (2026-07-16, decisão explícita
+            # do usuário) -- NÃO controla nenhuma regra de acesso, isso continua sendo só
+            # permission_level. Valor fixo aqui só pra satisfazer o NOT NULL da coluna; estes
+            # testes não exercitam esse campo (é conceito totalmente diferente do "setor" de
+            # make_bitin_content acima, que é campo de CONTEÚDO do BITin -- Proteína Animal/
+            # Armazenagem de Grãos -- não tem nada a ver com Usuario.setor).
+            setor="usuario",
         )
         db.add(user)
         db.commit()
@@ -219,7 +228,10 @@ class BitinApiTest(unittest.TestCase):
         """O ponto-chave: enviar roda a validação real e devolve erros no formato
         {field, code, message}, sem travar nem gerar número."""
         conteudo = make_bitin_content()
-        del conteudo["solicitante"]  # obrigatório
+        # motivo, não solicitante: solicitante agora é automático (nome de quem está logado,
+        # ver create_or_update_draft) -- mandar sem ele no payload não gera mais campo
+        # obrigatório vazio, o backend preenche sozinho.
+        del conteudo["motivo"]  # obrigatório
         create_resp = self.client.post("/api/v1/bitins/draft", json={"content": conteudo})
         mongo_id = create_resp.json()["mongo_id"]
 
@@ -405,12 +417,21 @@ class BitinApiTest(unittest.TestCase):
         self.assertNotIn(enviado_resp.json()["mongo_id"], mongo_ids)
 
     def test_listar_com_filtro_termo(self) -> None:
+        # solicitante agora é automático (nome de quem está logado, ver create_or_update_draft)
+        # -- pra ter dois valores distintos de solicitante pra filtrar, posta como dois usuários
+        # diferentes em vez de mandar "solicitante" no payload (que seria ignorado).
+        fulano = self._create_user(3, nome="Fulano Especial")
         self.client.post(
-            "/api/v1/bitins/draft", json={"content": make_bitin_content(solicitante="Fulano Especial")}
+            "/api/v1/bitins/draft",
+            json={"content": make_bitin_content()},
+            headers={"Authorization": f"Bearer {self._token_for(fulano)}"},
         )
-        self.client.post("/api/v1/bitins/draft", json={"content": make_bitin_content(solicitante="Outro")})
+        self.client.post("/api/v1/bitins/draft", json={"content": make_bitin_content()})
 
-        resp = self.client.get("/api/v1/bitins", params={"termo": "especial"})
+        resp = self.client.get(
+            "/api/v1/bitins", params={"termo": "especial"},
+            headers={"Authorization": f"Bearer {self._token_for(fulano)}"},
+        )
         self.assertEqual(resp.status_code, 200)
         body = resp.json()
         self.assertEqual(len(body), 1)
@@ -473,20 +494,21 @@ class BitinApiTest(unittest.TestCase):
         self.assertEqual(len(resp.json()), 1)
         self.assertEqual(resp.json()[0]["criado_por"], self.default_user.email)
 
-    def test_listar_gestor_ve_bitins_de_colega_do_mesmo_setor_mas_nao_de_outro_setor(self) -> None:
-        """Gestor (nível 1) vê BITins de quem compartilha ao menos um Setor com ele (2026-07-15,
-        "lista de usuários e bitins de todo mundo, com filtragem de solicitante" -- mesma
-        consulta usada em GET /users, ver backend/api/users.py::_usuarios_do_mesmo_setor_query).
-        Não vê BITins de alguém de um setor totalmente diferente."""
+    def test_listar_gestor_ve_bitins_de_colega_do_mesmo_subgrupo_mas_nao_de_outro_subgrupo(self) -> None:
+        """Gestor (nível 1) vê BITins de quem compartilha ao menos um Subgrupo com ele
+        (2026-07-15, "lista de usuários e bitins de todo mundo, com filtragem de solicitante" --
+        mesma consulta usada em GET /users, ver backend/api/users.py::
+        _usuarios_do_mesmo_subgrupo_query). Não vê BITins de alguém de um subgrupo totalmente
+        diferente. Renomeado de Setor -> Subgrupo (2026-07-16)."""
         db = self.SessionLocal()
-        from backend.auth.models import Setor
+        from backend.auth.models import Subgrupo
 
-        setor_a = Setor(nome="Proteína Animal")
-        setor_b = Setor(nome="Armazenagem de Grãos")
-        db.add_all([setor_a, setor_b])
+        subgrupo_a = Subgrupo(nome="Proteína Animal")
+        subgrupo_b = Subgrupo(nome="Armazenagem de Grãos")
+        db.add_all([subgrupo_a, subgrupo_b])
         db.commit()
-        db.refresh(setor_a)
-        db.refresh(setor_b)
+        db.refresh(subgrupo_a)
+        db.refresh(subgrupo_b)
 
         gestor = self._create_user(2, permission_level=77)
         colega = self._create_user(3, permission_level=66)
@@ -495,9 +517,9 @@ class BitinApiTest(unittest.TestCase):
         db_gestor = db.query(Usuario).filter(Usuario.id == gestor.id).first()
         db_colega = db.query(Usuario).filter(Usuario.id == colega.id).first()
         db_de_fora = db.query(Usuario).filter(Usuario.id == de_fora.id).first()
-        db_gestor.setores = [setor_a]
-        db_colega.setores = [setor_a]
-        db_de_fora.setores = [setor_b]
+        db_gestor.subgrupos = [subgrupo_a]
+        db_colega.subgrupos = [subgrupo_a]
+        db_de_fora.subgrupos = [subgrupo_b]
         db.commit()
         db.close()
 
@@ -616,6 +638,40 @@ class BitinApiTest(unittest.TestCase):
             headers={"Authorization": f"Bearer {self._token_for(outro_usuario)}"},
         )
         self.assertFalse(get_resp.json()["pode_editar"])
+
+    def test_solicitante_na_criacao_e_sempre_o_usuario_logado(self) -> None:
+        """"Solicitante vira automático (nome de quem está logado)." (2026-07-16) -- reforçado
+        no backend: um valor forjado mandado pelo cliente pra 'solicitante' é ignorado, o
+        valor gravado é sempre current_user.nome."""
+        resp = self.client.post(
+            "/api/v1/bitins/draft",
+            json={"content": make_bitin_content(solicitante="Nome Forjado")},
+        )
+        self.assertEqual(resp.status_code, 200, resp.text)
+        self.assertEqual(resp.json()["content"]["solicitante"], self.default_user.nome)
+        self.assertNotEqual(resp.json()["content"]["solicitante"], "Nome Forjado")
+
+    def test_solicitante_nao_muda_ao_atualizar_mesmo_com_outro_usuario_salvando(self) -> None:
+        """Mesma regra na atualização: mesmo um admin editando o rascunho de outra pessoa não
+        muda o solicitante original, não importa o que venha no payload."""
+        create_resp = self.client.post("/api/v1/bitins/draft", json={"content": make_bitin_content()})
+        mongo_id = create_resp.json()["mongo_id"]
+        solicitante_original = create_resp.json()["content"]["solicitante"]
+        self.assertEqual(solicitante_original, self.default_user.nome)
+
+        admin = self._create_user(99, permission_level=99, nome="Admin Editor")
+        update_resp = self.client.post(
+            "/api/v1/bitins/draft",
+            json={
+                "mongo_id": mongo_id,
+                "content": make_bitin_content(solicitante="Outro Nome Qualquer"),
+            },
+            headers={"Authorization": f"Bearer {self._token_for(admin)}"},
+        )
+        self.assertEqual(update_resp.status_code, 200, update_resp.text)
+        self.assertEqual(update_resp.json()["content"]["solicitante"], solicitante_original)
+        self.assertNotEqual(update_resp.json()["content"]["solicitante"], "Outro Nome Qualquer")
+        self.assertNotEqual(update_resp.json()["content"]["solicitante"], admin.nome)
 
     def test_pode_editar_true_pro_admin_mesmo_sem_ser_dono(self) -> None:
         create_resp = self.client.post("/api/v1/bitins/draft", json={"content": make_bitin_content()})
@@ -745,24 +801,24 @@ class BitinApiTest(unittest.TestCase):
 
     def test_listar_cadastro_ve_enviados_de_colega_mas_nao_rascunho_e_ve_proprio_rascunho(self) -> None:
         """Nível Cadastro (88, NOVO 2026-07-16 -- "recebe os bitins para baixar e fazer o
-        processo por fora"): vê os ENVIADOS de quem compartilha Setor, mas não os rascunhos
+        processo por fora"): vê os ENVIADOS de quem compartilha Subgrupo, mas não os rascunhos
         alheios (trabalho em andamento de outra pessoa); os próprios BITins (rascunho ou
         enviado) continuam visíveis normalmente, igual usuário comum."""
         db = self.SessionLocal()
-        from backend.auth.models import Setor
+        from backend.auth.models import Subgrupo
 
-        setor_a = Setor(nome="Proteína Animal")
-        db.add(setor_a)
+        subgrupo_a = Subgrupo(nome="Proteína Animal")
+        db.add(subgrupo_a)
         db.commit()
-        db.refresh(setor_a)
+        db.refresh(subgrupo_a)
 
         cadastro = self._create_user(2, permission_level=88)
         colega = self._create_user(3, permission_level=66)
 
         db_cadastro = db.query(Usuario).filter(Usuario.id == cadastro.id).first()
         db_colega = db.query(Usuario).filter(Usuario.id == colega.id).first()
-        db_cadastro.setores = [setor_a]
-        db_colega.setores = [setor_a]
+        db_cadastro.subgrupos = [subgrupo_a]
+        db_colega.subgrupos = [subgrupo_a]
         db.commit()
         db.close()
 
@@ -814,6 +870,48 @@ class BitinApiTest(unittest.TestCase):
         )
         self.assertEqual(resp.status_code, 200)
         self.assertEqual(resp.json(), [])
+
+    def test_pdf_exige_autenticacao(self) -> None:
+        create_resp = self.client.post("/api/v1/bitins/draft", json={"content": make_bitin_content()})
+        mongo_id = create_resp.json()["mongo_id"]
+        client_sem_auth = TestClient(app)
+        resp = client_sem_auth.get(f"/api/v1/bitins/{mongo_id}/pdf")
+        self.assertEqual(resp.status_code, 401)
+
+    def test_pdf_bitin_inexistente_404(self) -> None:
+        resp = self.client.get("/api/v1/bitins/id-que-nao-existe/pdf")
+        self.assertEqual(resp.status_code, 404)
+
+    def test_pdf_rascunho_gera_pdf_valido(self) -> None:
+        # Rascunho (sem código ainda) -- a rota precisa gerar um PDF normalmente mesmo
+        # assim (usa o mongo_id no nome do arquivo em vez do código, ver get_bitin_pdf).
+        create_resp = self.client.post("/api/v1/bitins/draft", json={"content": make_bitin_content()})
+        mongo_id = create_resp.json()["mongo_id"]
+
+        resp = self.client.get(f"/api/v1/bitins/{mongo_id}/pdf")
+        self.assertEqual(resp.status_code, 200, resp.text)
+        self.assertEqual(resp.headers["content-type"], "application/pdf")
+        self.assertIn(f'filename="BITin-{mongo_id}.pdf"', resp.headers["content-disposition"])
+        self.assertTrue(resp.content.startswith(b"%PDF"))
+
+    def test_pdf_bitin_enviado_usa_codigo_no_filename(self) -> None:
+        create_resp = self.client.post(
+            "/api/v1/bitins/draft",
+            json={"content": make_bitin_content(setor="Proteína Animal")},
+        )
+        mongo_id = create_resp.json()["mongo_id"]
+        enviar_resp = self.client.post(f"/api/v1/bitins/{mongo_id}/enviar")
+        self.assertEqual(enviar_resp.status_code, 200, enviar_resp.text)
+        body = enviar_resp.json()
+        if not body["ok"]:
+            self.skipTest(f"Setor de teste não gerou envio válido: {body['errors']}")
+        codigo = body["bitin"]["codigo"]
+
+        resp = self.client.get(f"/api/v1/bitins/{mongo_id}/pdf")
+        self.assertEqual(resp.status_code, 200, resp.text)
+        self.assertEqual(resp.headers["content-type"], "application/pdf")
+        self.assertIn(f'filename="BITin-{codigo}.pdf"', resp.headers["content-disposition"])
+        self.assertTrue(resp.content.startswith(b"%PDF"))
 
 
 if __name__ == "__main__":

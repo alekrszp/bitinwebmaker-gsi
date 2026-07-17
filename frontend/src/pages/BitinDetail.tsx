@@ -16,8 +16,12 @@ import type { Bitin, MateriaisSchema, MaterialEditavel } from '../lib/types'
 
 // Visualização e edição são a mesma tela (decisão do usuário, 2026-07-14): "clicar num BITin
 // em rascunho já abre editável, não é mais só visualização". Um BITin enviado usa a mesma
-// estrutura, só que travada (sem inputs). /bitins/novo e /bitins/:mongoId caem os dois aqui --
-// sem mongoId é criação em branco, com mongoId é editar (rascunho) ou visualizar (enviado).
+// estrutura, só que travada (sem inputs). Sempre chega aqui com mongoId -- "+ Novo BITin" já
+// cria o rascunho antes de navegar (ver lib/criarBitin.ts); não existe mais um caminho "em
+// branco" nesta página (2026-07-16, pedido do usuário: "quando tu clicka em novo bitin tem
+// uma tela que não aparece as abas e nem checklist etc... tira essa tela de ter que salvar o
+// bitin pra ele aparecer, quando clicka em novo bitin ja abre direto na aba que tem as 3
+// telas etc.").
 //
 // GET /bitins/{mongo_id}/resumo (scripts/bitin_view.py::render_bitin_summary) continua sendo
 // a fonte dos dados legíveis (checklist, setores acionados, indicadores, diffs) pro modo
@@ -43,7 +47,6 @@ const ADMIN_LEVEL = 99
 
 export default function BitinDetail() {
   const { mongoId } = useParams<{ mongoId: string }>()
-  const isNovo = !mongoId
   const navigate = useNavigate()
   const { user } = useAuth()
   const { enviando, errosEnvio, bitinEnviado, enviar } = useEnviarBitin(mongoId)
@@ -51,7 +54,7 @@ export default function BitinDetail() {
   // Campos editáveis (dados gerais + materiais).
   const [produto, setProduto] = useState('')
   const [motivo, setMotivo] = useState('')
-  const [solicitante, setSolicitante] = useState(isNovo ? (user?.nome ?? '') : '')
+  const [solicitante, setSolicitante] = useState('')
   const [setor, setSetor] = useState('')
   const [materiais, setMateriais] = useState<MaterialEditavel[]>([])
   const [checklistOverrides, setChecklistOverrides] = useState<Record<string, boolean>>({})
@@ -65,18 +68,17 @@ export default function BitinDetail() {
   const [codigo, setCodigo] = useState<string | null>(null)
   const [resumo, setResumo] = useState<BitinResumo | null>(null)
 
-  const [carregando, setCarregando] = useState(!isNovo)
+  const [carregando, setCarregando] = useState(true)
   const [bloqueado, setBloqueado] = useState(false)
   const [erro, setErro] = useState<string | null>(null)
   const [salvando, setSalvando] = useState(false)
   const [excluindo, setExcluindo] = useState(false)
   const [confirmacaoEnvio, setConfirmacaoEnvio] = useState<string | null>(null)
 
-  const editavel = isNovo || (status === 'rascunho' && podeEditar)
+  const editavel = status === 'rascunho' && podeEditar
   const ehAdmin = (user?.permission_level ?? 0) >= ADMIN_LEVEL
 
   useEffect(() => {
-    if (isNovo) return
     let cancelado = false
     api
       .get<Bitin>(`/bitins/${mongoId}`)
@@ -106,7 +108,7 @@ export default function BitinDetail() {
       cancelado = true
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isNovo, mongoId])
+  }, [mongoId])
 
   useEffect(() => {
     api
@@ -116,7 +118,6 @@ export default function BitinDetail() {
   }, [])
 
   async function carregarResumo() {
-    if (isNovo) return
     try {
       const resp = await api.get(`/bitins/${mongoId}/resumo`)
       setResumo(resp.data)
@@ -129,7 +130,7 @@ export default function BitinDetail() {
   useEffect(() => {
     carregarResumo()
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isNovo, mongoId])
+  }, [mongoId])
 
   // Pós-envio (2026-07-16, pedido do usuário: "coloque uma informação na tela de quando envia
   // bitin de confirmação que atualize a pagina e vai direto no bitin já enviado"). Mesma URL
@@ -194,7 +195,6 @@ export default function BitinDetail() {
   async function alternarChecklist(id: string, afeta: boolean) {
     const overridesAtualizados = { ...checklistOverrides, [id]: afeta }
     setChecklistOverrides(overridesAtualizados)
-    if (isNovo) return
     try {
       const resp = await api.post('/bitins/draft', {
         mongo_id: mongoId,
@@ -217,11 +217,7 @@ export default function BitinDetail() {
       })
       const novoId = resp.data.mongo_id as string
       setConteudoExistente(resp.data.content)
-      if (isNovo) {
-        navigate(`/bitins/${novoId}`, { replace: true })
-      } else {
-        await carregarResumo()
-      }
+      await carregarResumo()
       return novoId
     } catch {
       setErro('Não foi possível salvar. Tente novamente.')
@@ -298,10 +294,8 @@ export default function BitinDetail() {
       </Link>
 
       <div className="mt-3 flex flex-wrap items-center gap-3">
-        <h1 className="text-2xl font-semibold text-ink">
-          {isNovo ? 'Novo BITin' : codigo || 'Rascunho sem código'}
-        </h1>
-        {!isNovo && <StatusBadge status={status} />}
+        <h1 className="text-2xl font-semibold text-ink">{codigo || 'Rascunho sem código'}</h1>
+        <StatusBadge status={status} />
         {editavel && (
           <AjudaPopover titulo="Como usar a aba BITin">
             <p>
@@ -319,7 +313,7 @@ export default function BitinDetail() {
           </AjudaPopover>
         )}
 
-        {editavel && !isNovo && (
+        {editavel && (
           <button
             type="button"
             onClick={handleExcluir}
@@ -334,7 +328,7 @@ export default function BitinDetail() {
             (permission_level >= ADMIN_LEVEL, mesmo nível de Settings.tsx/backend/api/
             bitins.py::ADMIN_LEVEL) vê isto; usuário comum continua só com "Excluir rascunho"
             acima, igual sempre foi. */}
-        {!isNovo && status === 'enviado' && ehAdmin && (
+        {status === 'enviado' && ehAdmin && (
           <button
             type="button"
             onClick={handleExcluirEnviado}
@@ -350,7 +344,7 @@ export default function BitinDetail() {
             type="button"
             onClick={salvar}
             disabled={salvando || enviando}
-            className={`rounded-lg border border-line px-4 py-2 text-sm font-medium text-ink-muted transition-colors hover:bg-surface-alt disabled:cursor-not-allowed disabled:opacity-60 ${isNovo ? 'ml-auto' : ''}`}
+            className="rounded-lg border border-line px-4 py-2 text-sm font-medium text-ink-muted transition-colors hover:bg-surface-alt disabled:cursor-not-allowed disabled:opacity-60"
           >
             {salvando ? 'Salvando...' : 'Salvar'}
           </button>
@@ -369,7 +363,6 @@ export default function BitinDetail() {
         setor={setor}
         onProdutoChange={setProduto}
         onMotivoChange={setMotivo}
-        onSolicitanteChange={setSolicitante}
         onSetorChange={setSetor}
         resumo={resumo}
         onToggleChecklist={alternarChecklist}
@@ -387,10 +380,9 @@ export default function BitinDetail() {
         onRemoveMaterial={removerMaterial}
         materiaisResumo={resumo?.materiais ?? null}
         mongoId={mongoId}
-        isNovo={isNovo}
       />
 
-      {editavel && !isNovo && mongoId && (
+      {editavel && mongoId && (
         <EdicaoBottomBar mongoId={mongoId} enviando={enviando || salvando} onEnviar={handleEnviar} />
       )}
     </div>

@@ -362,20 +362,39 @@ export default function CodigosSapPage() {
                   </td>
                   {schema.identificacao
                     .filter((campo) => !COLUNAS_IDENTIFICACAO_OCULTAS.has(campo.key))
-                    .map((campo) => (
-                      <td key={campo.key} className="p-1.5">
-                        <input
-                          type="text"
-                          value={String(m[campo.key as keyof MaterialEditavel] ?? '')}
-                          onChange={(e) => atualizarIdentificacao(i, campo.key as keyof MaterialEditavel, e.target.value)}
-                          onPaste={async (e) => {
-                            const texto = e.clipboardData.getData('text')
-                            if (await colarNaLinha(i, texto)) e.preventDefault()
-                          }}
-                          className="w-32 rounded border border-line bg-surface px-2 py-1.5 text-sm text-ink focus:border-brand-navy focus:outline-none"
-                        />
-                      </td>
-                    ))}
+                    .map((campo) =>
+                      // Centro é a planta SAP -- restrito a 2001 (Marau) / 2005 (Passo Fundo)
+                      // desde 2026-07-16 (mesma regra de MaterialEditorCard.tsx/validate_bitin).
+                      // NÃO confundir com "depósito" (outras colunas de dados_basicos, ex.:
+                      // deposito_producao/deposito_suprimento_externo -- conceito diferente,
+                      // sem essa restrição, seguem texto livre).
+                      campo.key === 'centro' ? (
+                        <td key={campo.key} className="p-1.5">
+                          <select
+                            value={String(m[campo.key as keyof MaterialEditavel] ?? '')}
+                            onChange={(e) => atualizarIdentificacao(i, campo.key as keyof MaterialEditavel, e.target.value)}
+                            className="dark:[color-scheme:dark] [color-scheme:light] w-32 rounded border border-line bg-surface px-2 py-1.5 text-sm text-ink focus:border-brand-navy focus:outline-none"
+                          >
+                            <option value="">--</option>
+                            <option value="2001">2001 — Marau</option>
+                            <option value="2005">2005 — Passo Fundo</option>
+                          </select>
+                        </td>
+                      ) : (
+                        <td key={campo.key} className="p-1.5">
+                          <input
+                            type="text"
+                            value={String(m[campo.key as keyof MaterialEditavel] ?? '')}
+                            onChange={(e) => atualizarIdentificacao(i, campo.key as keyof MaterialEditavel, e.target.value)}
+                            onPaste={async (e) => {
+                              const texto = e.clipboardData.getData('text')
+                              if (await colarNaLinha(i, texto)) e.preventDefault()
+                            }}
+                            className="w-32 rounded border border-line bg-surface px-2 py-1.5 text-sm text-ink focus:border-brand-navy focus:outline-none"
+                          />
+                        </td>
+                      ),
+                    )}
                   {schema.dados_basicos.map((campo) => (
                     <td key={campo.key} className="p-1.5">
                       <input

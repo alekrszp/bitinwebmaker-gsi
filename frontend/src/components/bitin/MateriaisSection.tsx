@@ -19,7 +19,6 @@ export default function MateriaisSection({
   onRemoveMaterial,
   materiaisResumo,
   mongoId,
-  isNovo,
 }: {
   editavel: boolean
   schema: MateriaisSchema | null
@@ -29,7 +28,6 @@ export default function MateriaisSection({
   onRemoveMaterial: (index: number) => void
   materiaisResumo: MaterialResumo[] | null
   mongoId: string | undefined
-  isNovo: boolean
 }) {
   if (!editavel) {
     return materiaisResumo && <AlteracaoTable materiais={materiaisResumo} />
@@ -55,7 +53,7 @@ export default function MateriaisSection({
         >
           + Novo material
         </button>
-        {!isNovo && mongoId && (
+        {mongoId && (
           <span className="text-sm text-ink-muted">
             ou{' '}
             <Link to={`/bitins/${mongoId}/codigos-sap`} className="text-ink underline">

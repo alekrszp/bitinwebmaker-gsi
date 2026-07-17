@@ -4,12 +4,12 @@ import uuid
 from datetime import datetime
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Response
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 import backend.scripts_path as scripts_path  # noqa: F401  (garante sys.path antes dos imports abaixo)
-from backend.api.users import _usuarios_do_mesmo_setor_query
+from backend.api.users import _usuarios_do_mesmo_subgrupo_query
 from backend.auth.deps import NIVEL_ADMIN, NIVEL_CADASTRO, NIVEL_GESTOR, get_current_active_user
 from backend.auth.models import Usuario
 from backend.bitin_number import SetorInvalido, gerar_e_salvar_bitin_sql
@@ -24,6 +24,7 @@ from backend.models_sql import BitinSQL
 import bitin_document
 import bitin_lifecycle
 import bitin_model
+import bitin_pdf
 import bitin_view
 import sap_paste_parser
 # isort: on
@@ -181,15 +182,25 @@ async def create_or_update_draft(
         mongo_id = draft_in.mongo_id
         created_at = existing.get("created_at", now)
         criado_por = existing.get("criado_por")  # não muda dono numa atualização
+        # "Solicitante vira automático (nome de quem está logado)." (decisão do usuário,
+        # 2026-07-16) -- numa atualização preserva o solicitante ORIGINAL do rascunho, não
+        # importa quem esteja salvando agora (ex.: admin editando o rascunho de outra pessoa)
+        # nem o que vier no payload. Isso é reforçado aqui no backend -- a barreira real de
+        # segurança/integridade de dado é esta, não só a omissão do campo no formulário do
+        # frontend, que qualquer requisição manual poderia contornar.
+        solicitante = existing.get("content", {}).get("solicitante")
     else:
         mongo_id = str(uuid.uuid4())
         created_at = now
         criado_por = current_user.email
+        # Idem ao comentário acima: na criação, o solicitante é sempre o nome de quem está
+        # logado -- qualquer valor mandado pelo cliente pra esse campo é ignorado.
+        solicitante = current_user.nome
 
     # data_solicitacao é carimbada pelo sistema (data em que o rascunho foi salvo pela
     # primeira vez), não escolhida livremente pelo engenheiro -- qualquer valor mandado pelo
     # cliente pra esse campo é ignorado. Ver docs/BITIN_MODEL.md, "Regras de campo".
-    content = {**draft_in.content, "data_solicitacao": created_at[:10]}
+    content = {**draft_in.content, "data_solicitacao": created_at[:10], "solicitante": solicitante}
 
     doc = {
         "_id": mongo_id,
@@ -217,6 +228,29 @@ async def get_bitin(
     return _doc_to_response(doc, current_user)
 
 
+@router.get("/{mongo_id}/pdf")
+async def get_bitin_pdf(
+    mongo_id: str,
+    _current_user: Usuario = Depends(get_current_active_user),
+    mongo_db=Depends(get_mongo_db),
+):
+    """Exporta o BITin em PDF (relatório interno). Mesma checagem de acesso que GET
+    /bitins/{mongo_id} acima (só exige estar autenticado + o doc existir -- essa rota não
+    tem restrição de visibilidade por dono/setor, ver _doc_to_response/list_bitins pra onde
+    isso é aplicado de fato, no /bitins sem id)."""
+    collection = mongo_db["bitin_contents"]
+    doc = await collection.find_one({"_id": mongo_id})
+    if not doc:
+        raise HTTPException(status_code=404, detail="BITin não encontrado")
+    pdf_bytes = bitin_pdf.build_bitin_pdf(doc.get("content", {}))
+    codigo = doc.get("content", {}).get("bitin") or mongo_id
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="BITin-{codigo}.pdf"'},
+    )
+
+
 TERMO_CAMPO_MONGO = {
     "motivo": "content.motivo",
     "solicitante": "content.solicitante",
@@ -239,16 +273,16 @@ async def list_bitins(
     # Escopo por nível (revisto em 2026-07-16, revisão do modelo de permissões -- 4 níveis
     # agora: Usuário/Gestor/Cadastro/Admin):
     # - Usuário (66): só os próprios BITins (criado_por == e-mail), como sempre foi.
-    # - Gestor (77): BITins de qualquer um que compartilhe ao menos um Setor com ele (mesma
-    #   consulta SQL de backend/api/users.py::_usuarios_do_mesmo_setor_query, "quem o gestor
-    #   gerencia"), draft+enviado. Gestor sem setor nenhum não ganha acesso a mais ninguém --
+    # - Gestor (77): BITins de qualquer um que compartilhe ao menos um Subgrupo com ele (mesma
+    #   consulta SQL de backend/api/users.py::_usuarios_do_mesmo_subgrupo_query, "quem o gestor
+    #   gerencia"), draft+enviado. Gestor sem subgrupo nenhum não ganha acesso a mais ninguém --
     #   cai pra "só os próprios", pra não perder o acesso ao próprio trabalho (mesmo raciocínio
     #   de list_users, mas aqui a consequência de "não vê nada" seria pior: perderia os
     #   rascunhos que ele mesmo criou).
     # - Cadastro (88, NOVO 2026-07-16): cadastra/edita BITins mas não é gestor de ninguém --
     #   vê os PRÓPRIOS BITins em qualquer status (incl. rascunho), e dos colegas de mesmo
-    #   Setor só os já ENVIADOS (rascunho alheio continua privado). Sem setor nenhum, cai pra
-    #   "só os próprios", mesmo raciocínio do Gestor acima.
+    #   Subgrupo só os já ENVIADOS (rascunho alheio continua privado). Sem subgrupo nenhum, cai
+    #   pra "só os próprios", mesmo raciocínio do Gestor acima.
     # - Admin (99): sem restrição nenhuma -- vê o sistema inteiro (decisão de 2026-07-15:
     #   antes admin também ficava preso a "só os meus" aqui; usuário confirmou "Admin vê tudo").
     #
@@ -260,7 +294,7 @@ async def list_bitins(
     if current_user.permission_level >= NIVEL_ADMIN:
         pass  # sem restrição -- nenhuma condição de escopo
     elif current_user.permission_level == NIVEL_CADASTRO:
-        colegas = _usuarios_do_mesmo_setor_query(db, current_user).all()
+        colegas = _usuarios_do_mesmo_subgrupo_query(db, current_user).all()
         emails_colegas = [u.email for u in colegas if u.email != current_user.email]
         if emails_colegas:
             condicoes.append({
@@ -272,7 +306,7 @@ async def list_bitins(
         else:
             condicoes.append({"criado_por": current_user.email})
     elif current_user.permission_level >= NIVEL_GESTOR:
-        colegas = _usuarios_do_mesmo_setor_query(db, current_user).all()
+        colegas = _usuarios_do_mesmo_subgrupo_query(db, current_user).all()
         emails = [u.email for u in colegas]
         if emails:
             condicoes.append({"criado_por": {"$in": emails}})

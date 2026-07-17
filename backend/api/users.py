@@ -4,7 +4,6 @@ from sqlalchemy.orm import Session
 
 from backend.auth.deps import (
     NIVEL_ADMIN,
-    NIVEL_GESTOR,
     check_permission,
     get_current_active_user,
 )

@@ -22,7 +22,6 @@ export default function DadosGeraisCard({
   setor,
   onProdutoChange,
   onMotivoChange,
-  onSolicitanteChange,
   onSetorChange,
   resumo,
   onToggleChecklist,
@@ -35,7 +34,6 @@ export default function DadosGeraisCard({
   setor: string
   onProdutoChange: (v: string) => void
   onMotivoChange: (v: string) => void
-  onSolicitanteChange: (v: string) => void
   onSetorChange: (v: string) => void
   resumo: BitinResumo | null
   onToggleChecklist?: (id: string, afeta: boolean) => void
@@ -53,16 +51,11 @@ export default function DadosGeraisCard({
             <FormLabel htmlFor="motivo">Motivo</FormLabel>
             <TextInput id="motivo" type="text" value={motivo} onChange={(e) => onMotivoChange(e.target.value)} />
           </div>
-          <div>
-            <FormLabel htmlFor="solicitante">Solicitante</FormLabel>
-            <TextInput
-              id="solicitante"
-              type="text"
-              required
-              value={solicitante}
-              onChange={(e) => onSolicitanteChange(e.target.value)}
-            />
-          </div>
+          {/* Solicitante travado (2026-07-16) -- deixou de ser input editável: o backend
+              carimba automaticamente a partir do usuário logado que criou o rascunho
+              (create_or_update_draft, backend/api/bitins.py), mesmo padrão de campo
+              não-editável já usado aqui pra "Data de envio" (DetailField). */}
+          <DetailField label="Solicitante" value={solicitante} />
           <div>
             <FormLabel htmlFor="setor">Setor</FormLabel>
             <select

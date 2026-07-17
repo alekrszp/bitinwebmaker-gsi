@@ -25,6 +25,11 @@ BITIN_NUMBER_RE = re.compile(r"^[PA]\d{4}/\d{2}$")
 REQUIRED_HEADER_FIELDS = ["setor", "produto", "motivo", "solicitante", "data_solicitacao"]
 REQUIRED_MATERIAL_FIELDS = ["codigo_material", "centro", "tipo_material"]
 
+# "centro" é a planta SAP (2001 Marau / 2005 Passo Fundo) -- NÃO confundir com "depósito"
+# (SAP storage location, códigos tipo 2003 etc, conceito diferente). Restrito a esse
+# conjunto fechado porque são as únicas duas plantas em que o BITin opera (2026-07-16).
+CENTROS_VALIDOS = {"2001", "2005"}
+
 
 @lru_cache(maxsize=None)
 def load_config(config_path: Path) -> dict[str, Any]:
@@ -56,6 +61,13 @@ def validate_bitin(bitin: dict[str, Any], config: dict[str, Any]) -> list[BitinE
                     f"materiais[{idx}].{field}", "material_required_field_missing",
                     f"materiais[{idx}]: campo obrigatório vazio: {field}",
                 ))
+
+        centro = material.get("centro")
+        if centro and centro not in CENTROS_VALIDOS:
+            errors.append(make_error(
+                f"materiais[{idx}].centro", "invalid_centro_value",
+                f"materiais[{idx}]: Centro inválido: use 2001 (Marau) ou 2005 (Passo Fundo).",
+            ))
 
     errors.extend(validate_ordem_cliente(bitin))
 

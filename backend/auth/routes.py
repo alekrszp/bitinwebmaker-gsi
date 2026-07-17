@@ -20,7 +20,7 @@ from backend.auth.deps import (
     get_current_user,
     oauth2_scheme,
 )
-from backend.auth.models import SessaoUsuario, Setor, Usuario
+from backend.auth.models import SessaoUsuario, Subgrupo, Usuario
 from backend.auth.schemas import ChangePasswordRequest, Token, UserCreate, UserOut
 from backend.auth.security import create_access_token, get_password_hash, hash_token, verify_password
 from backend.config import settings
@@ -29,17 +29,18 @@ from backend.db.session import get_db
 router = APIRouter()
 
 
-def _resolve_setores(db: Session, sector_ids: list[int]) -> list[Setor]:
-    """Valida que todo id em sector_ids corresponde a um Setor real -- 400 se algum não
-    existir, mesmo estilo de validação de e-mail duplicado logo acima/abaixo neste arquivo."""
-    if not sector_ids:
+def _resolve_subgrupos(db: Session, subgrupo_ids: list[int]) -> list[Subgrupo]:
+    """Valida que todo id em subgrupo_ids corresponde a um Subgrupo real -- 400 se algum não
+    existir, mesmo estilo de validação de e-mail duplicado logo acima/abaixo neste arquivo.
+    Renomeado de _resolve_setores (2026-07-16) junto com a rename geral Setor -> Subgrupo."""
+    if not subgrupo_ids:
         return []
-    setores = db.query(Setor).filter(Setor.id.in_(sector_ids)).all()
-    encontrados = {s.id for s in setores}
-    faltando = set(sector_ids) - encontrados
+    subgrupos = db.query(Subgrupo).filter(Subgrupo.id.in_(subgrupo_ids)).all()
+    encontrados = {s.id for s in subgrupos}
+    faltando = set(subgrupo_ids) - encontrados
     if faltando:
-        raise HTTPException(status_code=400, detail=f"Setor(es) inexistente(s): {sorted(faltando)}")
-    return setores
+        raise HTTPException(status_code=400, detail=f"Subgrupo(s) inexistente(s): {sorted(faltando)}")
+    return subgrupos
 
 
 @router.post("/register", response_model=UserOut)
@@ -53,7 +54,7 @@ def register_user(user_in: UserCreate, db: Session = Depends(get_db)) -> UserOut
     if existing:
         raise HTTPException(status_code=400, detail="E-mail já cadastrado")
 
-    setores = _resolve_setores(db, user_in.sector_ids)
+    subgrupos = _resolve_subgrupos(db, user_in.subgrupo_ids)
 
     is_first_user = db.query(Usuario).count() == 0
     novo_usuario = Usuario(
@@ -61,8 +62,9 @@ def register_user(user_in: UserCreate, db: Session = Depends(get_db)) -> UserOut
         nome=user_in.nome,
         hashed_password=get_password_hash(user_in.password),
         network_id=user_in.network_id,
-        setores=setores,
+        subgrupos=subgrupos,
         numero_eng=user_in.numero_eng,
+        setor=user_in.setor,
         permission_level=NIVEL_ADMIN if is_first_user else NIVEL_USUARIO,
         # email_verificado NUNCA vem do cliente -- mesma lição de permission_level acima.
         # Fica False no registro; não há fluxo de verificação de e-mail construído ainda,

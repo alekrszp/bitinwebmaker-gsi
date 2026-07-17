@@ -6,9 +6,13 @@ export interface User {
   ativo: boolean
   permission_level: number
   network_id: string | null
-  // Lista de ids de Setor (2026-07-15, era sector_id único -- "um usuário poder ser tanto
-  // armazenagem tanto quanto proteina"). Espelha backend/auth/schemas.py::UserOut.sector_ids.
-  sector_ids: number[]
+  // Lista de ids de Subgrupo (2026-07-15, era sector_id único -- "um usuário poder ser tanto
+  // armazenagem tanto quanto proteina"). Espelha backend/auth/schemas.py::UserOut.subgrupo_ids.
+  subgrupo_ids: number[]
+  // Rótulo de papel (2026-07-16, NOVO, desacoplado de permission_level e de subgrupo_ids --
+  // admin define os três independentemente, sem vínculo automático). Espelha
+  // backend/auth/schemas.py::UserOut.setor.
+  setor: string
   created_at: string
   // Espelha Usuario.senha_temporaria (backend/auth/models.py) -- True quando a senha atual foi
   // gerada por um admin (POST /users) e ainda não foi trocada pelo dono da conta.
@@ -22,8 +26,27 @@ export interface AdminUserCreateRequest {
   email: string
   nome: string
   numero_eng: string | null
-  sector_ids: number[]
+  subgrupo_ids: number[]
   permission_level: number
+  // Rótulo de papel (2026-07-16, NOVO) -- 'cadastro' | 'gestor' | 'usuario'. Independente de
+  // permission_level e subgrupo_ids, admin escolhe os três separadamente.
+  setor: string
+  // Senha do PRÓPRIO admin que está cadastrando (2026-07-16, pedido explícito: reconfirmar
+  // identidade antes de criar conta) -- espelha backend/auth/schemas.py::AdminUserCreate.
+  senha_admin: string
+}
+
+// Espelha backend/auth/schemas.py::UserUpdateSubgrupos -- corpo de
+// PATCH /users/{id}/subgrupos (Settings.tsx -- GestaoUsuarios, reatribuição de subgrupo de
+// usuário já cadastrado, 2026-07-16).
+export interface UserUpdateSubgruposRequest {
+  subgrupo_ids: number[]
+}
+
+// Espelha backend/auth/schemas.py -- corpo de PATCH /users/{id}/setor (2026-07-16, NOVO,
+// admin-only) pra trocar só o rótulo de papel do usuário depois de cadastrado.
+export interface UserUpdateSetorRequest {
+  setor: string
 }
 
 // Espelha backend/auth/schemas.py::AdminUserCreateOut -- resposta de POST /users. Inclui a
@@ -47,11 +70,18 @@ export interface ChangePasswordRequest {
   senha_nova: string
 }
 
-// Espelha backend/auth/schemas.py::SectorOut -- devolvido por GET /sectors (público).
-export interface Sector {
+// Espelha backend/auth/schemas.py::SubgrupoOut -- devolvido por GET /subgrupos (público).
+export interface Subgrupo {
   id: number
   nome: string
   descricao: string | null
+}
+
+// Espelha GET /users/cadastro-emails (2026-07-16, NOVO) -- usuários com setor=='cadastro',
+// usado por MeusBitins.tsx pra montar o mailto de "Enviar e-mail" de um BITin enviado.
+export interface CadastroEmail {
+  nome: string
+  email: string
 }
 
 // Espelha backend/api/bitins.py::BitinResponse -- devolvido por GET /bitins (lista, escopada

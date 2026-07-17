@@ -3,6 +3,10 @@ import { useAuth } from '../hooks/useAuth'
 import ThemeToggle from './ThemeToggle'
 import { LogoutIcon, MenuIcon, SettingsIcon } from './icons'
 
+// Espelha backend/auth/deps.py::NIVEL_ADMIN (99) -- só duplicado aqui pra decidir o que
+// mostrar; o backend continua sendo quem de fato garante a permissão em cada rota.
+const NIVEL_ADMIN = 99
+
 export default function Topbar({ onOpenSidebar }: { onOpenSidebar: () => void }) {
   const { user, logout } = useAuth()
   const navigate = useNavigate()
@@ -22,6 +26,16 @@ export default function Topbar({ onOpenSidebar }: { onOpenSidebar: () => void })
       >
         <MenuIcon className="h-5 w-5" />
       </button>
+
+      {/* Selo "Admin" (2026-07-16, pedido explícito) -- mesma convenção visual de
+          StatusBadge.tsx/SetorBadge.tsx (pill arredondada, cor de marca em 15-20% de opacidade
+          de fundo + texto sólido), não uma cor nova inventada pra isso. Perto da borda
+          esquerda (ao lado do botão de menu), só visível pra Admin (99). */}
+      {user && user.permission_level === NIVEL_ADMIN && (
+        <span className="ml-2 hidden rounded-full bg-brand-navy/15 px-4 py-1.5 text-sm font-semibold text-brand-navy dark:text-white sm:inline-block">
+          Admin
+        </span>
+      )}
 
       {/* Espaço reservado pro celular (o menu fica à esquerda); em telas maiores o resto fica
           alinhado à direita porque o título da página já mora dentro do próprio conteúdo

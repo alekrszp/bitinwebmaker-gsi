@@ -5,17 +5,21 @@ from sqlalchemy.types import DateTime
 
 from backend.db.session import Base
 
-# Tabela de associação pura (sem colunas extras) pro many-to-many Usuario<->Setor (2026-07-15,
+# Tabela de associação pura (sem colunas extras) pro many-to-many Usuario<->Subgrupo (2026-07-15,
 # pedido explícito: "um usuário poder ser tanto armazenagem tanto quanto proteina"). Antes disso
-# Usuario.sector_id era uma FK única nullable -- trocada por esta tabela + Usuario.setores
+# Usuario.sector_id era uma FK única nullable -- trocada por esta tabela + Usuario.subgrupos
 # (ver migração usuario_setores_many_to_many). `Table()` simples é o padrão SQLAlchemy pra
 # many-to-many sem payload próprio (não precisa de uma classe/model dedicada como SessaoUsuario,
 # que carrega colunas além das duas FKs).
-usuario_setores = Table(
-    "usuario_setores",
+# Renomeado de Setor/usuario_setores -> Subgrupo/usuario_subgrupos (2026-07-16): o nome "Setor"
+# colidia com o novo campo Usuario.setor (rótulo de cargo cadastro/gestor/usuario, ver abaixo) --
+# são dois conceitos totalmente diferentes e precisavam de nomes diferentes. Este continua sendo
+# o conceito de Proteína Animal/Armazenagem de Grãos.
+usuario_subgrupos = Table(
+    "usuario_subgrupos",
     Base.metadata,
     Column("usuario_id", Integer, ForeignKey("usuarios.id"), primary_key=True),
-    Column("setor_id", Integer, ForeignKey("setores.id"), primary_key=True),
+    Column("subgrupo_id", Integer, ForeignKey("subgrupos.id"), primary_key=True),
 )
 
 # NOTA (2026-07-15): o ER diagram de referência (Fluxo.md) traz `password_salt` e
@@ -28,12 +32,14 @@ usuario_setores = Table(
 # única coluna.
 
 
-class Setor(Base):
+class Subgrupo(Base):
     """Departamento/área da empresa a que um Usuario pertence (Engenharia, RH, TI, ...) --
     conceito diferente do 'setor' do BITin em si (Proteína Animal/Armazenagem de Grãos, que
-    define o prefixo P/A do número, ver backend/bitin_number.py)."""
+    define o prefixo P/A do número, ver backend/bitin_number.py). Renomeado de Setor ->
+    Subgrupo (2026-07-16) porque o nome "Setor" passou a colidir com o novo campo
+    Usuario.setor (rótulo de cargo cadastro/gestor/usuario) -- são conceitos diferentes."""
 
-    __tablename__ = "setores"
+    __tablename__ = "subgrupos"
 
     id = Column(Integer, primary_key=True, index=True)
     nome = Column(String, unique=True, nullable=False)
@@ -53,11 +59,20 @@ class Usuario(Base):
     permission_level = Column(Integer, nullable=False, default=66)
     network_id = Column(String, nullable=True)
     # Many-to-many desde 2026-07-15 (era sector_id, FK única nullable) -- um usuário agora pode
-    # pertencer a mais de um Setor ao mesmo tempo (ex.: gestor de Proteína Animal E Armazenagem
-    # de Grãos). Usado tanto pra escopar GET /users (gestor só vê usuários com setor em comum)
-    # quanto GET /bitins (gestor só vê BITins de quem tem setor em comum) -- ver
-    # backend/api/users.py e backend/api/bitins.py.
-    setores = relationship("Setor", secondary=usuario_setores, backref="usuarios")
+    # pertencer a mais de um Subgrupo ao mesmo tempo (ex.: gestor de Proteína Animal E Armazenagem
+    # de Grãos). Usado tanto pra escopar GET /users (gestor só vê usuários com subgrupo em comum)
+    # quanto GET /bitins (gestor só vê BITins de quem tem subgrupo em comum) -- ver
+    # backend/api/users.py e backend/api/bitins.py. Renomeado de Setor/setores -> Subgrupo/
+    # subgrupos (2026-07-16), ver comentário na classe Subgrupo acima.
+    subgrupos = relationship("Subgrupo", secondary=usuario_subgrupos, backref="usuarios")
+    # Rótulo descritivo do CARGO da pessoa -- 'cadastro'/'gestor'/'usuario' (2026-07-16, decisão
+    # explícita do usuário). "`setor` é só um rótulo descritivo do cargo da pessoa, NÃO controla
+    # nenhuma regra de acesso, isso continua sendo só `permission_level`" -- todo controle de
+    # acesso (check_permission, NIVEL_*) usa exclusivamente permission_level; este campo é usado
+    # apenas pra popular GET /users/cadastro-emails (lista de gente que recebe BITins pra
+    # cadastro) e exibição no frontend. Validado em backend/auth/schemas.py contra
+    # SETORES_VALIDOS a nível de aplicação, não via CHECK constraint no banco.
+    setor = Column(String, nullable=False)
     # Só relevante pra contas de engenheiro (diagram: "Apenas engenheiros") -- outros papéis
     # deixam nulo, não é obrigatório pro sistema todo.
     numero_eng = Column(String, nullable=True)
