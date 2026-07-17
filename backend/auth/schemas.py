@@ -139,6 +139,17 @@ class UserUpdateSetor(BaseModel):
         return _valida_setor(v)
 
 
+class UserReactivate(BaseModel):
+    """Corpo de POST /users/{id}/reativar (backend/api/users.py) -- 2026-07-17, pedido
+    explícito: "quando eu reativo [um usuário excluído] aparece de novo com uma nova senha do
+    0 e novo email". Diferente de UserUpdateSetor/Subgrupos/Permission (que só trocam UM
+    campo), reativar sempre pede um e-mail (pode repetir o antigo ou ser outro -- ex.: pessoa
+    saiu e voltou com e-mail corporativo diferente) e sempre gera senha temporária nova no
+    servidor (não vem no corpo, mesmo padrão de AdminUserCreate)."""
+
+    email: EmailStr
+
+
 class AdminUserCreate(BaseModel):
     """Corpo de POST /users (backend/api/users.py::create_user_by_admin) -- cadastro de conta
     nova SÓ PELO ADMIN (2026-07-15, pedido explícito do usuário: "tela de cadastro de usuário

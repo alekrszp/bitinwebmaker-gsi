@@ -51,11 +51,13 @@ class AuthApiTest(unittest.TestCase):
         app.dependency_overrides.clear()
         self.engine.dispose()
 
-    def _create_user(self, user_id: int, permission_level: int = 66, setor: str = "usuario") -> Usuario:
+    def _create_user(
+        self, user_id: int, permission_level: int = 66, setor: str = "usuario", email: str | None = None,
+    ) -> Usuario:
         db = self.SessionLocal()
         user = Usuario(
             id=user_id,
-            email=f"user{user_id}@example.com",
+            email=email or f"user{user_id}@example.com",
             nome=f"Usuário {user_id}",
             hashed_password=get_password_hash("Senha123!"),
             permission_level=permission_level,
@@ -772,10 +774,57 @@ class AuthApiTest(unittest.TestCase):
         db.close()
         self.assertEqual(ainda_admin.permission_level, 99)
 
+    # Super-admin oculto (2026-07-17, pedido explícito: "me coloca como admin TOTAL... isso
+    # vai ser uma permissão escondida no front que só existe no back") -- ver
+    # backend/auth/deps.py::CONTAS_SUPER_ADMIN/eh_super_admin. Só essa conta específica ignora
+    # a proteção "admin não mexe em admin"; autoproteção continua valendo até pra ela.
+
+    def test_super_admin_pode_rebaixar_outro_admin(self) -> None:
+        super_admin = self._create_user(1, permission_level=99, email="alessandro.pereiradarosafilho@grainproteintech.com")
+        admin_alvo = self._create_user(2, permission_level=99)
+
+        resp = self.client.patch(
+            f"/api/v1/users/{admin_alvo.id}/permission",
+            json={"permission_level": 66},
+            headers={"Authorization": f"Bearer {create_access_token(super_admin.id)}"},
+        )
+        self.assertEqual(resp.status_code, 200, resp.text)
+        self.assertEqual(resp.json()["permission_level"], 66)
+
+    def test_super_admin_nao_pode_alterar_o_proprio_nivel(self) -> None:
+        super_admin = self._create_user(1, permission_level=99, email="alessandro.pereiradarosafilho@grainproteintech.com")
+        resp = self.client.patch(
+            f"/api/v1/users/{super_admin.id}/permission",
+            json={"permission_level": 66},
+            headers={"Authorization": f"Bearer {create_access_token(super_admin.id)}"},
+        )
+        self.assertEqual(resp.status_code, 400, resp.text)
+
+    def test_super_admin_pode_excluir_outro_admin(self) -> None:
+        super_admin = self._create_user(1, permission_level=99, email="alessandro.pereiradarosafilho@grainproteintech.com")
+        admin_alvo = self._create_user(2, permission_level=99)
+
+        resp = self.client.delete(
+            f"/api/v1/users/{admin_alvo.id}",
+            headers={"Authorization": f"Bearer {create_access_token(super_admin.id)}"},
+        )
+        self.assertEqual(resp.status_code, 200, resp.text)
+        self.assertFalse(resp.json()["ativo"])
+
+    def test_super_admin_nao_pode_se_auto_excluir(self) -> None:
+        super_admin = self._create_user(1, permission_level=99, email="alessandro.pereiradarosafilho@grainproteintech.com")
+        resp = self.client.delete(
+            f"/api/v1/users/{super_admin.id}",
+            headers={"Authorization": f"Bearer {create_access_token(super_admin.id)}"},
+        )
+        self.assertEqual(resp.status_code, 400, resp.text)
+
     # Exclusão de usuário (2026-07-17, pedido explícito) -- DELETE /users/{id} é soft-delete
     # (backend/api/users.py::delete_user marca ativo=False), mesmas proteções de
-    # update_user_permission (admin não pode ser excluído, ninguém se auto-exclui) mais o
-    # sumiço da linha em GET /users.
+    # update_user_permission (admin não pode ser excluído, ninguém se auto-exclui). GET /users
+    # devolve ativos e inativos juntos (2026-07-17, era só ativo=True -- revertido pra dar
+    # suporte ao filtro Ativados/Desativados de GestaoUsuarios.tsx), `ativo=False` no corpo é
+    # quem distingue.
 
     def test_admin_exclui_usuario_com_sucesso(self) -> None:
         admin = self._create_user(1, permission_level=99)
@@ -796,7 +845,103 @@ class AuthApiTest(unittest.TestCase):
         resp_list = self.client.get(
             "/api/v1/users", headers={"Authorization": f"Bearer {create_access_token(admin.id)}"},
         )
-        self.assertNotIn(alvo.id, [u["id"] for u in resp_list.json()])
+        usuarios_por_id = {u["id"]: u for u in resp_list.json()}
+        self.assertIn(alvo.id, usuarios_por_id)
+        self.assertFalse(usuarios_por_id[alvo.id]["ativo"])
+
+    def test_admin_reativa_usuario_excluido(self) -> None:
+        """"quando eu reativo aparece de novo com uma nova senha do 0 e novo email"
+        (2026-07-17, pedido explícito) -- reativar sempre gera senha nova e aceita e-mail
+        novo (repetir o mesmo e-mail também é válido, ver teste abaixo)."""
+        admin = self._create_user(1, permission_level=99)
+        alvo = self._create_user(2, permission_level=66)  # senha real: "Senha123!"
+        self.client.delete(
+            f"/api/v1/users/{alvo.id}", headers={"Authorization": f"Bearer {create_access_token(admin.id)}"},
+        )
+
+        resp = self.client.post(
+            f"/api/v1/users/{alvo.id}/reativar",
+            json={"email": "novo.email@example.com"},
+            headers={"Authorization": f"Bearer {create_access_token(admin.id)}"},
+        )
+        self.assertEqual(resp.status_code, 200, resp.text)
+        self.assertTrue(resp.json()["ativo"])
+        self.assertEqual(resp.json()["email"], "novo.email@example.com")
+        senha_nova = resp.json()["senha_temporaria_gerada"]
+        self.assertTrue(senha_nova)
+
+        db = self.SessionLocal()
+        reativado = db.query(Usuario).filter(Usuario.id == alvo.id).first()
+        db.close()
+        self.assertTrue(reativado.ativo)
+        self.assertEqual(reativado.email, "novo.email@example.com")
+
+        # A senha ANTIGA ("Senha123!") não funciona mais -- foi trocada do zero.
+        login_antiga = self.client.post(
+            "/api/v1/auth/login", data={"username": "novo.email@example.com", "password": "Senha123!"},
+        )
+        self.assertEqual(login_antiga.status_code, 400, login_antiga.text)
+
+        login_nova = self.client.post(
+            "/api/v1/auth/login", data={"username": "novo.email@example.com", "password": senha_nova},
+        )
+        self.assertEqual(login_nova.status_code, 200, login_nova.text)
+
+    def test_reativar_com_email_ja_em_uso_falha(self) -> None:
+        admin = self._create_user(1, permission_level=99)
+        outro = self._create_user(2, permission_level=66)
+        excluido = self._create_user(3, permission_level=66)
+        self.client.delete(
+            f"/api/v1/users/{excluido.id}", headers={"Authorization": f"Bearer {create_access_token(admin.id)}"},
+        )
+
+        resp = self.client.post(
+            f"/api/v1/users/{excluido.id}/reativar",
+            json={"email": outro.email},
+            headers={"Authorization": f"Bearer {create_access_token(admin.id)}"},
+        )
+        self.assertEqual(resp.status_code, 400, resp.text)
+
+    def test_recadastrar_email_de_usuario_excluido_reativa_a_mesma_linha(self) -> None:
+        """"quando um usuário é excluído... e eu tento cadastrar ele de novo, deve permitir"
+        (2026-07-17, pedido explícito) -- email é UNIQUE, então create_user_by_admin precisa
+        REATIVAR a linha existente em vez de tentar inserir outra."""
+        admin = self._create_user(1, permission_level=99)
+        alvo = self._create_user(2, permission_level=66)
+        alvo_id = alvo.id
+        self.client.delete(
+            f"/api/v1/users/{alvo_id}", headers={"Authorization": f"Bearer {create_access_token(admin.id)}"},
+        )
+
+        resp = self.client.post(
+            "/api/v1/users",
+            json={
+                "email": alvo.email, "nome": "Recriado", "permission_level": 99,
+                "setor": "cadastro", "senha_admin": "Senha123!",
+            },
+            headers={"Authorization": f"Bearer {create_access_token(admin.id)}"},
+        )
+        self.assertEqual(resp.status_code, 200, resp.text)
+        self.assertEqual(resp.json()["id"], alvo_id)  # mesma linha, não uma nova
+        self.assertTrue(resp.json()["ativo"])
+        self.assertEqual(resp.json()["nome"], "Recriado")
+
+        db = self.SessionLocal()
+        self.assertEqual(db.query(Usuario).filter(Usuario.email == alvo.email).count(), 1)
+        db.close()
+
+    def test_recadastrar_email_de_usuario_ativo_ainda_falha(self) -> None:
+        admin = self._create_user(1, permission_level=99)
+        ativo = self._create_user(2, permission_level=66)
+        resp = self.client.post(
+            "/api/v1/users",
+            json={
+                "email": ativo.email, "nome": "Duplicado", "permission_level": 66,
+                "setor": "cadastro", "subgrupo_ids": [], "senha_admin": "Senha123!",
+            },
+            headers={"Authorization": f"Bearer {create_access_token(admin.id)}"},
+        )
+        self.assertEqual(resp.status_code, 400, resp.text)
 
     def test_usuario_excluido_nao_consegue_mais_logar(self) -> None:
         admin = self._create_user(1, permission_level=99)

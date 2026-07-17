@@ -20,16 +20,25 @@ export function usePasswordChangeForm(onSucesso: () => void | Promise<void>) {
     event.preventDefault()
     setErro(null)
 
+    // trim() nas três (2026-07-17, mesmo motivo de Login.tsx) -- `senhaAtual` aqui é
+    // tipicamente a senha temporária copiada/colada do popup de cadastro ou do e-mail; um
+    // espaço/quebra de linha extra arrastado na seleção derrubava a troca com "senha atual
+    // incorreta" mesmo copiando certinho o texto visível. Trima os três ANTES de comparar
+    // nova/confirmação, senão um trim só de um lado faz a comparação falhar por engano.
+    const atual = senhaAtual.trim()
+    const nova = senhaNova.trim()
+    const confirmar = confirmarSenha.trim()
+
     // Checagem client-side barata -- a validação de verdade (força da senha, senha atual
     // correta) é sempre do servidor, isso aqui só evita uma ida à API por engano de digitação.
-    if (senhaNova !== confirmarSenha) {
+    if (nova !== confirmar) {
       setErro('A confirmação não bate com a nova senha.')
       return
     }
 
     setEnviando(true)
     try {
-      const body: ChangePasswordRequest = { senha_atual: senhaAtual, senha_nova: senhaNova }
+      const body: ChangePasswordRequest = { senha_atual: atual, senha_nova: nova }
       await api.post('/auth/change-password', body)
       setSenhaAtual('')
       setSenhaNova('')

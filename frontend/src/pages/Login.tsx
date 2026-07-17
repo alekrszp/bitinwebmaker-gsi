@@ -18,8 +18,13 @@ export default function Login() {
     event.preventDefault()
     setError(null)
     setSubmitting(true)
+    // trim() na senha (2026-07-17) -- senha temporária normalmente vem de copiar/colar (popup
+    // de cadastro ou e-mail), e é fácil arrastar um espaço/quebra de linha extra na seleção
+    // sem notar; o servidor comparava o hash exato, então esse espaço sozinho já derrubava o
+    // login com "e-mail ou senha incorretos" mesmo copiando certinho o texto visível.
+    const senhaLimpa = password.trim()
     try {
-      await login(email, password)
+      await login(email.trim(), senhaLimpa)
       // Credential Management API (2026-07-15): input com autoComplete já deixa o navegador
       // oferecer salvar a senha na maioria dos casos, mas o prompt é heurístico -- em SPA
       // (sem navegação de página cheia no submit) às vezes não dispara. Chamar
@@ -30,7 +35,7 @@ export default function Login() {
         try {
           const cred = new (window as unknown as { PasswordCredential: new (data: { id: string; password: string; name?: string }) => Credential }).PasswordCredential({
             id: email,
-            password,
+            password: senhaLimpa,
             name: email,
           })
           await navigator.credentials.store(cred)
@@ -57,18 +62,29 @@ export default function Login() {
     <div className="flex min-h-screen bg-app-bg">
       {/* Painel de marca -- só em telas médias+; no celular a logo aparece compacta em cima do
           formulário (ver abaixo), pra não gastar metade da tela com algo só decorativo.
-          Fundo branco + logo colorida (2026-07-16, a pedido do usuário -- versão anterior com
-          painel navy foi revertida por não ter ficado boa). `bg-surface` em vez de `bg-white`
-          fixo (2026-07-17, correção de cor "estranha" no modo escuro) -- em claro os dois são o
-          mesmo branco (#ffffff), mas `bg-white` fica sempre branco mesmo em dark, brigando com
-          o `text-ink` claro do tema escuro (baixo contraste); `bg-surface` acompanha o tema. */}
-      <div className="relative hidden w-[42%] max-w-md flex-col overflow-hidden border-r border-line bg-surface px-10 py-10 text-ink md:flex lg:w-[38%]">
+          Fundo branco FIXO + logo colorida (2026-07-16, a pedido do usuário -- versão anterior
+          com painel navy foi revertida por não ter ficado boa). Tentativa de trocar por
+          `bg-surface` pra acompanhar o tema escuro (2026-07-17) foi revertida a pedido do
+          usuário -- este painel é decorativo/de marca, sempre branco nos dois temas, não é
+          "conteúdo" que precise se adaptar. Por isso as cores de texto aqui também são fixas
+          (slate-*), não os tokens `text-ink*` (que mudam com o tema e ficariam claros demais
+          sobre fundo branco no modo escuro) -- só o painel do formulário ao lado (`Painel do
+          formulário` abaixo) usa os tokens de tema. */}
+      <div className="relative hidden w-[42%] max-w-md flex-col overflow-hidden border-r border-line bg-white px-10 py-10 text-slate-900 md:flex lg:w-[38%]">
         <div className="flex flex-col pt-16">
           <img src="/brand/gpt-color.png" className="mb-6 h-20 w-fit" alt="Grain & Protein Technologies" />
           <div className="flex items-baseline gap-2">
-            <h1 className="text-3xl font-bold leading-none tracking-tight text-brand-navy">BITin</h1>
+            {/* Cor extraída direto do PNG da logo (rgb(5,70,96) / #054660, amostrado em
+                public/brand/gpt-color.png -- ver docs/RELEASE_v0.8.4.md) em vez do token
+                `brand-navy` (#32464d) -- os dois têm nomes parecidos mas hex diferentes, o que
+                deixava "BITin" visivelmente destoando das letras da logo ao lado (2026-07-17,
+                pedido explícito: "pega a cor a logo das letras e coloca em BITin também").
+                Escopado só a esta tela -- não mexe no token `brand-navy` usado no resto do
+                app, ver memória "logo/paleta pendente" (revisão de paleta fica pra quando o
+                usuário mandar os arquivos oficiais por tema). */}
+            <h1 className="text-3xl font-bold leading-none tracking-tight text-[#054660]">BITin</h1>
           </div>
-          <p className="mt-2.5 text-sm text-ink-muted">
+          <p className="mt-2.5 text-sm text-slate-500">
             Sistema interno Grain &amp; Protein Technologies.
           </p>
         </div>
@@ -117,7 +133,7 @@ export default function Login() {
                   placeholder="voce@empresa.com"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
-                  className="w-full rounded-lg border border-line bg-surface py-2.5 pl-10 pr-3 text-ink placeholder:text-ink-faint focus:border-brand-navy focus:outline-none focus:ring-2 focus:ring-brand-navy/20"
+                  className="w-full rounded-lg border border-line bg-surface py-2.5 pl-10 pr-3 text-ink placeholder:text-ink-faint focus:border-[#054660] focus:outline-none focus:ring-2 focus:ring-[#054660]/20"
                 />
               </div>
             </div>
@@ -159,7 +175,7 @@ export default function Login() {
             <button
               type="submit"
               disabled={submitting}
-              className="flex w-full items-center justify-center gap-2 rounded-lg bg-brand-navy py-2.5 font-medium text-white transition-colors hover:bg-brand-navy-dark disabled:cursor-not-allowed disabled:opacity-60"
+              className="flex w-full items-center justify-center gap-2 rounded-lg bg-[#054660] py-2.5 font-medium text-white transition-colors hover:bg-[#033349] disabled:cursor-not-allowed disabled:opacity-60"
             >
               {submitting && <SpinnerIcon className="h-4 w-4 animate-spin" />}
               {submitting ? 'Entrando...' : 'Entrar'}

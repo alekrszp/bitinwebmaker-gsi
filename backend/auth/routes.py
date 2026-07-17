@@ -98,6 +98,12 @@ def login(
         rate_limit.registrar_tentativa(db, email, sucesso=False, ip_address=ip_address, user_agent=user_agent)
         raise HTTPException(status_code=400, detail="E-mail ou senha incorretos")
     if not usuario.ativo:
+        # Registra igual às outras duas saídas desta função (2026-07-17, achado de auditoria)
+        # -- antes esse branch não chamava registrar_tentativa, deixando um buraco silencioso
+        # na auditoria de login (senha certa contra conta desativada não ficava rastreado) e
+        # essas tentativas nunca contavam pro rate limit (alguém com a senha certa de uma
+        # conta excluída podia tentar infinitamente sem travar).
+        rate_limit.registrar_tentativa(db, email, sucesso=False, ip_address=ip_address, user_agent=user_agent)
         raise HTTPException(status_code=400, detail="Usuário inativo")
 
     rate_limit.registrar_tentativa(db, email, sucesso=True, ip_address=ip_address, user_agent=user_agent)

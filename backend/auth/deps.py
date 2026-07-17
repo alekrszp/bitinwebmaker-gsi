@@ -68,14 +68,39 @@ NIVEL_GESTOR = 77
 NIVEL_CADASTRO = 88
 NIVEL_ADMIN = 99
 
+# Super-admin oculto (2026-07-17, pedido explícito: "me coloca como admin TOTAL... isso vai
+# ser uma permissão escondida no front que só existe no back") -- essa conta específica ignora
+# as proteções "admin nunca pode ser rebaixado/excluído por OUTRO admin" (ver
+# backend/api/users.py::update_user_permission / delete_user). De propósito não existe campo
+# nenhum em UserOut nem qualquer sinal no frontend indicando isso -- é só uma checagem de
+# e-mail no servidor, sem UI própria. NÃO é bypass de autoproteção: mesmo esta conta continua
+# sem poder se auto-rebaixar/auto-excluir (checagem de "não pode mexer em si mesmo" continua
+# valendo igual pra todo mundo, inclusive ela).
+CONTAS_SUPER_ADMIN = {"alessandro.pereiradarosafilho@grainproteintech.com"}
+
+
+def eh_super_admin(user: Usuario) -> bool:
+    return user.email in CONTAS_SUPER_ADMIN
+
 
 def check_permission(*allowed_levels: int):
     """Assinatura trocada de threshold numérico (`level: int`, checava `< level`) pra um
     conjunto explícito de níveis permitidos (2026-07-16) -- com 4 níveis não-hierárquicos
-    entre si em alguns pontos (ex.: GET /users permite Gestor e Admin, mas NÃO Cadastro,
-    que fica "no meio" numericamente), um único threshold não consegue mais expressar
-    corretamente quem pode chamar cada rota. Cada call site agora passa o conjunto exato,
-    ex.: check_permission(NIVEL_GESTOR, NIVEL_ADMIN)."""
+    entre si em alguns pontos (ex.: um nível "no meio" numericamente, como Cadastro/88, pode
+    não ter o mesmo acesso que um nível abaixo dele), um único threshold não consegue
+    expressar corretamente quem pode chamar cada rota. Assinatura variádica
+    (`*allowed_levels: int`) pra suportar isso -- `user.permission_level in allowed_levels`.
+
+    NOTA (2026-07-17, achado de auditoria): o exemplo original deste comentário era
+    `check_permission(NIVEL_GESTOR, NIVEL_ADMIN)` em `GET /users`, mas esse acesso foi
+    revogado de Gestor em 2026-07-16 (ver docs/BACKEND.md, "Revisão do modelo de
+    permissões": "em hipótese alguma 88, 77, 66 podem ver... gestão de usuários é só
+    admin"). Hoje TODO call site de `check_permission` no backend passa um único nível
+    (`NIVEL_ADMIN`, ver backend/api/users.py e backend/api/subgrupos.py) -- o suporte a
+    múltiplos níveis continua existindo na assinatura, só não tem nenhum uso real no
+    momento. `GET /bitins` faz um tipo de checagem por nível parecida, mas via comparação
+    inline (`permission_level >= NIVEL_X`), não `check_permission` -- padrão diferente,
+    não um exemplo de call site multi-nível."""
     def _dependency(user: Usuario = Depends(get_current_active_user)) -> Usuario:
         if user.permission_level not in allowed_levels:
             raise HTTPException(

@@ -55,6 +55,13 @@ export interface AdminUserCreateResponse extends User {
   senha_temporaria_gerada: string
 }
 
+// Espelha backend/auth/schemas.py::UserReactivate -- corpo de POST /users/{id}/reativar
+// (2026-07-17, NOVO). Resposta é o mesmo shape de AdminUserCreateResponse -- reativar sempre
+// gera senha nova, mesmo padrão de cadastro.
+export interface UserReactivateRequest {
+  email: string
+}
+
 // Espelha backend/api/bitins.py::ResumoUsuarioResponse -- devolvido por
 // GET /bitins/resumo-usuario. Escopado por criado_por ("só os meus", não o sistema
 // inteiro) -- decisão registrada, ver docs/FRONTEND.md.

@@ -2,6 +2,61 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v0.8.5] - 2026-07-17
+
+Reativação de usuário vira recadastro (e-mail + senha novos do zero), admin "super" oculto
+(só no backend), consistência de mensagens de erro/UI em Gestão de usuários, correção de
+autofill do navegador, e uma rodada de auditoria do sistema de permissões (bug de auditoria
+de login, doc desatualizada, duplicação de checagem de admin).
+
+### Added
+
+- **Reativar usuário vira recadastro** (`POST /users/{id}/reativar`): agora pede um e-mail
+  (pode repetir o antigo ou trocar) e sempre gera senha temporária **nova do zero**, mesmo
+  padrão do cadastro — antes só virava `ativo=True` mantendo tudo igual. UI ganhou o mesmo
+  callout de senha gerada (com botão "Copiar" e "Abrir e-mail") de `CriarUsuarioForm.tsx`.
+- **Recadastro de e-mail excluído reativa a conta**: `POST /users` agora reativa a linha
+  existente (dados/senha novos) em vez de rejeitar com "e-mail já cadastrado" quando o e-mail
+  pertence a um usuário soft-deleted — só bloqueia de verdade se o e-mail já é de alguém
+  ativo.
+- **Admin "total" oculto** (`backend/auth/deps.py::CONTAS_SUPER_ADMIN`/`eh_super_admin`): uma
+  conta específica pode rebaixar/excluir OUTROS admins (bypass da proteção normal
+  "admin não mexe em admin"), sem nenhum sinal disso no frontend — autoproteção continua
+  valendo até pra essa conta (não pode mexer na própria permissão nem se auto-excluir).
+- **Botão "Copiar senha"** (Clipboard API) nos dois callouts de senha temporária (cadastro e
+  reativação) — evita selecionar o texto na mão, fonte de bugs de login por espaço/quebra de
+  linha arrastados na seleção.
+- **`GET /users` volta a devolver ativos e excluídos juntos**, com filtro Ativados/Desativados
+  na UI (`GestaoUsuarios.tsx`) — linha de usuário desativado fica só-leitura, com botão
+  "Reativar".
+
+### Fixed
+
+- **Permissão/Nível na UI mostra só o número** (99/88/77/66, sem rótulo textual) nos dois
+  lugares (Cadastrar usuário e a tabela) — pedido explícito.
+- **Autocomplete do navegador**: campo de e-mail e senha da tela de Login continuam com
+  autofill normal; os de "Cadastrar usuário" (Gestão de usuários) pararam de puxar
+  credenciais erradas do admin — `autoComplete="new-password"` na senha de confirmação em vez
+  de um campo `username` oculto decoy (que causava o balão nativo "Salvar senha?" aparecer em
+  qualquer ação da página, efeito colateral pior que o problema original).
+- **Trim() em campos de senha** (`Login.tsx`, `usePasswordChangeForm.ts`,
+  `CriarUsuarioForm.tsx`) — espaço/quebra de linha arrastado ao copiar uma senha temporária
+  derrubava o login mesmo com o texto "certo" visualmente.
+- **Auditoria do sistema de permissões** (backend + UI, sem mudança de regra de negócio):
+  - Login de usuário desativado com senha certa agora é registrado em `TentativaLogin` (antes
+    tinha um buraco silencioso na auditoria e não contava pro rate limit).
+  - `GestaoUsuarios.tsx`: `alterarSubgrupos`/`alterarSetor`/`reativarUsuario` agora mostram o
+    erro real do servidor em vez de mensagem genérica (importante pro cenário "admin sem
+    privilégio tentando mexer em outro admin").
+  - Comentário em `backend/auth/deps.py` e linha do `GET /users` em `docs/BACKEND.md`
+    corrigidos — diziam que Gestor ainda tinha acesso a `GET /users`, revogado desde
+    2026-07-16.
+  - `BitinDetail.tsx`/`MeusBitins.tsx` usam `isAdmin()` centralizado em vez de duplicar
+    `ADMIN_LEVEL`/comparação numérica solta.
+  - `MeusBitins.tsx`: `GESTOR_LEVEL` era `1` (sobra do esquema antigo 0/1/99) — com os níveis
+    atuais (66/77/88/99) isso fazia a opção de busca "Solicitante" aparecer pra qualquer
+    usuário logado, não só gestor/cadastro/admin. Corrigido pra `77`.
+
 ## [v0.8.4] - 2026-07-17
 
 Admin pode excluir usuário (soft-delete) na tela de Gestão de usuários; correção de cores

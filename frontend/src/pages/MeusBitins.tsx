@@ -5,6 +5,7 @@ import StatusBadge from '../components/bitin/StatusBadge'
 import { useAuth } from '../hooks/useAuth'
 import { api } from '../lib/api'
 import { criarRascunhoENavegar } from '../lib/criarBitin'
+import { isAdmin } from '../lib/permissions'
 import type { Bitin, CadastroEmail } from '../lib/types'
 
 // Escopo desta rodada (decidido com o usuário, ver docs/FRONTEND.md): listagem + clique na
@@ -12,12 +13,13 @@ import type { Bitin, CadastroEmail } from '../lib/types'
 // nível no backend (2026-07-15, ver backend/api/bitins.py::list_bitins): usuário comum só os
 // próprios, gestor os de quem compartilha setor, admin o sistema inteiro -- por isso o título
 // e o rótulo de busca abaixo não presumem mais "só os meus" pra todo mundo.
-const GESTOR_LEVEL = 1
-
-// Mesmo nível usado em Settings.tsx/BitinDetail.tsx e backend/api/bitins.py::ADMIN_LEVEL --
-// só espelhado aqui pra decidir se mostra "Excluir" num BITin já enviado (2026-07-16, pedido
-// do usuário: admin pode excluir BITin enviado, não só rascunho).
-const ADMIN_LEVEL = 99
+// GESTOR_LEVEL = 77 (2026-07-17, achado de auditoria -- era 1, sobra do esquema antigo
+// 0/1/99). Com a revisão de permissões de 2026-07-16 (66/77/88/99), `>= 1` virou sempre
+// verdadeiro pra QUALQUER usuário logado (66 já satisfaz), então usuário comum também via a
+// opção de busca por "Solicitante" -- deveria ser só gestor/admin, como o comentário acima
+// sempre disse que era a intenção. Sem risco de segurança (GET /bitins já é escopado certo
+// no servidor, isso só controlava um campo de busca a mais na UI), mas era um bug real de UI.
+const GESTOR_LEVEL = 77
 
 type Aba = 'todos' | 'rascunho' | 'enviado'
 type CampoBusca = 'todos' | 'codigo' | 'motivo' | 'solicitante'
@@ -52,7 +54,7 @@ export default function MeusBitins() {
   // (decisão do usuário, 2026-07-14). Gestor passou a ver BITins de colegas de setor
   // (2026-07-15), então ganha a mesma opção que já existia só pra admin.
   const ehGestorOuAdmin = (user?.permission_level ?? 0) >= GESTOR_LEVEL
-  const ehAdmin = (user?.permission_level ?? 0) >= ADMIN_LEVEL
+  const ehAdmin = isAdmin(user?.permission_level)
   const camposBusca = useMemo(() => {
     const base: { value: CampoBusca; label: string }[] = [
       { value: 'todos', label: 'Tudo' },

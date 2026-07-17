@@ -171,11 +171,12 @@ pares ficam sempre em colunas adjacentes).
 | POST | `/auth/logout` | Autenticado. Revoga a `SessaoUsuario` do token atual (ver "Tabelas de sessão e auditoria de login" abaixo) — chamadas seguintes com o mesmo token viram `401`. |
 | POST | `/auth/change-password` | Autenticado. Exige `senha_atual` correta; `senha_nova` passa pela mesma validação de força de `UserCreate.password`. Revoga as OUTRAS sessões ativas do usuário (mantém a atual válida) — ver "Troca de senha self-service" abaixo. Também zera `Usuario.senha_temporaria` no sucesso (ver "Cadastro de usuário só por admin" abaixo) — mesma rota atende tanto troca voluntária quanto o primeiro login forçado. |
 | GET | `/users/me` | Perfil do usuário autenticado. Inclui `senha_temporaria`. |
-| POST | `/users` | Cadastro de usuário — exige `NIVEL_ADMIN` (99). Ver "Cadastro de usuário só por admin" abaixo. Usuário/Gestor/Cadastro (66/77/88) exigem ao menos 1 setor no corpo, 400 se faltar. |
-| GET | `/users` | Lista usuários — exige `NIVEL_GESTOR` ou `NIVEL_ADMIN` (77/99; **não** Cadastro/88, ver "Revisão do modelo de permissões" abaixo). Escopo por setor desde 2026-07-15 (pedido explícito: "se um usuário for gestor, ele consegue só ver listagem de usuários do setor que ele é gestor"): admin vê todo mundo; gestor só vê quem compartilha ao menos um `Setor` com ele (`_usuarios_do_mesmo_setor_query`, join via `usuario_setores`) — gestor sem setor nenhum vê lista vazia, não cai pra "vê todo mundo". |
+| POST | `/users` | Cadastro de usuário — exige `NIVEL_ADMIN` (99). Ver "Cadastro de usuário só por admin" abaixo. Usuário/Gestor/Cadastro (66/77/88) exigem ao menos 1 setor no corpo, 400 se faltar. Se o e-mail já pertence a um usuário **excluído** (`ativo=False`), REATIVA a mesma linha (novos dados, nova senha temporária) em vez de rejeitar com "e-mail já cadastrado" (2026-07-17, pedido explícito) — email é UNIQUE no banco, então recadastro tem que reaproveitar a linha, não inserir outra. Só bloqueia de verdade se o e-mail já é de alguém ATIVO. |
+| GET | `/users` | Lista usuários — exige `NIVEL_ADMIN` (99) **só** (2026-07-16, revogado de Gestor: "em hipótese alguma 88, 77, 66 podem ver permissões e usuários que existem. gestão de usuários é só admin"; linha corrigida em 2026-07-17, achado de auditoria — dizia "Gestor ou Admin" com escopo por setor, desatualizado desde a revogação). Devolve ativos E excluídos juntos (2026-07-17, era só `ativo=True` — revertido pro filtro Ativados/Desativados de `GestaoUsuarios.tsx`); `UserOut.ativo` é quem distingue. |
 | GET | `/users/{id}` | Busca usuário por id — mesmo gate de `GET /users` (Gestor/Admin). Mesmo escopo por setor: gestor pedindo um id fora do(s) setor(es) dele recebe **404** (não 403 — não vaza que o id existe). |
-| PATCH | `/users/{id}/permission` | Promove/rebaixa — exige `NIVEL_ADMIN` (99). Rejeita com 400 se o ALVO já é admin (99) — ninguém pode rebaixar um admin, nem outro admin. |
-| DELETE | `/users/{id}` | "Excluir" usuário (2026-07-17) — exige `NIVEL_ADMIN` (99). **Soft-delete**: marca `Usuario.ativo=False`, não apaga a linha. `GET /users` já filtra `ativo=True`, então some da listagem; login e todo request autenticado já checam `ativo` (ver "Tabelas de sessão e auditoria de login" abaixo), então a conta para de funcionar na hora. Rejeita com 400 se o alvo é o próprio chamador ou já é admin (99) — mesmas proteções de `PATCH /users/{id}/permission`. |
+| PATCH | `/users/{id}/permission` | Promove/rebaixa — exige `NIVEL_ADMIN` (99). Ninguém mexe na própria permissão por esta rota (400). Rejeita com 400 se o ALVO já é admin (99) — ninguém pode rebaixar um admin, nem outro admin, **exceto o super-admin oculto** (ver "Super-admin oculto" abaixo). |
+| DELETE | `/users/{id}` | "Excluir" usuário (2026-07-17) — exige `NIVEL_ADMIN` (99). **Soft-delete**: marca `Usuario.ativo=False`, não apaga a linha; login e todo request autenticado já checam `ativo`, então a conta para de funcionar na hora. Rejeita com 400 se o alvo é o próprio chamador (sempre, sem exceção) ou já é admin (99) — **exceto o super-admin oculto** pra excluir outro admin (ver abaixo). |
+| POST | `/users/{id}/reativar` | Reverte o soft-delete — exige `NIVEL_ADMIN` (99). Corpo: `{email}` (pode repetir o e-mail antigo ou trocar — 400 se já em uso por OUTRO usuário). Sempre gera senha temporária nova (`senha_temporaria=True`, devolvida uma única vez em `senha_temporaria_gerada`, mesmo padrão de `POST /users`) — 2026-07-17, pedido explícito: "quando eu reativo aparece de novo com uma nova senha do 0 e novo email". Sem confirmação de senha do admin (não é criação de conta nem escalonamento de privilégio). |
 | GET | `/sectors` | Público (form de registro precisa listar antes do login existir). |
 | POST | `/sectors` | Cria setor — exige admin. |
 
@@ -331,19 +332,41 @@ níveis permitidos — `check_permission(*allowed_levels: int)`, checando
 `user.permission_level in allowed_levels`. Cada rota passa o conjunto exato de quem pode
 chamá-la (ex.: `check_permission(NIVEL_GESTOR, NIVEL_ADMIN)` em `GET /users`).
 
-- **`NIVEL_USUARIO` (66)** — era `0`. Engenheiro comum: só vê/edita/envia os próprios BITins.
-- **`NIVEL_GESTOR` (77)** — era `1`. Mesmas capacidades de sempre: vê usuários e BITins (rascunho
-  e enviado) de quem compartilha ao menos 1 `Setor` com ele. Comportamento de escopo **inalterado**
-  nesta revisão, só renumerado.
-- **`NIVEL_CADASTRO` (88)** — **novo nível**. "Recebe os bitins para baixar e fazer o processo por
-  fora": vê os BITins **enviados** (não os rascunhos) de colegas de mesmo Setor, além dos
-  próprios BITins em qualquer status (como um Usuário comum). Pode criar/editar/enviar os
-  próprios BITins normalmente. **Não** tem acesso a `GET /users` (só Gestor/Admin gerenciam
-  usuários).
-- **`NIVEL_ADMIN` (99)** — inalterado: acesso total, sem escopo de setor nenhum. **Nenhum
-  usuário admin pode ser rebaixado** por `PATCH /users/{id}/permission`, nem por outro admin —
-  o endpoint rejeita com 400 se o ALVO já é nível 99, independente de quem chama. Não existe rota
-  para despromover um admin (seria edição direta no banco).
+**Tabela de permissões completa** — os 4 valores de `Usuario.permission_level` que existem hoje,
+o que cada um pode ver/fazer, e as restrições especiais de cada um. O número em si **não é uma
+escala contínua** (ver acima: 88 fica numericamente "entre" 77 e 99 mas não herda privilégio de
+nenhum dos dois) — esta tabela é a fonte de verdade de o que cada valor faz, não a ordem
+numérica:
+
+| Nível | Nome interno | BITins que vê | Gestão de usuários | Subgrupo obrigatório? | Restrições especiais |
+|---|---|---|---|---|---|
+| **66** | `NIVEL_USUARIO` (era `0`) | Só os próprios (qualquer status). | Não acessa `GET /users`. | Sim — 400 se `subgrupo_ids` vier vazio. | Nenhuma. |
+| **77** | `NIVEL_GESTOR` (era `1`) | Rascunho + enviado de quem compartilha ao menos 1 Subgrupo com ele, além dos próprios. | Não acessa `GET /users` (revogado em 2026-07-16 — só Admin gerencia usuários hoje). | Sim — 400 se vazio. | Nenhuma. |
+| **88** | `NIVEL_CADASTRO` (novo, 2026-07-16) | Só os **enviados** (não rascunho) de colegas de mesmo Subgrupo, além dos próprios em qualquer status. Cria/edita/envia os próprios normalmente. | Não acessa `GET /users`. | Sim — 400 se vazio. | Nenhuma. |
+| **99** | `NIVEL_ADMIN` | Todos, sem escopo de Subgrupo. | Único nível com acesso — cria, lista, promove/rebaixa, exclui (soft-delete) e reativa usuário. | Não — único nível que pode ficar sem Subgrupo. | Nunca pode ser rebaixado (`PATCH .../permission` rejeita com 400 se o ALVO já é 99) nem excluído (`DELETE /users/{id}` idem) — nem por outro admin, **exceto o super-admin oculto** (ver seção abaixo). Sem rota de despromoção pública pra quem não é o super-admin (só edição direta no banco). |
+
+### Super-admin oculto (2026-07-17)
+
+Pedido explícito do usuário: "me coloca como admin TOTAL, eu posso fazer o que eu quiser,
+remover admins, tirar permissão etc, mas isso vai ser uma permissão escondida no front que só
+existe no back". `backend/auth/deps.py::CONTAS_SUPER_ADMIN` (hoje só
+`alessandro.pereiradarosafilho@grainproteintech.com`) + `eh_super_admin(user)` — checagem de
+e-mail contra esse set, usada em `update_user_permission` e `delete_user`
+(`backend/api/users.py`) pra pular a proteção "admin não mexe em admin".
+
+- **De propósito não existe NENHUM sinal disso no frontend** — nem campo em `UserOut`, nem
+  lógica condicional no bundle JS. Um check client-side seria visível no DevTools/bundle,
+  o que destruiria o "escondido"; a única forma de exercer esse privilégio é chamando a API
+  direto (não tem botão na UI pra rebaixar/excluir outro admin, pra ninguém).
+- **Não é bypass de autoproteção**: mesmo essa conta continua sem poder alterar a própria
+  permissão (`update_user_permission` agora rejeita com 400 se `user.id == current_user.id`,
+  independente de quem é) nem se auto-excluir (`delete_user`, checagem já existia). Só a
+  proteção contra mexer em **outro** admin tem bypass.
+- Cobertura de teste: `tests/test_backend_auth.py`, testes
+  `test_super_admin_pode_rebaixar_outro_admin` /
+  `test_super_admin_nao_pode_alterar_o_proprio_nivel` /
+  `test_super_admin_pode_excluir_outro_admin` /
+  `test_super_admin_nao_pode_se_auto_excluir`.
 
 **Setor obrigatório para 66/77/88**: `AdminUserCreate` (`POST /users`) agora valida que
 `sector_ids` tem ao menos 1 item quando `permission_level` é 66, 77 ou 88 — 400 se faltar

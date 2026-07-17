@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session
 from backend.auth.deps import (
     NIVEL_ADMIN,
     check_permission,
+    eh_super_admin,
     get_current_active_user,
 )
 from backend.auth.models import Usuario, usuario_subgrupos
@@ -16,6 +17,7 @@ from backend.auth.schemas import (
     AdminUserCreateOut,
     CadastroEmailOut,
     UserOut,
+    UserReactivate,
     UserUpdatePermission,
     UserUpdateSetor,
     UserUpdateSubgrupos,
@@ -96,7 +98,12 @@ def create_user_by_admin(
 
     email_normalizado = user_in.email.strip().lower()
     existing = db.query(Usuario).filter(Usuario.email == email_normalizado).first()
-    if existing:
+    # E-mail é UNIQUE na tabela -- um usuário excluído (soft-delete, ativo=False, ver delete_user
+    # abaixo) continua ocupando a linha, então cadastrar de novo com o mesmo e-mail precisa
+    # REATIVAR essa linha em vez de tentar inserir outra (2026-07-17, pedido explícito: "quando
+    # um usuário é excluído... e eu tento cadastrar ele de novo, deve permitir"). Só bloqueia de
+    # verdade quando o e-mail já pertence a alguém ATIVO.
+    if existing and existing.ativo:
         raise HTTPException(status_code=400, detail="E-mail já cadastrado")
 
     # Usuário/Gestor/Cadastro (66/77/88) precisam de ao menos um Subgrupo -- 2026-07-16, revisão
@@ -109,8 +116,29 @@ def create_user_by_admin(
         )
 
     subgrupos = _resolve_subgrupos(db, user_in.subgrupo_ids)
-
     senha_temporaria_gerada = generate_temp_password()
+
+    if existing:
+        # Reativação (ativo era False) -- reescreve a linha inteira com os dados do formulário
+        # de novo, como se fosse um cadastro do zero (mesma senha temporária gerada, mesmo
+        # obrigo de trocar no primeiro login), só que sem violar o UNIQUE de email.
+        existing.nome = user_in.nome
+        existing.hashed_password = get_password_hash(senha_temporaria_gerada)
+        existing.numero_eng = user_in.numero_eng
+        existing.subgrupos = subgrupos
+        existing.setor = user_in.setor
+        existing.permission_level = user_in.permission_level
+        existing.email_verificado = False
+        existing.senha_temporaria = True
+        existing.ativo = True
+        db.add(existing)
+        db.commit()
+        db.refresh(existing)
+        return AdminUserCreateOut(
+            **UserOut.from_usuario(existing).model_dump(),
+            senha_temporaria_gerada=senha_temporaria_gerada,
+        )
+
     novo_usuario = Usuario(
         email=email_normalizado,
         nome=user_in.nome,
@@ -142,9 +170,10 @@ def list_users(
     # Gestor também -- revogado.
     current_user: Usuario = Depends(check_permission(NIVEL_ADMIN)),
 ) -> list[UserOut]:
-    # Usuário "excluído" (ativo=False, ver delete_user abaixo) some da listagem -- é soft-delete,
-    # não fica visível como se ainda estivesse cadastrado (2026-07-17).
-    usuarios = db.query(Usuario).filter(Usuario.ativo.is_(True)).offset(skip).limit(limit).all()
+    # Volta a devolver ativos E excluídos juntos (2026-07-17, era só ativo=True) -- a tela de
+    # Gestão de usuários agora tem um filtro Ativados/Desativados (GestaoUsuarios.tsx), então
+    # precisa dos dois pra filtrar no cliente. `UserOut.ativo` já existia pra distinguir.
+    usuarios = db.query(Usuario).offset(skip).limit(limit).all()
     return [UserOut.from_usuario(u) for u in usuarios]
 
 
@@ -166,16 +195,21 @@ def update_user_permission(
     user_id: int,
     payload: UserUpdatePermission,
     db: Session = Depends(get_db),
-    _current_user: Usuario = Depends(check_permission(NIVEL_ADMIN)),  # só admin promove/rebaixa
+    current_user: Usuario = Depends(check_permission(NIVEL_ADMIN)),  # só admin promove/rebaixa
 ) -> UserOut:
     user = db.query(Usuario).filter(Usuario.id == user_id).first()
     if not user:
         raise HTTPException(status_code=404, detail="Usuário não encontrado")
+    # Ninguém mexe na própria permissão por essa rota, nem o super-admin (2026-07-17) --
+    # autoproteção continua valendo pra todo mundo igual, só a proteção contra MEXER EM OUTRO
+    # admin é que tem bypass (ver deps.eh_super_admin).
+    if user.id == current_user.id:
+        raise HTTPException(status_code=400, detail="Você não pode alterar o próprio nível.")
     # Admin nunca pode ser rebaixado por essa rota (2026-07-16, proteção contra ficar sem
     # nenhum admin no sistema por engano) -- vale independente de quem está chamando, mesmo
-    # outro admin. Não há rota nenhuma pra "despromover" um admin; se for realmente
-    # necessário, é edição direta no banco.
-    if user.permission_level == NIVEL_ADMIN:
+    # outro admin, EXCETO o super-admin oculto (2026-07-17, ver backend/auth/deps.py::
+    # eh_super_admin) -- essa conta específica pode rebaixar qualquer admin, de propósito.
+    if user.permission_level == NIVEL_ADMIN and not eh_super_admin(current_user):
         raise HTTPException(
             status_code=400, detail="Não é possível alterar a permissão de um administrador.",
         )
@@ -256,18 +290,61 @@ def delete_user(
     (backend/auth/routes.py) -- a conta já para de funcionar imediatamente, sem precisar
     revogar sessões à parte; (2) BITins não têm FK pro usuário (dono é só um campo solto no
     doc do Mongo), mas `SessaoUsuario` tem, e um DELETE físico teria que lidar com essa
-    cascata; (3) soft-delete é reversível (reativar = só virar `ativo=True` de novo, hoje só
-    via banco -- reativação pela UI não foi pedida). Mesmas proteções de
-    update_user_permission acima: ninguém pode se auto-excluir nem excluir um admin (99)."""
+    cascata; (3) soft-delete é reversível -- ver reactivate_user abaixo (2026-07-17, reativação
+    pela UI foi pedida depois desta rota já existir). Mesmas proteções de
+    update_user_permission acima: ninguém pode se auto-excluir nem excluir um admin (99),
+    EXCETO o super-admin oculto (2026-07-17, ver backend/auth/deps.py::eh_super_admin) pra
+    excluir OUTRO admin -- autoproteção (não pode se auto-excluir) continua valendo igual pra
+    ele também."""
     user = db.query(Usuario).filter(Usuario.id == user_id).first()
     if not user:
         raise HTTPException(status_code=404, detail="Usuário não encontrado")
     if user.id == current_user.id:
         raise HTTPException(status_code=400, detail="Você não pode excluir a si mesmo.")
-    if user.permission_level == NIVEL_ADMIN:
+    if user.permission_level == NIVEL_ADMIN and not eh_super_admin(current_user):
         raise HTTPException(status_code=400, detail="Não é possível excluir um administrador.")
     user.ativo = False
     db.add(user)
     db.commit()
     db.refresh(user)
     return UserOut.from_usuario(user)
+
+
+@router.post("/{user_id}/reativar", response_model=AdminUserCreateOut)
+def reactivate_user(
+    user_id: int,
+    payload: UserReactivate,
+    db: Session = Depends(get_db),
+    _current_user: Usuario = Depends(check_permission(NIVEL_ADMIN)),  # só admin reativa
+) -> AdminUserCreateOut:
+    """Reverte o soft-delete de delete_user -- 2026-07-17, pedido explícito: "quando eu
+    reativo aparece de novo com uma nova senha do 0 e novo email". Diferente da primeira
+    versão desta rota (só virava ativo=True mantendo tudo igual), agora reativar é quase um
+    recadastro: sempre pede um e-mail (repetir o antigo é válido -- ver checagem abaixo) e
+    sempre gera senha temporária nova (mesmo padrão de create_user_by_admin, incluindo
+    devolver a senha em texto puro UMA ÚNICA VEZ e marcar senha_temporaria=True pra forçar
+    troca no próximo login). Sem confirmação de senha do admin (diferente de
+    create_user_by_admin) -- não é criação de conta nova nem escalonamento de privilégio,
+    só destrava uma conta que o próprio admin acabou de excluir."""
+    user = db.query(Usuario).filter(Usuario.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="Usuário não encontrado")
+
+    email_normalizado = payload.email.strip().lower()
+    if email_normalizado != user.email:
+        conflito = db.query(Usuario).filter(Usuario.email == email_normalizado).first()
+        if conflito:
+            raise HTTPException(status_code=400, detail="E-mail já em uso por outro usuário.")
+        user.email = email_normalizado
+
+    senha_temporaria_gerada = generate_temp_password()
+    user.hashed_password = get_password_hash(senha_temporaria_gerada)
+    user.senha_temporaria = True
+    user.ativo = True
+    db.add(user)
+    db.commit()
+    db.refresh(user)
+    return AdminUserCreateOut(
+        **UserOut.from_usuario(user).model_dump(),
+        senha_temporaria_gerada=senha_temporaria_gerada,
+    )

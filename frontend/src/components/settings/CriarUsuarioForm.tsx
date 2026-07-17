@@ -3,6 +3,7 @@ import FormLabel from '../FormLabel'
 import TextInput from '../TextInput'
 import { api } from '../../lib/api'
 import { extrairErro } from '../../lib/errors'
+import { montarMailtoSenhaTemporaria } from '../../lib/senhaTemporaria'
 import type { AdminUserCreateRequest, AdminUserCreateResponse, Subgrupo, User } from '../../lib/types'
 
 // Cadastro de usuário SÓ POR ADMIN (2026-07-15, pedido explícito: "tela de cadastro de usuário
@@ -30,19 +31,20 @@ export default function CriarUsuarioForm({ subgrupos, onCriado }: { subgrupos: S
   const [erro, setErro] = useState<string | null>(null)
   const [enviando, setEnviando] = useState(false)
   const [senhaGerada, setSenhaGerada] = useState<{ nome: string; senha: string; email: string } | null>(null)
+  // Feedback do botão "Copiar" (2026-07-17, NOVO) -- Clipboard API em vez de selecionar o
+  // texto na mão, pra evitar arrastar espaço/quebra de linha na seleção (foi exatamente isso
+  // que quebrou um login recente: copiar/colar manual do popup ou do corpo do e-mail).
+  const [senhaCopiada, setSenhaCopiada] = useState(false)
 
-  function montarMailto(destino: { nome: string; senha: string; email: string }): string {
-    return `mailto:${destino.email}?subject=${encodeURIComponent(
-      `Acesso ao sistema BITin / senha temporária`,
-    )}&body=${encodeURIComponent(
-      `Olá, ${destino.nome},\n\n` +
-        `Sua conta no BITin foi criada. Use a senha temporária abaixo para o seu primeiro login:\n\n` +
-        `Senha temporária: ${destino.senha}\n\n` +
-        `Acesse com seu e-mail corporativo.\n\n` +
-        `No primeiro login você será obrigado(a) a definir uma senha só sua.\n\n` +
-        `A nova senha precisa ter pelo menos 8 caracteres e incluir pelo menos 3 destes 4 tipos: ` +
-        `letra maiúscula, letra minúscula, número, caractere especial.`,
-    )}`
+  async function copiarSenha(senha: string) {
+    try {
+      await navigator.clipboard.writeText(senha)
+      setSenhaCopiada(true)
+      setTimeout(() => setSenhaCopiada(false), 2000)
+    } catch {
+      // Clipboard API pode falhar por permissão do navegador -- não é crítico, a senha
+      // continua selecionável na tela como fallback.
+    }
   }
 
   // Espelha backend/auth/schemas.py::NIVEIS_QUE_EXIGEM_SUBGRUPO (2026-07-16, revisão do modelo
@@ -60,24 +62,28 @@ export default function CriarUsuarioForm({ subgrupos, onCriado }: { subgrupos: S
     setEnviando(true)
     try {
       const body: AdminUserCreateRequest = {
-        email,
+        email: email.trim(),
         nome,
         numero_eng: numeroEng.trim() || null,
         subgrupo_ids: subgrupoIds,
         permission_level: permissionLevel,
         setor,
-        senha_admin: senhaAdmin,
+        // trim() (2026-07-17, mesmo motivo de Login.tsx/usePasswordChangeForm.ts) -- é a
+        // própria senha do admin, mas copiar/colar de um gerenciador de senha também pode
+        // arrastar espaço extra.
+        senha_admin: senhaAdmin.trim(),
       }
       const resp = await api.post<AdminUserCreateResponse>('/users', body)
       onCriado(resp.data)
       const gerada = { nome: resp.data.nome, senha: resp.data.senha_temporaria_gerada, email }
       setSenhaGerada(gerada)
+      setSenhaCopiada(false)
       // Abre o rascunho de e-mail automaticamente ao criar a conta (2026-07-16, pedido
       // explícito: "marcamos uma opção e abre o email", igual a automação em Excel que já
       // existia -- não deveria exigir um clique extra do admin). O botão "Abrir e-mail" abaixo
       // continua existindo como reforço, caso o navegador bloqueie a navegação automática pra
       // mailto: ou o admin feche a aba sem querer.
-      window.location.href = montarMailto(gerada)
+      window.location.href = montarMailtoSenhaTemporaria(gerada)
       setEmail('')
       setNome('')
       setNumeroEng('')
@@ -99,21 +105,35 @@ export default function CriarUsuarioForm({ subgrupos, onCriado }: { subgrupos: S
       {senhaGerada && (
         <div className="mt-3 rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900">
           <p className="font-medium">
-            Senha temporária de {senhaGerada.nome}: <span className="font-mono">{senhaGerada.senha}</span>
+            Senha temporária de {senhaGerada.nome}:{' '}
+            <span className="rounded bg-amber-100 px-1.5 py-0.5 font-mono">{senhaGerada.senha}</span>
           </p>
           <p className="mt-1 text-xs">
             Essa senha só aparece agora -- anote e repasse pra {senhaGerada.nome} antes de sair desta tela. No
             primeiro login ela vai ser obrigada a trocar por uma senha só dela.
           </p>
-          {/* Botão "Abrir e-mail" -- reforço caso a abertura automática (ver handleSubmit) tenha
-              sido bloqueada pelo navegador ou o admin tenha fechado o cliente de e-mail sem
-              querer; mailto: em vez de enviar de fato (não há servidor de e-mail integrado). */}
-          <a
-            href={montarMailto(senhaGerada)}
-            className="mt-2 inline-block rounded-lg bg-brand-navy px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-brand-navy-dark"
-          >
-            Abrir e-mail
-          </a>
+          <div className="mt-2 flex flex-wrap gap-2">
+            {/* Copiar via Clipboard API (2026-07-17, NOVO) -- pedido explícito: "essa senha vai
+                no corpo do email e pra mim copiar ali também". Evita selecionar o texto na mão,
+                que foi o que causou um login falhando por arrastar espaço/quebra de linha extra
+                na seleção. */}
+            <button
+              type="button"
+              onClick={() => copiarSenha(senhaGerada.senha)}
+              className="rounded-lg border border-amber-300 bg-white px-4 py-2 text-sm font-medium text-amber-900 transition-colors hover:bg-amber-100"
+            >
+              {senhaCopiada ? 'Copiado!' : 'Copiar senha'}
+            </button>
+            {/* Botão "Abrir e-mail" -- reforço caso a abertura automática (ver handleSubmit) tenha
+                sido bloqueada pelo navegador ou o admin tenha fechado o cliente de e-mail sem
+                querer; mailto: em vez de enviar de fato (não há servidor de e-mail integrado). */}
+            <a
+              href={montarMailtoSenhaTemporaria(senhaGerada)}
+              className="rounded-lg bg-brand-navy px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-brand-navy-dark"
+            >
+              Abrir e-mail
+            </a>
+          </div>
         </div>
       )}
 
@@ -171,10 +191,12 @@ export default function CriarUsuarioForm({ subgrupos, onCriado }: { subgrupos: S
             onChange={(e) => setPermissionLevel(Number(e.target.value))}
             className="w-full rounded-lg border border-line bg-surface px-3 py-2 text-sm text-ink focus:border-brand-navy focus:outline-none focus:ring-2 focus:ring-brand-navy/20"
           >
-            <option value={66}>Usuário</option>
-            <option value={77}>Gestor</option>
-            <option value={88}>Cadastro</option>
-            <option value={99}>Admin</option>
+            {/* Permissão É o número (permission_level) -- só o número no UI (2026-07-17,
+                pedido explícito), sem rótulo textual ao lado. */}
+            <option value={99}>99</option>
+            <option value={88}>88</option>
+            <option value={77}>77</option>
+            <option value={66}>66</option>
           </select>
         </div>
         <div>
@@ -197,13 +219,22 @@ export default function CriarUsuarioForm({ subgrupos, onCriado }: { subgrupos: S
           {/* Reconfirmação de senha do PRÓPRIO admin (2026-07-16, pedido explícito) --
               não é a senha do usuário novo (essa continua sendo gerada no servidor, ver
               callout acima); é a senha ATUAL de quem está logado, checada em
-              backend/api/users.py::create_user_by_admin antes de criar a conta. */}
+              backend/api/users.py::create_user_by_admin antes de criar a conta.
+              `autoComplete="new-password"` (2026-07-17, pedido explícito: "quero campos
+              preenchidos sozinhos só os de login") -- "off" sozinho não bastava, Chrome
+              ignora esse valor pra campos de senha e continuava preenchendo com a credencial
+              salva. "new-password" sinaliza "não é um formulário de login", o que também tira
+              o campo de E-mail acima da mira (Chrome só tenta parear e-mail+senha como
+              usuário/senha quando reconhece o par como login). Diferente da tentativa anterior
+              (campo `username` oculto decoy) -- essa não deixa nenhum elemento extra na
+              página, então não tem o efeito colateral de disparar "Salvar senha?" em ações
+              não relacionadas. */}
           <FormLabel htmlFor="novo-senha-admin">Sua senha (confirmação)</FormLabel>
           <TextInput
             id="novo-senha-admin"
             type="password"
             required
-            autoComplete="off"
+            autoComplete="new-password"
             value={senhaAdmin}
             onChange={(e) => setSenhaAdmin(e.target.value)}
           />

@@ -11,6 +11,7 @@ import { useAuth } from '../hooks/useAuth'
 import { api } from '../lib/api'
 import { materialVazio, normalizarMaterial } from '../lib/bitinDefaults'
 import type { BitinResumo } from '../lib/bitinTypes'
+import { isAdmin } from '../lib/permissions'
 import { useEnviarBitin } from '../lib/useEnviarBitin'
 import type { Bitin, MateriaisSchema, MaterialEditavel } from '../lib/types'
 
@@ -41,10 +42,6 @@ import type { Bitin, MateriaisSchema, MaterialEditavel } from '../lib/types'
 // de components/bitin/ (DadosGeraisCard, MateriaisSection, etc.), decisão do usuário
 // (2026-07-15: "não ta nada componentizado o bitindetail, ajusta isso").
 //
-// Mesmo nível usado em Settings.tsx e backend/api/bitins.py::ADMIN_LEVEL -- só espelhado aqui
-// pra decidir se mostra "Excluir BITin enviado" (2026-07-16).
-const ADMIN_LEVEL = 99
-
 export default function BitinDetail() {
   const { mongoId } = useParams<{ mongoId: string }>()
   const navigate = useNavigate()
@@ -76,7 +73,7 @@ export default function BitinDetail() {
   const [confirmacaoEnvio, setConfirmacaoEnvio] = useState<string | null>(null)
 
   const editavel = status === 'rascunho' && podeEditar
-  const ehAdmin = (user?.permission_level ?? 0) >= ADMIN_LEVEL
+  const ehAdmin = isAdmin(user?.permission_level)
 
   useEffect(() => {
     let cancelado = false
@@ -234,7 +231,7 @@ export default function BitinDetail() {
 
   // Excluir um BITin já enviado é bem mais grave que excluir rascunho -- libera o número
   // sequencial (código pode ser reaproveitado por outro BITin depois), por isso o texto de
-  // confirmação é mais explícito e só admin (permission_level >= ADMIN_LEVEL) vê o botão pra
+  // confirmação é mais explícito e só admin (isAdmin(permission_level)) vê o botão pra
   // BITin enviado (ver handleExcluirEnviado abaixo). Backend valida de novo (não confia só na
   // UI escondendo o botão).
   async function handleExcluir() {
@@ -325,9 +322,8 @@ export default function BitinDetail() {
         )}
 
         {/* Excluir BITin já enviado (2026-07-16, pedido do usuário) -- só admin
-            (permission_level >= ADMIN_LEVEL, mesmo nível de Settings.tsx/backend/api/
-            bitins.py::ADMIN_LEVEL) vê isto; usuário comum continua só com "Excluir rascunho"
-            acima, igual sempre foi. */}
+            (isAdmin(permission_level), ver lib/permissions.ts) vê isto; usuário comum
+            continua só com "Excluir rascunho" acima, igual sempre foi. */}
         {status === 'enviado' && ehAdmin && (
           <button
             type="button"

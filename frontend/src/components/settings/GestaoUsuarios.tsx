@@ -4,7 +4,9 @@ import CriarUsuarioForm from './CriarUsuarioForm'
 import { TrashIcon } from '../icons'
 import { useAuth } from '../../hooks/useAuth'
 import { api } from '../../lib/api'
-import type { Subgrupo, User } from '../../lib/types'
+import { extrairErro } from '../../lib/errors'
+import { montarMailtoSenhaTemporaria } from '../../lib/senhaTemporaria'
+import type { AdminUserCreateResponse, Subgrupo, User } from '../../lib/types'
 
 // Espelha backend/auth/schemas.py::NIVEIS_QUE_EXIGEM_SUBGRUPO (2026-07-16) -- só Admin (99)
 // pode ficar sem subgrupo. Checagem no cliente é só UX (mesmo espírito de CriarUsuarioForm.tsx);
@@ -33,6 +35,16 @@ export default function GestaoUsuarios({ subgrupos }: { subgrupos: Subgrupo[] })
   // Id do usuário sendo excluído (2026-07-17) -- mesmo padrão dos outros controles de loading
   // por linha acima.
   const [excluindoId, setExcluindoId] = useState<number | null>(null)
+  // Id do usuário sendo reativado -- mesmo padrão.
+  const [reativandoId, setReativandoId] = useState<number | null>(null)
+  // Filtro Ativados/Desativados (2026-07-17, pedido explícito) -- GET /users devolve os dois
+  // juntos agora (backend/api/users.py::list_users), filtra só no cliente.
+  const [filtro, setFiltro] = useState<'ativos' | 'inativos'>('ativos')
+  // Senha gerada pela reativação mais recente (2026-07-17, NOVO) -- mesmo padrão do callout
+  // de CriarUsuarioForm.tsx: reativar agora gera senha nova do zero (POST /users/{id}/
+  // reativar), mostrada UMA ÚNICA VEZ aqui.
+  const [senhaReativacao, setSenhaReativacao] = useState<{ nome: string; senha: string; email: string } | null>(null)
+  const [senhaReativacaoCopiada, setSenhaReativacaoCopiada] = useState(false)
 
   useEffect(() => {
     api
@@ -47,8 +59,12 @@ export default function GestaoUsuarios({ subgrupos }: { subgrupos: Subgrupo[] })
     try {
       const resp = await api.patch(`/users/${userId}/permission`, { permission_level: novoNivel })
       setUsers((atual) => atual?.map((u) => (u.id === userId ? resp.data : u)) ?? null)
-    } catch {
-      setError('Não foi possível alterar o nível desse usuário.')
+    } catch (err) {
+      // extrairErro (não só mensagem genérica) -- alvo sendo admin dá 400 do servidor com
+      // motivo específico pra quem não tem o privilégio de mexer em outro admin (ver
+      // super-admin oculto, backend/auth/deps.py::eh_super_admin); útil também é pra saber
+      // que a exceção foi rejeitada (não "some" sem explicação).
+      setError(extrairErro(err, 'Não foi possível alterar o nível desse usuário.'))
     } finally {
       setSalvandoId(null)
     }
@@ -63,8 +79,11 @@ export default function GestaoUsuarios({ subgrupos }: { subgrupos: Subgrupo[] })
     try {
       const resp = await api.patch(`/users/${userId}/subgrupos`, { subgrupo_ids: novosSubgrupoIds })
       setUsers((atual) => atual?.map((u) => (u.id === userId ? resp.data : u)) ?? null)
-    } catch {
-      setError('Não foi possível alterar o subgrupo desse usuário.')
+    } catch (err) {
+      // extrairErro (2026-07-17, achado de auditoria, era mensagem genérica fixa) -- mesmo
+      // padrão de alterarNivel/excluirUsuario, senão o 400 específico do servidor (ex.: alvo
+      // é outro admin e quem chamou não é o super-admin oculto) ficava escondido.
+      setError(extrairErro(err, 'Não foi possível alterar o subgrupo desse usuário.'))
     } finally {
       setSalvandoSubgrupoId(null)
     }
@@ -78,8 +97,8 @@ export default function GestaoUsuarios({ subgrupos }: { subgrupos: Subgrupo[] })
     try {
       const resp = await api.patch(`/users/${userId}/setor`, { setor: novoSetor })
       setUsers((atual) => atual?.map((u) => (u.id === userId ? resp.data : u)) ?? null)
-    } catch {
-      setError('Não foi possível alterar o setor desse usuário.')
+    } catch (err) {
+      setError(extrairErro(err, 'Não foi possível alterar o setor desse usuário.'))
     } finally {
       setSalvandoSetorId(null)
     }
@@ -87,37 +106,143 @@ export default function GestaoUsuarios({ subgrupos }: { subgrupos: Subgrupo[] })
 
   // Exclusão de usuário (2026-07-17, pedido explícito) -- DELETE /users/{id} é soft-delete no
   // servidor (backend/api/users.py::delete_user marca ativo=False, não apaga a linha; ver
-  // comentário lá pro porquê). GET /users já filtra ativo=False, então basta remover a linha
-  // do estado local igual a um delete de verdade, sem precisar de refetch.
+  // comentário lá pro porquê). GET /users agora devolve ativos e inativos juntos (pro filtro
+  // Ativados/Desativados abaixo), então atualiza o registro em vez de removê-lo do estado --
+  // ele só migra de aba (some de "Ativados", aparece em "Desativados").
   async function excluirUsuario(userId: number, nome: string) {
     if (!window.confirm(`Excluir o usuário "${nome}"? Ele não vai mais conseguir acessar o sistema.`)) return
     setExcluindoId(userId)
     setError(null)
     try {
-      await api.delete(`/users/${userId}`)
-      setUsers((atual) => atual?.filter((u) => u.id !== userId) ?? null)
-    } catch {
-      setError('Não foi possível excluir esse usuário.')
+      const resp = await api.delete(`/users/${userId}`)
+      setUsers((atual) => atual?.map((u) => (u.id === userId ? resp.data : u)) ?? null)
+    } catch (err) {
+      setError(extrairErro(err, 'Não foi possível excluir esse usuário.'))
     } finally {
       setExcluindoId(null)
+    }
+  }
+
+  // Reativação (2026-07-17) -- reverte o soft-delete, POST /users/{id}/reativar. Pedido
+  // explícito: "quando eu reativo aparece de novo com uma nova senha do 0 e novo email" --
+  // pede o e-mail (prompt pré-preenchido com o antigo, repetir é válido) e sempre gera senha
+  // nova no servidor, mesmo padrão de cadastro (CriarUsuarioForm.tsx).
+  async function reativarUsuario(userId: number, nome: string, emailAtual: string) {
+    const novoEmail = window.prompt(
+      `Reativar "${nome}" -- confirme o e-mail de login (pode repetir o mesmo ou trocar):`,
+      emailAtual,
+    )
+    if (novoEmail === null) return // cancelou o prompt
+    const emailLimpo = novoEmail.trim()
+    if (!emailLimpo) {
+      setError('E-mail não pode ficar vazio.')
+      return
+    }
+    setReativandoId(userId)
+    setError(null)
+    setSenhaReativacao(null)
+    try {
+      const resp = await api.post<AdminUserCreateResponse>(`/users/${userId}/reativar`, { email: emailLimpo })
+      setUsers((atual) => atual?.map((u) => (u.id === userId ? resp.data : u)) ?? null)
+      const gerada = { nome: resp.data.nome, senha: resp.data.senha_temporaria_gerada, email: resp.data.email }
+      setSenhaReativacao(gerada)
+      setSenhaReativacaoCopiada(false)
+      window.location.href = montarMailtoSenhaTemporaria(gerada)
+    } catch (err) {
+      setError(extrairErro(err, 'Não foi possível reativar esse usuário -- confira se o e-mail já não está em uso.'))
+    } finally {
+      setReativandoId(null)
+    }
+  }
+
+  async function copiarSenhaReativacao(senha: string) {
+    try {
+      await navigator.clipboard.writeText(senha)
+      setSenhaReativacaoCopiada(true)
+      setTimeout(() => setSenhaReativacaoCopiada(false), 2000)
+    } catch {
+      // Fallback é a senha continuar selecionável na tela.
     }
   }
 
   function adicionarUsuarioCriado(novo: User) {
     // Mesmo padrão de atualização otimista local de alterarNivel acima -- evita um refetch de
     // GET /users só pra mostrar a linha nova, o admin já vê o usuário na tabela sem reload.
-    setUsers((atual) => (atual ? [...atual, novo] : [novo]))
+    // Recadastrar um e-mail já excluído (2026-07-17) REATIVA a mesma linha no servidor (mesmo
+    // id, ver backend/api/users.py::create_user_by_admin) em vez de criar outra -- por isso
+    // substitui em vez de sempre concatenar, senão duplicava a linha na tabela.
+    setUsers((atual) => {
+      if (!atual) return [novo]
+      const jaExiste = atual.some((u) => u.id === novo.id)
+      return jaExiste ? atual.map((u) => (u.id === novo.id ? novo : u)) : [...atual, novo]
+    })
   }
 
   return (
     <Card id="gestao-usuarios" title="Gestão de usuários">
       <CriarUsuarioForm subgrupos={subgrupos} onCriado={adicionarUsuarioCriado} />
 
+      {senhaReativacao && (
+        // Mesmo padrão visual do callout de senha gerada em CriarUsuarioForm.tsx -- reativar
+        // agora gera senha nova do zero (2026-07-17, pedido explícito), então precisa do
+        // mesmo tratamento de "só aparece uma vez".
+        <div className="mt-3 rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+          <p className="font-medium">
+            Nova senha temporária de {senhaReativacao.nome} ({senhaReativacao.email}):{' '}
+            <span className="rounded bg-amber-100 px-1.5 py-0.5 font-mono">{senhaReativacao.senha}</span>
+          </p>
+          <p className="mt-1 text-xs">
+            Essa senha só aparece agora -- anote e repasse pra {senhaReativacao.nome} antes de sair desta tela.
+          </p>
+          <div className="mt-2 flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={() => copiarSenhaReativacao(senhaReativacao.senha)}
+              className="rounded-lg border border-amber-300 bg-white px-4 py-2 text-sm font-medium text-amber-900 transition-colors hover:bg-amber-100"
+            >
+              {senhaReativacaoCopiada ? 'Copiado!' : 'Copiar senha'}
+            </button>
+            <a
+              href={montarMailtoSenhaTemporaria(senhaReativacao)}
+              className="rounded-lg bg-brand-navy px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-brand-navy-dark"
+            >
+              Abrir e-mail
+            </a>
+          </div>
+        </div>
+      )}
+
       {error && <p className="mt-3 text-sm text-red-600">{error}</p>}
       {!users && !error && <p className="mt-3 text-sm text-ink-muted">Carregando...</p>}
 
       {users && (
-        <div className="mt-3 overflow-x-auto rounded border border-line">
+        <>
+          {/* Filtro Ativados/Desativados (2026-07-17, pedido explícito) -- usuário excluído
+              (soft-delete, ativo=False) não some mais da resposta de GET /users, só desta
+              aba. */}
+          <div className="mt-4 flex gap-1 border-b border-line">
+            {(
+              [
+                ['ativos', `Ativados (${users.filter((u) => u.ativo).length})`],
+                ['inativos', `Desativados (${users.filter((u) => !u.ativo).length})`],
+              ] as const
+            ).map(([valor, rotulo]) => (
+              <button
+                key={valor}
+                type="button"
+                onClick={() => setFiltro(valor)}
+                className={`-mb-px border-b-2 px-3 py-2 text-sm font-medium transition-colors ${
+                  filtro === valor
+                    ? 'border-brand-navy text-ink'
+                    : 'border-transparent text-ink-muted hover:text-ink'
+                }`}
+              >
+                {rotulo}
+              </button>
+            ))}
+          </div>
+
+          <div className="overflow-x-auto rounded-b border border-t-0 border-line">
           <table className="w-full text-left text-sm">
             <thead>
               <tr className="bg-surface-alt text-xs uppercase tracking-wide text-ink-muted">
@@ -130,20 +255,43 @@ export default function GestaoUsuarios({ subgrupos }: { subgrupos: Subgrupo[] })
               </tr>
             </thead>
             <tbody className="divide-y divide-line">
-              {users.map((u) => {
+              {users.filter((u) => (filtro === 'ativos' ? u.ativo : !u.ativo)).map((u) => {
                 const souEu = u.id === currentUser?.id
-                // Admin (99) nunca pode ser rebaixado por ninguém, nem por outro admin
-                // (2026-07-16, "ninguém pode tirar permissão dele") -- PATCH /users/{id}/
-                // permission já rejeita isso no backend com 400; aqui só evita a chamada
-                // inútil desabilitando a linha inteira pra qualquer usuário logado, não só
-                // pra si mesmo.
-                const ehAdmin = u.permission_level === 99
-                const desabilitado = souEu || ehAdmin || salvandoId === u.id
-                const titulo = ehAdmin
-                  ? 'Não é possível alterar a permissão de um administrador.'
-                  : souEu
-                    ? 'Você não pode alterar o próprio nível'
-                    : undefined
+                // Admin (99) nunca pode ser rebaixado/excluído por ninguém, nem por outro
+                // admin (2026-07-16) -- EXCETO o super-admin oculto (2026-07-17,
+                // backend/auth/deps.py::eh_super_admin), que só existe no servidor, sem
+                // nenhum sinal disso aqui. Por isso o front NÃO desabilita o controle pra
+                // "quando o alvo é admin" -- só pra "sou eu mesmo" (essa checagem vale pra
+                // todo mundo, inclusive o super-admin) e enquanto salva. Quem não tem o
+                // privilégio simplesmente recebe o 400 do servidor normalmente.
+                const desabilitado = souEu || salvandoId === u.id
+                const titulo = souEu ? 'Você não pode alterar o próprio nível' : undefined
+                // Linha de usuário desativado (2026-07-17, NOVO) -- só leitura, sem os
+                // controles de edição (não faz sentido reatribuir subgrupo/setor/nível de
+                // uma conta que não consegue nem logar); a única ação disponível é reativar.
+                if (!u.ativo) {
+                  return (
+                    <tr key={u.id} className="opacity-60">
+                      <td className="whitespace-nowrap px-3 py-2 text-ink">{u.nome}</td>
+                      <td className="whitespace-nowrap px-3 py-2 text-ink-muted">{u.email}</td>
+                      <td className="px-3 py-2 text-sm text-ink-faint">
+                        {subgrupos.filter((s) => u.subgrupo_ids.includes(s.id)).map((s) => s.nome).join(', ') || '—'}
+                      </td>
+                      <td className="px-3 py-2 text-sm text-ink-faint">{u.setor}</td>
+                      <td className="px-3 py-2 text-sm text-ink-faint">{u.permission_level}</td>
+                      <td className="whitespace-nowrap px-3 py-2 text-right">
+                        <button
+                          type="button"
+                          onClick={() => reativarUsuario(u.id, u.nome, u.email)}
+                          disabled={reativandoId === u.id}
+                          className="rounded px-2 py-1 text-xs font-medium text-brand-navy hover:bg-surface-alt disabled:cursor-not-allowed disabled:opacity-50"
+                        >
+                          Reativar
+                        </button>
+                      </td>
+                    </tr>
+                  )
+                }
                 return (
                   <tr key={u.id}>
                     <td className="whitespace-nowrap px-3 py-2 text-ink">{u.nome}</td>
@@ -203,21 +351,23 @@ export default function GestaoUsuarios({ subgrupos }: { subgrupos: Subgrupo[] })
                         title={titulo}
                         className="rounded border border-line bg-surface px-2 py-1 text-sm text-ink disabled:opacity-50"
                       >
-                        <option value={66}>Usuário</option>
-                        <option value={77}>Gestor</option>
-                        <option value={88}>Cadastro</option>
-                        <option value={99}>Admin</option>
+                        {/* Só o número no UI (2026-07-17, pedido explícito) -- mesmo padrão
+                            de CriarUsuarioForm.tsx. */}
+                        <option value={99}>99</option>
+                        <option value={88}>88</option>
+                        <option value={77}>77</option>
+                        <option value={66}>66</option>
                       </select>
                     </td>
                     <td className="whitespace-nowrap px-3 py-2 text-right">
-                      {/* Mesma proteção do backend (delete_user): admin nunca aparece excluível,
-                          e ninguém exclui a própria conta -- desabilitar aqui só evita a chamada
-                          inútil, o 400 do servidor é quem garante a regra de verdade. */}
+                      {/* Só desabilita "sou eu mesmo" -- ver comentário sobre o super-admin
+                          oculto acima do <select> de Nível. Quem tenta excluir um admin sem
+                          o privilégio recebe o 400 do servidor normalmente. */}
                       <button
                         type="button"
                         onClick={() => excluirUsuario(u.id, u.nome)}
-                        disabled={souEu || ehAdmin || excluindoId === u.id}
-                        title={ehAdmin ? 'Não é possível excluir um administrador.' : souEu ? 'Você não pode excluir a si mesmo' : 'Excluir usuário'}
+                        disabled={souEu || excluindoId === u.id}
+                        title={souEu ? 'Você não pode excluir a si mesmo' : 'Excluir usuário'}
                         className="rounded p-1.5 text-ink-faint hover:bg-red-50 hover:text-red-600 disabled:cursor-not-allowed disabled:opacity-30 disabled:hover:bg-transparent dark:hover:bg-red-950"
                       >
                         <TrashIcon className="h-4 w-4" />
@@ -228,7 +378,8 @@ export default function GestaoUsuarios({ subgrupos }: { subgrupos: Subgrupo[] })
               })}
             </tbody>
           </table>
-        </div>
+          </div>
+        </>
       )}
     </Card>
   )
