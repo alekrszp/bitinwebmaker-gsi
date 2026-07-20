@@ -114,22 +114,35 @@ edita o rascunho de outra pessoa), `created_at`, `updated_at`.
 
 ## Endpoints
 
+**Atualizada por completo em 2026-07-20** — a versão anterior desta tabela datava de
+2026-07-14/15 e faltavam metade das rotas que existem hoje. Conferida rota a rota contra
+`backend/api/bitins.py` (fonte de verdade — se divergir de novo, esse arquivo está certo, a
+tabela é que ficou pra trás).
+
 | Método | Rota | O que faz |
 |---|---|---|
-| POST | `/bitins/draft` | Cria ou atualiza um rascunho — **sem validação de negócio** (liberdade de edição). Se `mongo_id` vier no corpo, atualiza; senão, cria novo. |
-| GET | `/bitins/{mongo_id}` | Busca um BITin (rascunho ou enviado) pelo id do Mongo. |
-| GET | `/bitins` | Lista rascunhos + enviados, escopado por **nível de permissão** (alimenta `MeusBitins.tsx`), com filtro adicional por status/termo. Escopo revisto em 2026-07-15 (pedido explícito: "lista de usuários e bitins de todo mundo, com filtragem de solicitante"): usuário comum (0) só os próprios (`criado_por`, como sempre); gestor (1) os de qualquer um que compartilhe ao menos um `Setor` com ele (mesma consulta de `_usuarios_do_mesmo_setor_query`, sem setor nenhum cai pra "só os meus", nunca "todo mundo"); admin (99) o **sistema inteiro, sem filtro nenhum** — antes de 2026-07-15 até admin ficava preso a "só os meus" aqui, decisão que o usuário reverteu explicitamente ("Admin vê tudo"). |
-| DELETE | `/bitins/{mongo_id}` | Apaga um rascunho (dono/admin). Um BITin já enviado só pode ser apagado por admin (`permission_level >= 99`, 2026-07-16) — nesse caso também apaga a linha `BitinSQL` correspondente (mesma ressalva de "sem transação real cobrindo os 2 bancos" do fluxo de `/enviar`, ver seção abaixo). |
-| POST | `/bitins/{mongo_id}/enviar` | **O ponto-chave**: chama `bitin_lifecycle.enviar_bitin` (todas as validações de uma vez). Se falhar, devolve **200 com `ok=false` e a lista de erros estruturados** (`{field, code, message}`) no corpo — não é um erro HTTP, é um resultado de validação de negócio (a chamada em si funcionou). Se passar, gera o número sequencial (com retry seguro), cria a linha no Postgres, atualiza o Mongo. |
-| GET | `/bitins/{mongo_id}/resumo` | `bitin_view.render_bitin_summary` — pré-visualização/tela final. |
-| GET | `/bitins/schema/materiais` | `bitin_model.build_materiais_schema` — colunas do grid de materiais (identificação, `dados_basicos` com os 30 campos reais da ZBPP009, `impactos_operacionais` com as opções válidas do POP, `impactos_condicionais`) derivadas do `bitin_schema_crosswalk` (`config/vba_mapping.json`) e do `valores_validos` (`config/bitin_document_mapping.json`). Adicionado em 2026-07-13, sem o bloco `snapshot` inventado (removido em 2026-07-15 — ver "Grid de materiais dirigido por schema" abaixo). |
-| POST | `/bitins/parse-sap-paste` | `sap_paste_parser.parse_sap_paste_to_materiais` — recebe o texto colado do SAP (`{"raw_text": "..."}`) e devolve `materiais[]` prontos (identificação + `dados_basicos_atual`, o "de" dos 30 campos, via `plan1_dados_basicos_columns`) pro frontend inserir na tabela de Códigos SAP. Adicionado em 2026-07-13, expandido em 2026-07-15 pra cobrir todos os campos (antes só extraía um recorte de 6). |
-| GET | `/bitins/schema/checklist` | `bitin_document.build_checklist_schema` — os 22 itens fixos do checklist (id + etapa, do Quadro 01 do POP), pra tela de cadastro montar a tabela de checklist editável (`ChecklistEditor.jsx`). Mesma fonte que `bitin_document.build_checklist` usa pra calcular `afeta` na tela de resumo pós-envio, só sem o cálculo em si. Adicionado em 2026-07-13. |
-| GET | `/bitins/resumo-usuario` | `{rascunhos, enviados}` — contagem de BITins do **próprio usuário logado** (`count_documents` filtrado por `criado_por`), alimenta os cartões de resumo da Home (`docs/FRONTEND.md`). Escopado por usuário de propósito ("só os meus", não o sistema inteiro) — decisão registrada com o usuário. Adicionado em 2026-07-14. |
+| POST | `/bitins/draft` | Cria ou atualiza um rascunho — **sem validação de negócio** (liberdade de edição). Se `mongo_id` vier no corpo, atualiza; senão, cria novo. Nível Processos (89) recebe 403 tentando criar (sem `mongo_id`) — não cria BITin, só revisa o que chega encaminhado (ver "Endpoints de roteamento pós-envio" abaixo). |
+| GET | `/bitins/{mongo_id}` | Busca um BITin (rascunho ou enviado) pelo id do Mongo — inclui `pode_editar`, `precisa_roteiro`, `encaminhado_roteiro`, `processos_concluido`, `sem_necessidade_roteiro` calculados na resposta. |
+| GET | `/bitins` | Lista, escopada por **nível de permissão** (alimenta `MeusBitins.tsx`/`CadastroPage.tsx`), com filtros por `status`/`termo`/`campo`/`encaminhado_roteiro`/`processos_concluido`. Ver tabela de permissões acima pro escopo exato de cada nível — mudou bastante desde a versão original desta rota (2026-07-15): 4→5 níveis, Cadastro/Processos viraram visibilidade global. |
+| DELETE | `/bitins/{mongo_id}` | Apaga um rascunho (dono/admin). Um BITin já enviado só pode ser apagado por admin (`permission_level >= 99`) — nesse caso também apaga a linha `BitinSQL` correspondente (mesma ressalva de "sem transação real cobrindo os 2 bancos" do fluxo de `/enviar` abaixo). |
+| POST | `/bitins/{mongo_id}/enviar` | **O ponto-chave**: chama `bitin_lifecycle.enviar_bitin` (todas as validações de uma vez). Se falhar, devolve **200 com `ok=false` e a lista de erros estruturados** (`{field, code, message}`) no corpo — não é um erro HTTP, é um resultado de validação de negócio. Se passar, gera o número sequencial (com retry seguro), cria a linha no Postgres, atualiza o Mongo. |
+| GET | `/bitins/{mongo_id}/resumo` | `bitin_view.render_bitin_summary` — pré-visualização/tela final (checklist, setores acionados, sugestões, diffs). |
+| POST | `/bitins/preview-resumo` | Mesmo cálculo de `/resumo`, mas a partir de um `content` mandado no corpo (não de um `mongo_id` salvo) — sem persistir nada. Alimenta o recálculo ao vivo da checklist/setores em `BitinDetail.tsx` (debounce, sem autosave real). Adicionado em 2026-07-17. |
+| GET | `/bitins/{mongo_id}/pdf` | Gera o PDF do BITin (`scripts/bitin_pdf.py`) — mesma checagem de acesso de `GET /{mongo_id}` (só exige estar autenticado, sem restrição de dono/nível). Usado pela aba "Retornados de roteiro" de `CadastroPage.tsx` pro registro externo. |
+| GET | `/bitins/schema/materiais` | `bitin_model.build_materiais_schema` — colunas do grid de materiais (identificação, `dados_basicos` com os 31 campos reais da ZBPP009, `impactos_operacionais` com as opções válidas do POP) derivadas do `bitin_schema_crosswalk` (`config/vba_mapping.json`) e do `valores_validos` (`config/bitin_document_mapping.json`). |
+| POST | `/bitins/parse-sap-paste` | `sap_paste_parser.parse_sap_paste_to_materiais` — recebe o texto colado do SAP (`{"raw_text": "..."}`) e devolve `materiais[]` prontos (identificação + `dados_basicos_atual`, o "de" dos campos, via `plan1_dados_basicos_columns`) pro frontend inserir na tabela de Códigos SAP. |
+| GET | `/bitins/schema/checklist` | `bitin_document.build_checklist_schema` — os 22 itens fixos do checklist (id + etapa, do Quadro 01 do POP), pra tela de cadastro montar a tabela de checklist editável. Mesma fonte que `bitin_document.build_checklist` usa pra calcular `afeta` na tela de resumo, só sem o cálculo em si. |
+| GET | `/bitins/resumo-usuario` | `{rascunhos, enviados}` — contagem de BITins do **próprio usuário logado**, alimenta os cartões de resumo da Home (`docs/FRONTEND.md`). Escopado por usuário de propósito ("só os meus", não o sistema inteiro). |
+| POST | `/bitins/{mongo_id}/encaminhar-roteiro` | Ver "Endpoints de roteamento pós-envio" abaixo. |
+| POST | `/bitins/{mongo_id}/concluir-sem-roteiro` | Idem. |
+| POST | `/bitins/{mongo_id}/atualizar-processos` | Idem. |
+| POST | `/bitins/{mongo_id}/concluir-processos` | Idem. |
 
-**Ainda não incluído nesta rodada** (próximo passo natural, não construído agora pra manter
-escopo gerenciável): endpoints que geram de fato os arquivos de export (Plan2 `.xlsx`, CSV do
-Winshuttle, lista técnica) a partir de um BITin já enviado.
+Os endpoints que geram os arquivos de export "clássicos" (Plan2 `.xlsx`, CSV do Winshuttle) a
+partir de um BITin já enviado continuam não existindo como rota HTTP — hoje esse fluxo roda
+via `scripts/vba_port_export.py`/`bitin_model.py` por linha de comando, não pela API. O PDF
+(`GET /{mongo_id}/pdf`, acima) é o único export que já virou endpoint, porque é o formato que
+o fluxo de roteamento pós-envio precisa pra registro externo.
 
 **Ordem de declaração das rotas importa**: `/bitins/resumo-usuario` (e as demais rotas
 estáticas — `/schema/materiais`, `/schema/checklist`, `/parse-sap-paste`) precisam estar
@@ -221,8 +234,8 @@ chat/commit para a lista completa):
 **O que passou a funcionar, agora que auth é local** (não dava pra fazer no modelo desacoplado
 sem uma chamada de rede por requisição):
 
-- Todos os endpoints de `/bitins`, `/users`, `/sectors` (exceto `POST /auth/*` e
-  `GET /sectors`, públicos) exigem `Authorization: Bearer <token>` — sem token válido, `401`.
+- Todos os endpoints de `/bitins`, `/users`, `/subgrupos` (exceto `POST /auth/*` e
+  `GET /subgrupos`, públicos) exigem `Authorization: Bearer <token>` — sem token válido, `401`.
 - `criado_por` (Postgres e Mongo) é preenchido com o **e-mail** do usuário autenticado.
 - **Reforço de dono**: só quem criou o rascunho (ou um admin, `permission_level >= 99`) pode
   editar (`POST /bitins/draft` com `mongo_id`) ou excluir (`DELETE /bitins/{mongo_id}`) —
@@ -231,19 +244,18 @@ sem uma chamada de rede por requisição):
 
 **`pode_editar` no `BitinResponse`** (adicionado em 2026-07-14, achado de auditoria "RBAC
 incompleto"): campo calculado por requisição (não vem do Mongo) — `false` quando quem está
-vendo não é dono nem admin, ou quando o BITin já foi enviado (nem o dono pode mais editar
-depois disso). Objetivo: quando a tela de Bitins for reconstruída, o frontend pode abrir a
-tela travada (modo leitura) de cara pra quem não pode editar, em vez de deixar editar
-livremente e só descobrir o erro (`403`) ao tentar salvar. Ainda **não consumido por nenhuma
-UI** (a tela de Bitins foi apagada no reset da v0.5.0, ver `docs/FRONTEND.md`) — é só o
-backend já ficando pronto pra quando ela voltar. `_pode_editar()` reaproveita o mesmo critério
-de `_require_owner_or_admin()`, só devolvendo bool em vez de levantar `403`.
+vendo não é dono nem admin, ou quando o BITin já foi enviado, **exceto** a janela de reedição
+do setor Processos (`_bitin_liberado_para_processos`, ver "Endpoints de roteamento pós-envio"
+abaixo). Consumido por `BitinDetail.tsx` desde 2026-07-15 pra abrir a tela travada (modo
+leitura) de cara pra quem não pode editar, em vez de deixar editar livremente e só descobrir
+o erro (`403`) ao tentar salvar. `_pode_editar()` reaproveita o mesmo critério de
+`_require_owner_or_admin()`, só devolvendo bool em vez de levantar `403`.
 
-**Ainda não implementado** (não é mais bloqueado por decisão de arquitetura, só não construído
-ainda): restringir QUEM pode criar/ver/listar (hoje qualquer usuário autenticado pode; só
-editar/excluir rascunho de outra pessoa é restrito, e agora também sinalizado via
-`pode_editar` acima); vínculo entre `Usuario.sector_id` e o `setor` do BITin (ex.: engenheiro
-só vê BITins do próprio setor) — não pedido ainda, registrado como possibilidade futura.
+**Resolvido (2026-07-16, atualizado aqui em 2026-07-20)**: restringir QUEM pode criar/ver/
+listar BITins — hoje é escopado por `permission_level` (ver tabela de permissões acima), não
+mais "qualquer autenticado vê tudo". `Usuario.setor` (rótulo de cargo) nunca controlou acesso
+— quem controla visibilidade por BITin é `permission_level` + `Subgrupo` (Gestor) ou fila de
+roteamento (Cadastro/Processos), ver `GET /bitins` na tabela de endpoints acima.
 
 **Limite de tentativas de login** (`backend/auth/rate_limit.py`, adicionado em 2026-07-13,
 achado de auditoria): antes, `/auth/login` não tinha limite nenhum — força bruta contra uma

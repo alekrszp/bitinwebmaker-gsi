@@ -508,26 +508,34 @@ em `docs/BITIN_MODEL.md`/`docs/BACKEND.md` — aqui só o que muda na UI.
 
 ## O que já funciona
 
-Validado com Playwright ad-hoc contra o backend real nesta máquina (sem MongoDB real, ver
-"Rodando localmente" abaixo).
+Base validada com Playwright ad-hoc nas rodadas iniciais (login/shell/Meus Bitins); o restante
+(edição completa, fila Cadastro/Processos) validado pela suíte automatizada (backend + testes
+de ponta a ponta, ver `docs/BACKEND.md`) — sem uma passada de Playwright dedicada nesta sessão
+mais recente (ver nota em "Rodando localmente" abaixo).
 
 - Login (`POST /auth/login`) → redireciona pra `/`, com validação visual de erro (credencial
   errada) e estado de carregamento.
 - Rota protegida: sem token, qualquer rota redireciona pro login.
-- Shell autenticado: sidebar de navegação (off-canvas no celular, "Início" e "Meus Bitins"),
-  topbar com tema/configurações/usuário/sair, Home com boas-vindas + cartões de resumo pessoal
-  (rascunhos/enviados, `GET /bitins/resumo-usuario`), página de Configurações ("Minha conta" +
-  troca de senha + "Sobre" pra todo mundo, "Gestão de usuários" só pra admin).
-- "Meus Bitins" (`/bitins`): listagem escopada pro próprio usuário, abas por status, excluir
-  rascunho direto na linha, clique na linha abre o BITin (`/bitins/:mongoId`).
+- Shell autenticado: sidebar de navegação (off-canvas no celular, itens condicionais por
+  permissão — "Cadastro" só pra nível 88/99, "Administração" só pra 99), topbar com
+  tema/configurações/usuário/sair, Home com boas-vindas + cartões de resumo pessoal.
+- "Meus Bitins" (`/bitins`): listagem escopada por permissão (ver `docs/BACKEND.md`), abas por
+  status, excluir rascunho direto na linha, clique na linha abre o BITin.
 - **BITin/ZBPP009/Lista Técnica** (`/bitins/:mongoId`, `/bitins/:mongoId/codigos-sap`,
-  `/bitins/:mongoId/lista-tecnica`): as três telas de edição de um rascunho, ver seção "Aba
-  BITin, ZBPP009 e Lista Técnica" acima — cadastro completo de material, colar do SAP em
-  qualquer célula, checklist manual, lista técnica independente, envio com validação de regras
-  de negócio.
+  `/bitins/:mongoId/lista-tecnica`): as três telas de edição de um rascunho — cadastro completo
+  de material, colar do SAP em qualquer célula, checklist com sugestão automática e recálculo
+  ao vivo, lista técnica independente, aviso de alterações não salvas, envio com validação de
+  regras de negócio.
+- **Fila do setor Cadastro** (`/cadastro`): recebe todo BITin enviado, decide se precisa de
+  roteiro (regra automática) ou conclui direto, PDF final na aba "Retornados de roteiro" — ver
+  `docs/BITIN_MODEL.md`, seção "Roteamento pós-envio".
+- **Setor Processos**: reedita um BITin já enviado enquanto está na fila do Cadastro (única
+  exceção do sistema a "enviado é travado pra sempre"), conclui quando termina.
+- Gestão de usuários (admin): cadastro/reativação com senha temporária, promover/rebaixar
+  nível, atribuir Subgrupo, soft-delete.
 - Logout: volta pro login.
 - Tema claro/escuro (toggle no login E no topbar pós-login, padrão claro, escolha persiste no
-  navegador) — testado nos dois temas, desktop e mobile.
+  navegador).
 
 ## O que NÃO está nesta fatia ainda (próximos incrementos)
 
@@ -552,8 +560,10 @@ npm run dev
 Copie `frontend/.env.example` para `frontend/.env` se a API não estiver em
 `http://127.0.0.1:8000/api/v1` (`VITE_API_BASE_URL`).
 
-**Sem MongoDB real configurado**: o backend sobe e login/registro funcionam (Postgres/SQLite),
-mas qualquer ação de `/bitins` (que depende do Mongo) devolve `500`. Isso não é um bug do
-frontend — é a mesma limitação documentada em `docs/BACKEND.md`. Pra testar o fluxo de BITin
-sem MongoDB real, é preciso rodar o backend com `mongomock-motor` no lugar do cliente Mongo
-real (mesma estratégia dos testes automatizados).
+**Se `MONGO_URL` não estiver configurado no `.env` desta máquina**: o backend sobe e
+login/registro funcionam (Postgres/SQLite), mas qualquer ação de `/bitins` (que depende do
+Mongo) devolve `500`. Desde a v0.8.2 o projeto já roda com **MongoDB Atlas real** em produção
+(ver `docs/RELEASE_v0.8.2.md`) — essa nota vale só pra uma máquina de dev sem esse `.env`
+configurado localmente. Pra testar o fluxo de BITin sem MongoDB real disponível, é preciso
+rodar o backend com `mongomock-motor` no lugar do cliente Mongo (mesma estratégia dos testes
+automatizados).

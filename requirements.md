@@ -87,19 +87,23 @@ pendência já registrada como bloqueada.
   contador pra uma tabela no Postgres real (sem depender de Redis/dependência nova) —
   **bloqueado até o Alessandro passar a URL de acesso a um Postgres real** (hoje só existe
   SQLite local/testes). Retomar assim que o acesso existir.
-- **Migrations de schema (Alembic)** e **uma solução real de transação distribuída
-  Postgres↔MongoDB** (saga/outbox, ver docs/RELEASE_v0.6.0.md) também dependem de ter um
-  Postgres/MongoDB real pra validar contra — mesma pendência, avaliar junto quando o acesso
-  chegar.
+- **Uma solução real de transação distribuída Postgres↔MongoDB** (saga/outbox, ver
+  docs/RELEASE_v0.6.0.md) — depende de Postgres/MongoDB real pra validar contra. Hoje o
+  fluxo de `/enviar` faz best-effort (rollback manual do lado Postgres se o Mongo falhar
+  depois, ver docs/BACKEND.md) em vez de uma transação de verdade — mesma pendência, avaliar
+  junto quando o acesso chegar.
+- **Resolvido (2026-07-16, atualizado aqui em 2026-07-20)**: Migrations de schema via
+  Alembic — não é mais uma pendência, já em uso (`alembic.ini`, `migrations/versions/`,
+  todas as mudanças de schema desde a revisão de RBAC/Subgrupo passaram por migração).
 
 **Adiados por escolha (não bloqueados, só não priorizados ainda)**:
 
-- **Tela de Bitins** — apagada no reset da v0.5.0, sendo reconstruída incrementalmente (ver
-  docs/FRONTEND.md, "Reset da tela de Bitins"). Listagem "Meus Bitins" + visualização
-  só-leitura já prontas (2026-07-14, `MeusBitins.tsx`/`BitinDetail.tsx`). Falta: cadastro/
-  edição de rascunho, grid de materiais, checklist, botão "+ Novo BITin". Não entra aqui como
-  pendência de auditoria, é o próprio trabalho em andamento.
-- Restringir QUEM pode criar/ver/listar BITins por setor (`Usuario.sector_id` ↔ `setor` do
-  BITin) — não pedido ainda, ver docs/BACKEND.md.
 - Docker/docker-compose e testes de borda do `sap_paste_parser.py` (paste parcial, unicode) —
   registrados em docs/RELEASE_v0.6.0.md como observações de auditoria, nunca priorizados.
+- **Resolvidos (removidos daqui em 2026-07-20 — mantidos só como registro do que já foi
+  concluído)**: tela de Bitins completa (cadastro/edição de rascunho, grid de materiais,
+  checklist, "+ Novo BITin" — concluído nas v0.8.x); restringir quem pode criar/ver/listar
+  BITins por permissão/Subgrupo (concluído na revisão de RBAC de 2026-07-16); fluxo de
+  roteiro pós-envio (Cadastro/Processos, antes dependia de e-mail/Windchill fora do sistema —
+  agora é parte do próprio sistema web, ver docs/BITIN_MODEL.md "Roteamento pós-envio",
+  v0.9.0).

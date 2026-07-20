@@ -12,7 +12,7 @@ Este documento descreve o estado atual da migração das rotinas VBA do workbook
 - A lógica de exportação já foi parcialmente documentada em `docs/vba_catalog.md` e `docs/vba_catalog.json`.
 - Os módulos VBA extraídos estão em `artifacts/vba/`.
 - **Descoberta importante (2026-07-09)**: o que parecia um conjunto de bugs no `Módulo2` (colunas "sempre vazias") na verdade é o padrão de design "atual vs. Novo" da aba `ZBPP009 + ALTERACAO` — confirmado lendo o cabeçalho real da aba e `POP_ENG_7.3.7_002` + `context.md`. Quem preenche as colunas `"... Novo"` é o **engenheiro solicitante**, ao montar o BITin (não a Central de Controle e Cadastro, que só executa a alteração no SAP a partir do que recebe). Ver `docs/VBA_EXPORT_MAPPING.md` seção "Padrão atual vs. Novo". Restam só 2 quirks reais (não relacionados a esse padrão): coluna 106 (debug) e coluna 65 (flag compartilhada) — baixo impacto, replicados fielmente.
-- **Direção confirmada com o responsável do projeto**: o próximo passo não é portar mais módulos VBA (P1/P2) — é usar o motor Python já portado (P0) como backend de uma **interface web onde o engenheiro cria o BITin do zero**, substituindo a planilha Excel/VBA. O fluxo alvo: engenheiro cria e envia o BITin pelo sistema web → Central baixa e executa no SAP (`Módulo2`/Winshuttle para BITins grandes, manual para pequenos) → se envolver roteiro, vai por e-mail pra Engenharia de Processos e depois pro Windchill (isso continua fora do sistema web por enquanto). Cobrir todos os setores da empresa é meta de longo prazo; o foco imediato é só a relação engenheiro ↔ Central de Controle e Cadastro.
+- **Direção confirmada com o responsável do projeto**: o próximo passo não é portar mais módulos VBA (P1/P2) — é usar o motor Python já portado (P0) como backend de uma **interface web onde o engenheiro cria o BITin do zero**, substituindo a planilha Excel/VBA. O fluxo alvo: engenheiro cria e envia o BITin pelo sistema web → Central de Cadastro recebe (fila própria, `/cadastro`) e decide, por uma regra automática, se precisa de revisão de roteiro → quando precisa, encaminha pro setor Processos, que revisa dentro do próprio sistema (não mais por e-mail) → PDF final liberado pra registro externo. **Atualizado em 2026-07-20**: o passo de roteiro, que quando este parágrafo foi escrito ainda dependia de e-mail manual pra Engenharia de Processos e depois Windchill fora do sistema, **agora está dentro do sistema web** (setores Cadastro/Processos, ver `docs/BITIN_MODEL.md`, seção "Roteamento pós-envio", e `docs/RELEASE_v0.9.0.md`) — só o Windchill em si (sistema de PLM da empresa) continua fora, o sistema web não integra com ele, só produz o PDF final que alimentaria esse passo manualmente se necessário. Cobrir todos os setores da empresa é meta de longo prazo; o foco imediato continua sendo a relação engenheiro ↔ Cadastro ↔ Processos.
 
 ## Prioridades de portabilidade
 
@@ -50,7 +50,7 @@ Estas rotinas são o núcleo do fluxo Winshuttle e foram portadas primeiro, em `
 - `Módulo4.bas` — `Preencher_Bitin` ✅ **portado** em `scripts/bitin_document.py` (Alt/Esp/checklist/diffs), validado contra BITin real.
 - `Módulo10.bas` — `DWG_SAT` ✅ **portado** (mesmo arquivo, como sugestão opcional — ver `docs/BITIN_MODEL.md` "Alt/Esp declarados pelo engenheiro").
 - `Módulo13.bas` — `DWG_SAT_N_DESENHO` ✅ **portado** (idem).
-- `Módulo12.bas` — `EMAIL`, `Worksheet_Change` — não portado (notificação por e-mail, fora do fluxo de dados).
+- `Módulo12.bas` — `EMAIL`, `Worksheet_Change` ✅ **substituído** (2026-07-17/20) — não é um port literal do e-mail Outlook, é uma solução web-nativa melhor: a fila do setor Cadastro (`CadastroPage.tsx`, `/cadastro`) recebe todo BITin enviado; quando precisa de revisão de roteiro, encaminha pro setor Processos dentro do próprio sistema. Ver `docs/BITIN_MODEL.md`, seção "Roteamento pós-envio (Cadastro → Processos)", e `docs/RELEASE_v0.9.0.md`.
 - `Plan2.cls` — `Worksheet_Change` — não portado (coloração visual cosmética no Excel, sem efeito no dado).
 
 ### P2 — Helpers e formatação
@@ -100,24 +100,28 @@ Existe um projeto irmão, `GPT_Engineering_BITIN`, que foi uma primeira tentativ
 
 ## Próximo passo recomendado
 
-**Atualizado em 2026-07-10 — os 4 itens abaixo (registrados em 2026-07-09) estão concluídos:**
+**Atualizado em 2026-07-20 — os 4 itens originais (registrados em 2026-07-09) estão
+concluídos, incluindo o item 4 (frontend), que na época ainda não existia:**
 
 1. ✅ Modelo de dados do BITin — `scripts/bitin_model.py`, `docs/BITIN_MODEL.md`.
 2. ✅ Validação (formato do número, campos obrigatórios, enum de Alt/Est/Esp/LP/Pre/OC/OF) —
    `scripts/bitin_business_rules.py`, erros estruturados em `scripts/bitin_errors.py`.
 3. ✅ Geração do `.xlsm` real da aba `Plan2` — `bitin_model.write_plan2_xlsx`.
-4. 🔶 Interface web — **backend pronto** (`backend/`, FastAPI + Postgres + MongoDB +
-   autenticação unificada, ver `docs/BACKEND.md`); frontend (formulário pro engenheiro) ainda
-   não construído — esse é o próximo passo real agora.
+4. ✅ Interface web completa (`frontend/`, React + TypeScript + Vite) — login, ciclo de vida
+   completo do BITin (rascunho/edição, envio, roteamento Cadastro/Processos, PDF final),
+   Gestão de usuários. Ver `docs/FRONTEND.md`.
 
 Também concluído desde então: lista técnica/CS02 (`scripts/lista_tecnica_export.py`),
-documento do BITin/checklist (`scripts/bitin_document.py`, P1 do VBA), ciclo de vida
-rascunho/enviado (`scripts/bitin_lifecycle.py`), parser de colar do SAP
-(`scripts/sap_paste_parser.py`). Ver `CHANGELOG.md` (v0.2.0) para o resumo completo.
+documento do BITin/checklist (`scripts/bitin_document.py`, P1 do VBA), ciclo de vida completo
+(`scripts/bitin_lifecycle.py`, rascunho → enviado → roteamento Cadastro/Processos → PDF),
+parser de colar do SAP (`scripts/sap_paste_parser.py`), geração de PDF (`scripts/bitin_pdf.py`).
+Ver `docs/CHANGELOG.md` pro resumo completo de cada versão.
 
-Módulos ainda não portados (`Módulo12.EMAIL`/`Worksheet_Change`, `Plan2.cls.Worksheet_Change`,
-P2 inteiro) seguem registrados como trabalho futuro — só retomar se o frontend precisar
-replicar algum desses comportamentos.
+Módulos que restam sem port literal (`Plan2.cls.Worksheet_Change` — coloração cosmética no
+Excel, sem efeito no dado — e o P2 inteiro, helpers/formatação de planilha) seguem registrados
+como trabalho futuro, mas não têm equivalente pendente no sistema web: nenhum é lógica de
+negócio, só apresentação da planilha original. `Módulo12` (e-mail) saiu dessa lista — foi
+substituído, não só "não portado" (ver P1 acima).
 
 ## Arquivos de referência
 
@@ -130,7 +134,7 @@ replicar algum desses comportamentos.
 - `scripts/bitin_model.py`, `bitin_business_rules.py`, `bitin_lifecycle.py`, `bitin_view.py` — modelo/regras/ciclo de vida do BITin
 - `backend/` — API (FastAPI + Postgres + MongoDB), ver `docs/BACKEND.md`
 - `config/vba_mapping.json` — mapeamento declarativo usado pelo port
-- `tests/` — suíte completa (158 testes)
+- `tests/` — suíte completa (322 testes)
 - `scripts/poc_export.py`
 - `scripts/robust_export.py`
 - `scripts/verify_poc.py`

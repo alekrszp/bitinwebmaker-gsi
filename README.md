@@ -1,19 +1,43 @@
-﻿# bitinwebmaker-gsi
+# bitinwebmaker-gsi
 
 [![CI](https://github.com/alekrszp/bitinwebmaker-gsi/actions/workflows/ci.yml/badge.svg)](https://github.com/alekrszp/bitinwebmaker-gsi/actions/workflows/ci.yml)
 
-Sistema de criação e gestão de BITin (Boletim de Informações Técnicas Internas), migrando o
-fluxo hoje feito em Excel/VBA (`Novo_template_BITin_V2 TESTE.xlsm`) para Python + API web.
+Sistema de criação e gestão de BITin (Boletim de Informações Técnicas Internas) — substitui
+de vez o fluxo que era feito em Excel/VBA (`Novo_template_BITin_V2 TESTE.xlsm`). Cobre o
+ciclo completo: o engenheiro cria e envia o BITin pela web, o setor Cadastro recebe e decide
+se precisa de revisão de roteiro, o setor Processos revisa quando precisa, e o PDF final fica
+disponível pra registro externo — nenhuma etapa depende mais de e-mail/Excel manual.
 
 ## Documentação principal
 
 - `requirements.md` — como a colaboração neste projeto funciona (leia antes de mexer em código).
-- `docs/BITIN_MODEL.md` — modelo de dados do BITin, regras de negócio, ciclo de vida.
-- `docs/VBA_EXPORT_MAPPING.md` — mapeamento de colunas do fluxo real `Módulo1`/`Módulo2`.
-- `docs/VBA_MIGRATION_GUIDE.md` — estado da migração VBA → Python.
-- `docs/BACKEND.md` — arquitetura da API (`backend/`).
-- `docs/FRONTEND.md` — arquitetura do frontend web (`frontend/`).
-- `docs/README_HANDOFF.md` — histórico do PoC original (inventário, macros, comparação com export real).
+- `docs/BITIN_MODEL.md` — modelo de dados do BITin, regras de negócio, ciclo de vida completo
+  (rascunho → enviado → roteamento Cadastro/Processos → PDF final).
+- `docs/BACKEND.md` — arquitetura da API (`backend/`), RBAC, endpoints.
+- `docs/FRONTEND.md` — arquitetura do frontend web (`frontend/`), telas e decisões de UI.
+- `docs/VBA_EXPORT_MAPPING.md` — mapeamento de colunas do fluxo real `Módulo1`/`Módulo2`
+  (referência histórica do motor de export, ainda válida).
+- `docs/VBA_MIGRATION_GUIDE.md` — o que foi portado do VBA original módulo a módulo.
+- `docs/README_HANDOFF.md` — histórico do PoC original (`v0.1.0`), documento congelado.
+- `docs/CHANGELOG.md` — notas de todas as versões.
+
+## O sistema hoje
+
+**Backend** (`backend/`, FastAPI): autenticação própria (JWT, RBAC por `permission_level`),
+CRUD de BITin com ciclo de vida completo (rascunho/enviado/roteamento), gestão de usuários e
+Subgrupos, geração de PDF, persistência em Postgres (usuários/sequência de números) + MongoDB
+(conteúdo do BITin).
+
+**Frontend** (`frontend/`, React + TypeScript + Vite): login, shell autenticado (sidebar +
+topbar + Home), "Meus Bitins" (listagem escopada por permissão), edição completa de um BITin
+(aba BITin, ZBPP009/Códigos SAP, Lista Técnica — as três operam sobre os mesmos dados),
+Gestão de usuários (admin), e a fila do setor Cadastro (`/cadastro`) que substitui o e-mail
+manual que existia no processo original.
+
+**Níveis de permissão** (`Usuario.permission_level`): 66 Usuário, 77 Gestor, 88 Cadastro
+(recebe todo BITin enviado, decide se precisa de roteiro), 89 Processos (revisa quando
+precisa, única exceção a "enviado é travado pra sempre"), 99 Admin. Detalhes completos em
+`docs/BACKEND.md`.
 
 ## Uso rápido (motor Python — `scripts/`)
 
@@ -54,35 +78,39 @@ fluxo hoje feito em Excel/VBA (`Novo_template_BITin_V2 TESTE.xlsm`) para Python 
 ## Backend (API)
 
 `backend/` expõe uma API FastAPI em cima da lógica de `scripts/` — validação real, ciclo de
-vida rascunho/enviado, persistência (Postgres + MongoDB). Ver `docs/BACKEND.md` para
-arquitetura completa e decisões.
+vida completo do BITin (rascunho → enviado → roteamento Cadastro/Processos), persistência
+(Postgres + MongoDB). Ver `docs/BACKEND.md` para arquitetura completa e decisões.
 
 ```powershell
 .venv/Scripts/python.exe -m pip install -r backend/requirements.txt
 .venv/Scripts/python.exe -m uvicorn backend.main:app --reload
 ```
 
-**Autenticação é parte deste mesmo backend** (`backend/auth/`, mesmo processo/Postgre) — todo
-endpoint de `/bitins`, `/users` (exceto `/users/me` de quem já tem token) e `POST /sectors`
-exige `Authorization: Bearer <token>` obtido via `POST /auth/login`. O primeiro usuário
-registrado (`POST /auth/register`) vira admin automaticamente (bootstrap); os demais nascem
-como usuário comum. `SECRET_KEY` (`.env` deste backend) precisa ser trocada por um valor real
-fora de dev local. Ver `docs/BACKEND.md`, seção "Autenticação", para o design completo (RBAC,
-reforço de dono do rascunho, o que foi corrigido em relação ao `GPT_Engineering_authAPI`
-usado como referência). Sem Postgres/MongoDB configurados em `.env`, a API sobe mas as
-operações de banco falham ao serem chamadas — ver `docs/BACKEND.md` para como os testes
-automatizados rodam sem bancos reais (SQLite + mongomock-motor).
+Schema do Postgres é versionado por **Alembic** (`alembic.ini`, `migrations/`) — não é mais
+uma pendência bloqueada, já em uso desde as migrações de RBAC/Subgrupo.
+
+**Autenticação é parte deste mesmo backend** (`backend/auth/`, mesmo processo/Postgres) —
+todo endpoint de `/bitins`, `/users` (exceto `/users/me` de quem já tem token) e `/subgrupos`
+(exceto `GET`, público) exige `Authorization: Bearer <token>` obtido via `POST /auth/login`. O
+primeiro usuário registrado (`POST /auth/register`) vira admin automaticamente (bootstrap); os
+demais nascem como usuário comum. `SECRET_KEY` (`.env` deste backend) precisa ser trocada por
+um valor real fora de dev local. Ver `docs/BACKEND.md`, seção "Autenticação", pro design
+completo (RBAC, reforço de dono do rascunho). Sem Postgres/MongoDB configurados em `.env`, a
+API sobe mas as operações de banco falham ao serem chamadas — ver `docs/BACKEND.md` pra como
+os testes automatizados rodam sem bancos reais (SQLite + mongomock-motor).
 
 ## Frontend (web)
 
 `frontend/` é a interface web que substitui o Excel/VBA pro engenheiro — React 19 +
 TypeScript + Vite + Tailwind + react-router-dom, sem lib de estado global. Ver
-`docs/FRONTEND.md` para arquitetura completa. **Reset em 2026-07-13**: a tela de
-cadastro/listagem de Bitins foi apagada de propósito depois de 8 rodadas de ajuste visual sem
-chegar num resultado bom o suficiente — sendo reconstruída do zero, incrementalmente. Hoje já
-funciona: login, logout, rota protegida, tema claro/escuro, identidade visual da marca. A
-parte de Bitins (listagem, cadastro, grid de materiais, checklist) está sendo refeita parte
-por parte — ver `docs/FRONTEND.md`, seção "Reset da tela de Bitins".
+`docs/FRONTEND.md` para arquitetura completa e o histórico de decisões de cada tela.
+
+Telas hoje: Login, Home (resumo pessoal + recentes), Meus Bitins (listagem escopada por
+permissão), edição completa de BITin (aba BITin / Códigos SAP (ZBPP009) / Lista Técnica —
+cadastro de material do zero, colar do SAP, checklist com sugestão automática, validação de
+regras de negócio no envio), Configurações (conta própria + Gestão de usuários pra admin), e
+a fila do setor Cadastro (`/cadastro`, recebe todo BITin enviado e decide se precisa de
+revisão de roteiro pelo setor Processos).
 
 ```powershell
 cd frontend
@@ -97,6 +125,14 @@ npm run dev
 Releases são criadas manualmente no GitHub, usando `docs/RELEASE_vX.Y.Z.md` como corpo de
 cada release. O processo não é automatizado — a publicação é feita pelo GitHub web interface.
 
+- v0.9.0 — fila do setor Cadastro + setor Processos (substitui o e-mail automático do VBA
+  original), decisão automática de "precisa de roteiro", auditoria completa das automações do
+  VBA, suíte de testes de ponta a ponta:
+  `docs/RELEASE_v0.9.0.md` — <https://github.com/alekrszp/bitinwebmaker-gsi/releases/tag/v0.9.0>
+- v0.8.5 — reativação de usuário vira recadastro, admin "super" oculto, auditoria de
+  permissões: `docs/RELEASE_v0.8.5.md` — <https://github.com/alekrszp/bitinwebmaker-gsi/releases/tag/v0.8.5>
+- v0.8.4 — rename Setor→Subgrupo, tela de Gestão de usuários própria, export PDF:
+  `docs/RELEASE_v0.8.4.md` — <https://github.com/alekrszp/bitinwebmaker-gsi/releases/tag/v0.8.4>
 - v0.8.3 — checklist automática mapeada das macros VBA reais, admin exclui BITin enviado,
   Lista Técnica direto na aba BITin, modelo de permissões reformulado (Usuário/Gestor/
   Cadastro/Admin):
@@ -124,14 +160,16 @@ cada release. O processo não é automatizado — a publicação é feita pelo G
   (Vitest); sem mudança de UI: `docs/RELEASE_v0.6.0.md` — <https://github.com/alekrszp/bitinwebmaker-gsi/releases/tag/v0.6.0>
 - v0.5.0 — autenticação consolidada + tela de login redesenhada + identidade visual/tema
   claro-escuro; a tela de cadastro/listagem de Bitins foi apagada após 8 rodadas sem chegar
-  num resultado bom e está sendo reconstruída do zero, incrementalmente:
+  num resultado bom e foi reconstruída do zero, incrementalmente (concluído nas versões
+  seguintes):
   `docs/RELEASE_v0.5.0.md` — <https://github.com/alekrszp/bitinwebmaker-gsi/releases/tag/v0.5.0>
 - v0.4.0 — primeira fatia do frontend web: `docs/RELEASE_v0.4.0.md` — <https://github.com/alekrszp/bitinwebmaker-gsi/releases/tag/v0.4.0>
 - v0.3.0 — autenticação, reforço de dono, validação de `ordem_cliente[]`: `docs/RELEASE_v0.3.0.md` — <https://github.com/alekrszp/bitinwebmaker-gsi/releases/tag/v0.3.0>
 - v0.2.0 — modelo de BITin, regras de negócio, ciclo de vida, backend: `docs/RELEASE_v0.2.0.md` — <https://github.com/alekrszp/bitinwebmaker-gsi/releases/tag/v0.2.0>
 - v0.1.0 — PoC inicial: `docs/RELEASE_v0.1.0.md` — <https://github.com/alekrszp/bitinwebmaker-gsi/releases/tag/v0.1.0>
 
-Veja também `docs/CHANGELOG.md` para as notas de release completas.
+Veja também `docs/CHANGELOG.md` para as notas de release completas (inclui v0.7.2 → v0.8.0 →
+v0.9.0 sem pular nenhuma).
 
 ## Arquivos principais
 
@@ -140,49 +178,54 @@ Veja também `docs/CHANGELOG.md` para as notas de release completas.
 - `vba_port_export.py` — port fiel do fluxo real `Módulo1`+`Módulo2`+`Módulo11` (sync/export)
 - `bitin_model.py` — valida o JSON do BITin e gera a aba `Plan2` real
 - `bitin_business_rules.py` — regras do POP + regras gerais de consistência (portão de envio)
-- `bitin_document.py` — Alt/Esp/checklist/diffs (`Módulo4`+`Módulo10`+`Módulo13`)
-- `bitin_lifecycle.py` — ciclo de vida rascunho ↔ enviado
+- `bitin_document.py` — Alt/Esp/checklist/diffs/decisão de roteiro (`Módulo4`+`Módulo10`+`Módulo13`)
+- `bitin_lifecycle.py` — ciclo de vida completo: rascunho ↔ enviado ↔ roteamento Cadastro/Processos
 - `bitin_view.py` — modelo de visualização/resumo do BITin
+- `bitin_pdf.py` — geração do PDF final (registro externo)
 - `lista_tecnica_export.py` — export de lista técnica (CS02/BOM), automação nova (nunca existiu em VBA)
 - `sap_paste_parser.py` — parser do texto colado do SAP (TAB-delimited)
 - `csv_safety.py` — sanitização contra CSV/formula injection
 - `bitin_errors.py` — formato de erro estruturado (`{field, code, message}`)
+- `migrar_niveis_permissao.py` — script one-off de migração de dados do esquema antigo de permissão (0/1/99) pro atual (66/77/88/89/99)
 
 **Config (`config/`)**: `vba_mapping.json`, `bitin_document_mapping.json`, `lista_tecnica_mapping.json`
 
 **Backend (`backend/`)**: API FastAPI (ver seção acima e `docs/BACKEND.md`)
-- `api/bitins.py`, `api/users.py`, `api/sectors.py` — endpoints
+- `api/bitins.py`, `api/users.py`, `api/subgrupos.py` — endpoints
 - `auth/` — autenticação unificada (models, hash/JWT, dependências de permissão, rotas de
   registro/login)
 
 **Frontend (`frontend/`)**: interface web (ver seção acima e `docs/FRONTEND.md`)
 
-**Documentação (`docs/`)**: `BITIN_MODEL.md`, `VBA_EXPORT_MAPPING.md`, `VBA_MIGRATION_GUIDE.md`, `BACKEND.md`, `FRONTEND.md`
+**Documentação (`docs/`)**: `BITIN_MODEL.md`, `VBA_EXPORT_MAPPING.md`, `VBA_MIGRATION_GUIDE.md`, `BACKEND.md`, `FRONTEND.md`, `CHANGELOG.md`
 
-**Arquivos de exemplo/dados reais (`examples/`)**: `Novo_template_BITin_V2 TESTE.xlsm` (template original), `exported_winshuttle.csv` (referência), `bitin teste.xlsm`, `bitin teste 2.xlsm` (BITins reais usados para validar o motor), `POP_ENG_7 3 7_002.pdf`
+**Arquivos de exemplo/dados reais (`examples/`, `bitinsparaexemplo/`)**: `Novo_template_BITin_V2 TESTE.xlsm` (template original), `exported_winshuttle.csv` (referência), `bitin teste.xlsm`, `bitin teste 2.xlsm`, `bitinsparaexemplo/*.xlsm` (4 BITins reais usados pra auditar as automações do VBA), `POP_ENG_7 3 7_002.pdf`
 
 **PoC legado (`scripts/legacy_poc/`)**: scripts e saídas do PoC leve original (v0.1.0), superados pelo motor atual — mantidos como histórico documentado, não usar para trabalho novo.
 
 ## Dependências
 
+O motor principal (`scripts/`, exceto `legacy_poc/`) só precisa de `pandas`/`openpyxl`:
+
 ```powershell
-.venv/Scripts/python.exe -m pip install pandas openpyxl oletools numpy msoffcrypto-tool
+.venv/Scripts/python.exe -m pip install pandas openpyxl
 .venv/Scripts/python.exe -m pip install -r backend/requirements.txt
 ```
+
+`oletools`/`msoffcrypto-tool`/`numpy` só são usados por `scripts/legacy_poc/extract_vba.py`
+(arqueologia do `.xlsm` original, um passo único já feito) — não são necessários pra rodar o
+sistema hoje.
 
 ## CI (adicionado em 2026-07-14)
 
 `.github/workflows/ci.yml` roda em todo push/PR pra `main`: suíte Python (`unittest discover`)
-e suíte de frontend (`typecheck` + `lint` + `test` + `build`) — antes disso nada rodava os
-testes automaticamente, dependia de alguém lembrar de rodar localmente (achado de auditoria).
-Sem serviço de Postgres/MongoDB no workflow: os testes automatizados já usam SQLite +
-mongomock-motor (ver "Rodando localmente" em `docs/BACKEND.md`), não precisam de banco real
-pra rodar.
+e suíte de frontend (`typecheck` + `lint` + `test` + `build`). Sem serviço de Postgres/MongoDB
+no workflow: os testes automatizados já usam SQLite + mongomock-motor (ver "Rodando
+localmente" em `docs/BACKEND.md`), não precisam de banco real pra rodar.
 
 ## Próximo passo
 
-Ler `docs/BITIN_MODEL.md` (modelo de dados e regras), `docs/BACKEND.md` (API) e
-`docs/FRONTEND.md` (interface web) para a visão completa do sistema atual. Frontend em
-reconstrução incremental pós-reset (ver `docs/FRONTEND.md`, "Reset da tela de Bitins"): login
-primeiro, depois a parte de Bitins de novo, uma tela de cada vez.
-`docs/README_HANDOFF.md` guarda o histórico do PoC original (v0.1.0).
+Ler `docs/BITIN_MODEL.md` (modelo de dados, regras e ciclo de vida completo), `docs/BACKEND.md`
+(API) e `docs/FRONTEND.md` (interface web) para a visão completa do sistema atual.
+`requirements.md`, seção 5, mantém o backlog vivo do que ainda falta/está bloqueado.
+`docs/README_HANDOFF.md` guarda o histórico do PoC original (v0.1.0), documento congelado.

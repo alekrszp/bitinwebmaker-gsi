@@ -1,7 +1,7 @@
 # Modelo de dados do BITin
 
-Este documento descreve o modelo de dados que o engenheiro vai manipular na futura interface
-web (fora do escopo Python atual) e como ele se conecta ao mapeamento `Módulo1`/`Módulo2`
+Este documento descreve o modelo de dados que o engenheiro manipula na interface web
+(`frontend/`, ver `docs/FRONTEND.md`) e como ele se conecta ao mapeamento `Módulo1`/`Módulo2`
 já portado (`config/vba_mapping.json`, `scripts/vba_port_export.py`).
 
 
