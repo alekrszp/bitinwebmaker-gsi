@@ -1,21 +1,23 @@
-import { useEffect, useState } from 'react'
-import { Link, useNavigate, useParams } from 'react-router-dom'
+import { Fragment, memo, useCallback, useEffect, useMemo, useState, type ClipboardEvent } from 'react'
+import { useNavigate, useParams } from 'react-router-dom'
 import Card from '../components/Card'
 import AjudaPopover from '../components/bitin/AjudaPopover'
+import AvisoSairModal from '../components/bitin/AvisoSairModal'
 import EdicaoBottomBar from '../components/bitin/EdicaoBottomBar'
 import ErrosEnvioBanner from '../components/bitin/ErrosEnvioBanner'
 import StatusBadge from '../components/bitin/StatusBadge'
+import { useAvisoSairSemSalvar } from '../hooks/useAvisoSairSemSalvar'
 import { api } from '../lib/api'
 import { materialVazio, normalizarMaterial } from '../lib/bitinDefaults'
 import { useEnviarBitin } from '../lib/useEnviarBitin'
-import type { Bitin, MateriaisSchema, MaterialEditavel } from '../lib/types'
+import type { Bitin, CampoSchema, MateriaisSchema, MaterialEditavel } from '../lib/types'
 
 // Página própria (rota /bitins/:mongoId/codigos-sap, nome exibido "ZBPP009" desde 2026-07-15
 // -- "vai ajudar o pessoal" a reconhecer, decisão do usuário) -- idêntica à aba ZBPP009 do
 // documento original: uma tabela com TODOS os campos do material (identificação + os 30
-// campos de dados_basicos), pra colar do SAP ou digitar na mão -- sem indicadores nem De/Para
-// aqui. Colunas vêm do schema do backend (GET /bitins/schema/materiais), não hardcodadas
-// (fonte única de verdade, ver docs/BACKEND.md).
+// campos de dados_basicos, cada um com De E Para -- ver comentário em LinhaSapRow), pra colar
+// do SAP ou digitar na mão. Colunas vêm do schema do backend (GET /bitins/schema/materiais),
+// não hardcodadas (fonte única de verdade, ver docs/BACKEND.md).
 //
 // Colar do SAP (2026-07-15, reformulado; heurística de detecção ampliada em 2026-07-16): não
 // é uma aba/painel separado -- o engenheiro cola em QUALQUER célula de uma linha em branco
@@ -28,18 +30,90 @@ import type { Bitin, MateriaisSchema, MaterialEditavel } from '../lib/types'
 // vez viram N materiais, cada campo já cai na coluna certa (decisão do usuário: "ele cola em 1
 // cria varias e já pega a posição certa de cada um, tem o mapeamento dos campos"). Colar um
 // valor só e curto num campo isolado continua funcionando normal, sem interceptar nada.
+// O parser só preenche o "de" (colar é sempre snapshot do SAP) -- o "para" fica em branco até
+// o engenheiro digitar aqui do lado (ver campo De/Para abaixo).
 //
-// O que é colado/digitado aqui vira o "de" de materiais[].alteracoes.dados_basicos -- o
-// snapshot atual do material, exatamente como está no SAP. O "para" (o que muda) só é
-// declarado depois, na aba "BITin", material por material -- as duas telas operam sobre o
-// mesmo materiais[] do JSON, nenhuma depende da outra.
+// De/Para direto aqui (2026-07-17, pedido explícito: "coloca um campo do lado de cada campo
+// que tem alteração") -- cada coluna de dados_basicos agora tem 2 inputs lado a lado. Antes só
+// o "de" existia aqui (snapshot do SAP) e o "para" só podia ser declarado na aba BITin
+// (MaterialEditorCard); as duas telas continuam operando sobre o MESMO
+// materiais[].alteracoes.dados_basicos, nenhuma depende da outra -- só que agora dá pra
+// declarar os dois direto na ZBPP009 também, sem precisar trocar de tela.
 // "Tipo Material" fica visível aqui (2026-07-15, decisão do usuário: "na ZBPP009 pode
 // deixar") -- só some no bloco da aba BITin (MaterialEditorCard), que é a tela que reflete a
 // visualização enviada; aqui é a réplica da grade real do SAP, então o campo tem que aparecer
 // igual à ZBPP009 de verdade.
-const COLUNAS_IDENTIFICACAO_OCULTAS = new Set<string>([])
+// "descricao_material" oculto aqui (2026-07-17, achado revisando o grid De/Para: "descrição
+// também pode ser alterada... descrição vai tanto quanto pra descrição do item e tanto quanto
+// pra mostrar a alteração") -- `schema.dados_basicos` já tem um campo "descricao" próprio (De/
+// Para, ver DADOS_BASICOS_LABELS em scripts/bitin_model.py), então a ZBPP009 mostrava DUAS
+// colunas "Descrição" ao mesmo tempo (uma de identificação, sem par, e o "de" do par De/Para) --
+// grade desigual/confusa. O par "Descrição"/"Descrição nova" abaixo passa a cobrir os dois
+// papéis sozinho (a "de" É a descrição atual do item, exibida/identificada por ela mesma). O
+// campo `descricao_material` continua existindo no modelo (usado como título do card na aba
+// BITin, MaterialEditorCard.tsx) -- só não aparece mais como coluna própria aqui.
+const COLUNAS_IDENTIFICACAO_OCULTAS = new Set<string>(['descricao_material'])
 
-function paraMaterialEditavel(bruto: Partial<MaterialEditavel> & { dados_basicos_atual?: Record<string, string> }): MaterialEditavel {
+// Concordância de gênero pro sufixo da coluna "nova"/"novo" (2026-07-17, pedido explícito: "e
+// ajeita quando é nova ou novo") -- "Descrição nova" está certo (feminino), mas "Volume nova"/
+// "Documento nova" não (masculinos); um sufixo fixo pra todos os ~29 campos de dados_basicos
+// erra a concordância na maioria deles. Mapeado campo a campo (mesmas chaves de
+// scripts/bitin_model.py::DADOS_BASICOS_LABELS) pelo gênero do substantivo núcleo do rótulo em
+// português; fallback "novo" (masculino, mais comum na lista) pra campo novo que apareça no
+// crosswalk sem entrada aqui ainda.
+const GENERO_NOVO: Record<string, 'novo' | 'nova'> = {
+  descricao: 'nova',
+  grupo_mercadorias: 'novo',
+  status: 'novo',
+  hierarquia: 'nova',
+  peso_bruto: 'novo',
+  peso_liquido: 'novo',
+  unidade_peso: 'nova',
+  volume: 'novo',
+  unidade_volume: 'nova',
+  desenho: 'novo',
+  nivel_revisao: 'novo',
+  documento: 'novo',
+  material_substituto: 'novo',
+  status_bloqueio_vendas: 'novo',
+  data_bloqueio_vendas: 'nova',
+  ncm: 'novo',
+  grupo_compradores: 'novo',
+  planejador: 'novo',
+  tipo_suprimento: 'novo',
+  tipo_suprimento_especial: 'novo',
+  deposito_producao: 'novo',
+  deposito_suprimento_externo: 'novo',
+  prazo_entrega: 'novo',
+  responsavel_controle_producao: 'novo',
+  perfil_producao: 'novo',
+  utilizacao_material: 'nova',
+  origem_material: 'nova',
+  producao_interna: 'nova',
+  texto_pedidos_compras: 'novo',
+  marcacao_eliminar_nivel_mandante: 'nova',
+}
+
+// Grade de ~30+ colunas × N linhas -- otimização de performance (2026-07-17, pedido explícito:
+// "usa como base o frontend antigo que tinha uma otimização feita", ver
+// GPT_Engineering_BITIN/frontend/src/components/CodeForm.jsx). Cada linha ganha um `_id`
+// client-side estável (nunca enviado ao backend, ver `salvar` abaixo) -- antes a tabela usava
+// `key={i}` (índice), que perde a identidade da linha a cada remoção/colagem (splice), forçando
+// remount de linhas que na verdade não mudaram. Com `_id` estável + `React.memo` na linha, uma
+// tecla digitada numa célula só re-renderiza AQUELA linha, não a tabela inteira.
+type LinhaSap = MaterialEditavel & { _id: string }
+
+function novaLinhaSap(): LinhaSap {
+  // tipo_material fica em branco aqui (2026-07-17, pedido explícito: "tira halb lá de padrão
+  // na primeira linha, deixa tudo em branco") -- materialVazio() preenche "HALB" por padrão
+  // pra atender ao campo obrigatório no envio (bitin_model.py) já que a aba BITin não tem
+  // controle nenhum pra digitá-lo, mas aqui na ZBPP009 o campo aparece editável na coluna
+  // "Tipo Material" (ver comentário acima), então não faz sentido pré-preencher um valor que
+  // o engenheiro nunca pediu.
+  return { ...materialVazio(), tipo_material: '', _id: crypto.randomUUID() }
+}
+
+function paraMaterialEditavel(bruto: Partial<MaterialEditavel> & { dados_basicos_atual?: Record<string, string> }): LinhaSap {
   const { dados_basicos_atual, ...identificacao } = bruto
   const dadosBasicos = Object.fromEntries(
     Object.entries(dados_basicos_atual ?? {})
@@ -50,21 +124,158 @@ function paraMaterialEditavel(bruto: Partial<MaterialEditavel> & { dados_basicos
     ...materialVazio(),
     ...identificacao,
     alteracoes: { ...materialVazio().alteracoes, dados_basicos: dadosBasicos },
+    _id: crypto.randomUUID(),
   }
 }
+
+// Célula de texto memoizada com estado local (2026-07-17, mesmo padrão de CodeTableCell no
+// CodeForm.jsx antigo) -- digitar não propaga pro estado da linha/tabela a cada tecla, só no
+// blur (`onCommit`). Comparador padrão do React.memo (shallow) já resolve: só re-renderiza se
+// `valor` mudar de fora (ex.: colagem de SAP substituindo a linha inteira) -- os callbacks são
+// estáveis via useCallback no componente pai, então não disparam re-render por identidade nova.
+const CelulaTexto = memo(function CelulaTexto({
+  valor,
+  onCommit,
+  onPaste,
+}: {
+  valor: string
+  onCommit: (novoValor: string) => void
+  onPaste?: (e: ClipboardEvent<HTMLInputElement>) => void
+}) {
+  const [local, setLocal] = useState(valor)
+
+  // Sincroniza se o valor mudar por outro meio que não digitação nesta célula (ex.: colagem de
+  // SAP substitui a linha inteira, incluindo esta célula).
+  useEffect(() => {
+    setLocal(valor)
+  }, [valor])
+
+  return (
+    <input
+      type="text"
+      value={local}
+      onChange={(e) => setLocal(e.target.value)}
+      onBlur={() => {
+        if (local !== valor) onCommit(local)
+      }}
+      onPaste={onPaste}
+      // w-full + min-w (2026-07-17, pedido explícito: "ta muito espaçado as células, se o nome
+      // do campo for longo aumenta a célula junto") -- antes era largura fixa (w-28/112px)
+      // pra TODA célula, então uma coluna com rótulo curto ("OC") ficava larga igual a uma com
+      // rótulo longo ("Marcação eliminar nível mandante") só porque o cabeçalho (sem quebra de
+      // linha) forçava a coluna a crescer, sobrando espaço vazio ao redor do input. Sem
+      // largura fixa, o input preenche a coluna inteira (que já cresce/encolhe sozinha
+      // acompanhando o texto do cabeçalho) -- min-w só evita ficar pequeno demais pra digitar.
+      className="w-full min-w-[5rem] rounded border border-line bg-surface px-2 py-1.5 text-sm text-ink focus:border-brand-navy focus:outline-none"
+    />
+  )
+})
+
+// Linha memoizada (2026-07-17, mesmo padrão de CodeTableRow no CodeForm.jsx antigo). `linha` só
+// muda de referência quando ELA MESMA é editada (atualizarIdentificacao/atualizarDadoBasicoDe/
+// atualizarDadoBasicoPara usam `.map` que preserva a referência das linhas não tocadas) --
+// então editar a linha 5 não re-renderiza as linhas 1-4 e 6-N, mesmo a tabela tendo centenas
+// de linhas.
+const LinhaSapRow = memo(function LinhaSapRow({
+  linha,
+  selecionada,
+  camposIdentificacao,
+  camposDadosBasicos,
+  onIdentificacaoCommit,
+  onDadoBasicoDeCommit,
+  onDadoBasicoParaCommit,
+  onRemover,
+  onToggleSelecao,
+  onColar,
+}: {
+  linha: LinhaSap
+  selecionada: boolean
+  camposIdentificacao: CampoSchema[]
+  camposDadosBasicos: CampoSchema[]
+  onIdentificacaoCommit: (id: string, campo: keyof MaterialEditavel, valor: string) => void
+  onDadoBasicoDeCommit: (id: string, campo: string, valor: string) => void
+  onDadoBasicoParaCommit: (id: string, campo: string, valor: string) => void
+  onRemover: (id: string) => void
+  onToggleSelecao: (id: string) => void
+  onColar: (id: string, texto: string) => Promise<boolean>
+}) {
+  async function handlePaste(e: ClipboardEvent<HTMLInputElement>) {
+    const texto = e.clipboardData.getData('text')
+    if (await onColar(linha._id, texto)) e.preventDefault()
+  }
+
+  return (
+    <tr>
+      <td className="px-3 py-1.5 text-center">
+        <input
+          type="checkbox"
+          checked={selecionada}
+          onChange={() => onToggleSelecao(linha._id)}
+          aria-label="Selecionar linha"
+        />
+      </td>
+      {/* Centro voltou a ser texto livre aqui (2026-07-17, pedido explícito: "tem uma dropbar
+          no centro? tira isso") -- a restrição a 2001/2005 continua valendo na aba BITin
+          (MaterialEditorCard.tsx), mas a ZBPP009 é a réplica da grade real do SAP, então o
+          campo aqui aceita qualquer coisa que o engenheiro cole/digite, igual antes. */}
+      {camposIdentificacao.map((campo) => (
+        <td key={campo.key} className="p-1.5">
+          <CelulaTexto
+            valor={String(linha[campo.key as keyof MaterialEditavel] ?? '')}
+            onCommit={(valor) => onIdentificacaoCommit(linha._id, campo.key as keyof MaterialEditavel, valor)}
+            onPaste={handlePaste}
+          />
+        </td>
+      ))}
+      {/* De/Para lado a lado (2026-07-17) -- ver comentário no topo do arquivo. */}
+      {camposDadosBasicos.map((campo) => (
+        <Fragment key={campo.key}>
+          <td className="p-1.5">
+            <CelulaTexto
+              valor={linha.alteracoes.dados_basicos[campo.key]?.de ?? ''}
+              onCommit={(valor) => onDadoBasicoDeCommit(linha._id, campo.key, valor)}
+              onPaste={handlePaste}
+            />
+          </td>
+          <td className="p-1.5">
+            <CelulaTexto
+              valor={linha.alteracoes.dados_basicos[campo.key]?.para ?? ''}
+              onCommit={(valor) => onDadoBasicoParaCommit(linha._id, campo.key, valor)}
+            />
+          </td>
+        </Fragment>
+      ))}
+      <td className="p-1.5 text-center">
+        <button
+          type="button"
+          onClick={() => onRemover(linha._id)}
+          className="text-ink-faint hover:text-red-600"
+          aria-label="Remover linha"
+        >
+          ×
+        </button>
+      </td>
+    </tr>
+  )
+})
 
 export default function CodigosSapPage() {
   const { mongoId } = useParams<{ mongoId: string }>()
   const navigate = useNavigate()
   const [bitin, setBitin] = useState<Bitin | null>(null)
   const [schema, setSchema] = useState<MateriaisSchema | null>(null)
-  const [materiais, setMateriais] = useState<MaterialEditavel[]>([])
+  const [materiais, setMateriais] = useState<LinhaSap[]>([])
   const [conteudoExistente, setConteudoExistente] = useState<Record<string, unknown>>({})
   const [carregando, setCarregando] = useState(true)
   const [salvando, setSalvando] = useState(false)
   const [erro, setErro] = useState<string | null>(null)
-  const [selecionadas, setSelecionadas] = useState<Set<number>>(new Set())
+  // Seleção por _id estável, não índice (2026-07-17) -- índice desloca a cada remoção/colagem,
+  // podia selecionar a linha errada depois de uma edição.
+  const [selecionadas, setSelecionadas] = useState<Set<string>>(new Set())
   const { enviando, errosEnvio, bitinEnviado, enviar } = useEnviarBitin(mongoId)
+  // Aviso de alterações não salvas (2026-07-17, pedido explícito) -- ver
+  // hooks/useAvisoSairSemSalvar.ts.
+  const { setSujo, mostrarModal, setMostrarModal, tentarSair } = useAvisoSairSemSalvar()
 
   // Envio bem-sucedido navega direto pra aba BITin, já travada em modo enviado (2026-07-16,
   // mesma ideia de "Importar pra BITin" -- useEnviarBitin não navega mais sozinho, ver
@@ -83,14 +294,16 @@ export default function CodigosSapPage() {
         if (cancelado) return
         setBitin(resp.data)
         setConteudoExistente(resp.data.content)
-        const materiaisExistentes = ((resp.data.content.materiais as MaterialEditavel[] | undefined) ?? []).map(normalizarMaterial)
+        const materiaisExistentes = ((resp.data.content.materiais as MaterialEditavel[] | undefined) ?? []).map(
+          (m) => ({ ...normalizarMaterial(m), _id: crypto.randomUUID() }),
+        )
         // Sempre sobra pelo menos uma linha em branco no FINAL pra colar -- não obriga clicar
         // em "+ Nova linha" primeiro, e principalmente não deixa colar em cima de um material
         // que já existe (bug real encontrado em 2026-07-15: colar na "primeira célula" com
         // materiais já salvos sobrescrevia o primeiro material em vez de criar um novo,
         // porque não havia linha em branco nenhuma pra receber a colagem).
         const temLinhaBranca = materiaisExistentes.some((m) => m.codigo_material === '')
-        setMateriais(temLinhaBranca ? materiaisExistentes : [...materiaisExistentes, materialVazio()])
+        setMateriais(temLinhaBranca ? materiaisExistentes : [...materiaisExistentes, novaLinhaSap()])
       })
       .catch(() => setErro('Não foi possível carregar os dados.'))
       .finally(() => setCarregando(false))
@@ -106,14 +319,18 @@ export default function CodigosSapPage() {
       .catch(() => {})
   }, [])
 
-  function atualizarIdentificacao(index: number, campo: keyof MaterialEditavel, valor: string) {
-    setMateriais((atual) => atual.map((m, i) => (i === index ? { ...m, [campo]: valor } : m)))
-  }
+  // useCallback (2026-07-17) -- identidade estável entre renders é o que permite o
+  // React.memo de LinhaSapRow/CelulaTexto pular re-render de linhas não tocadas (ver
+  // comentário em LinhaSapRow acima). Todas operam por `_id`, não índice.
+  const atualizarIdentificacao = useCallback((id: string, campo: keyof MaterialEditavel, valor: string) => {
+    setMateriais((atual) => atual.map((m) => (m._id === id ? { ...m, [campo]: valor } : m)))
+    setSujo(true)
+  }, [setSujo])
 
-  function atualizarDadoBasicoDe(index: number, campo: string, de: string) {
+  const atualizarDadoBasicoDe = useCallback((id: string, campo: string, de: string) => {
     setMateriais((atual) =>
-      atual.map((m, i) => {
-        if (i !== index) return m
+      atual.map((m) => {
+        if (m._id !== id) return m
         const existente = m.alteracoes.dados_basicos[campo]
         return {
           ...m,
@@ -124,44 +341,68 @@ export default function CodigosSapPage() {
         }
       }),
     )
-  }
+    setSujo(true)
+  }, [setSujo])
 
-  function removerLinha(index: number) {
-    setMateriais((atual) => atual.filter((_, i) => i !== index))
-  }
+  const atualizarDadoBasicoPara = useCallback((id: string, campo: string, para: string) => {
+    setMateriais((atual) =>
+      atual.map((m) => {
+        if (m._id !== id) return m
+        const existente = m.alteracoes.dados_basicos[campo]
+        return {
+          ...m,
+          alteracoes: {
+            ...m.alteracoes,
+            dados_basicos: { ...m.alteracoes.dados_basicos, [campo]: { de: existente?.de ?? '', para } },
+          },
+        }
+      }),
+    )
+    setSujo(true)
+  }, [setSujo])
+
+  const removerLinha = useCallback((id: string) => {
+    setMateriais((atual) => atual.filter((m) => m._id !== id))
+    setSelecionadas((atual) => {
+      if (!atual.has(id)) return atual
+      const copia = new Set(atual)
+      copia.delete(id)
+      return copia
+    })
+    setSujo(true)
+  }, [setSujo])
 
   // Barra de ferramentas acima da tabela (2026-07-16, decisão do usuário: "esse X ta muito
   // longe, coloca ali no cabeçalho em cima da tabela uma barra de ferramentas de manipulação")
   // -- seleção múltipla via checkbox por linha substitui ter que clicar em cada "×" um por um
-  // pra remover vários materiais. Guardamos os índices selecionados (não os objetos, já que
-  // linhas não têm id estável) -- por isso "Excluir selecionadas" precisa filtrar por "índice
-  // não está no conjunto selecionado" numa única passada, em vez de fazer .splice em loop
-  // (índice desloca a cada remoção e apagaria a linha errada).
-  function removerSelecionadas() {
+  // pra remover vários materiais.
+  const removerSelecionadas = useCallback(() => {
     setMateriais((atual) => {
-      const restantes = atual.filter((_, i) => !selecionadas.has(i))
-      return restantes.length > 0 ? restantes : [materialVazio()]
+      const restantes = atual.filter((m) => !selecionadas.has(m._id))
+      return restantes.length > 0 ? restantes : [novaLinhaSap()]
     })
     setSelecionadas(new Set())
-  }
+    setSujo(true)
+  }, [selecionadas, setSujo])
 
   function limparTudo() {
     if (!window.confirm('Limpar toda a tabela? Essa ação não pode ser desfeita.')) return
-    setMateriais([materialVazio()])
+    setMateriais([novaLinhaSap()])
     setSelecionadas(new Set())
+    setSujo(true)
   }
 
-  function alternarSelecao(index: number) {
+  const alternarSelecao = useCallback((id: string) => {
     setSelecionadas((atual) => {
       const copia = new Set(atual)
-      if (copia.has(index)) copia.delete(index)
-      else copia.add(index)
+      if (copia.has(id)) copia.delete(id)
+      else copia.add(id)
       return copia
     })
-  }
+  }, [])
 
   function alternarSelecaoTodas() {
-    setSelecionadas((atual) => (atual.size === materiais.length ? new Set() : new Set(materiais.map((_, i) => i))))
+    setSelecionadas((atual) => (atual.size === materiais.length ? new Set() : new Set(materiais.map((m) => m._id))))
   }
 
   // Cole em QUALQUER célula da linha (não precisa ser a primeira -- corrigido em 2026-07-15,
@@ -170,11 +411,11 @@ export default function CodigosSapPage() {
   // última coluna de identificação) caía no paste padrão do navegador e despejava o texto
   // inteiro, cru, num campo só -- "mapeamento errado, vai tudo errado"). Se o texto tem TAB
   // (grade colada via Excel), várias linhas, ou parece uma linha da ZBPP009 colada direto do
-  // SAP GUI sem TAB (heurística de espaço, ver `colarNaLinha`, bug real 2026-07-16: cola direta
-  // do SAP GUI não tem TAB nenhum), vira N materiais prontos, cada campo já na posição certa;
+  // SAP GUI sem TAB (heurística de espaço, ver abaixo, bug real 2026-07-16: cola direta do SAP
+  // GUI não tem TAB nenhum), vira N materiais prontos, cada campo já na posição certa;
   // substitui a linha onde colou e mantém uma linha em branco no final pra continuar colando.
   // Colar um valor único curto não intercepta nada -- o navegador cola normal, célula a célula.
-  async function colarNaLinha(index: number, texto: string) {
+  const colarNaLinha = useCallback(async (id: string, texto: string) => {
     // Cola direta do SAP GUI (sem passar pelo Excel) não tem TAB nenhum -- caso real do
     // usuário, 2026-07-16: as 36 colunas da ZBPP009 vêm separadas por espaço simples numa
     // única linha (sem \n também, se for só 1 material). Sem TAB/\n pra detectar, a
@@ -196,33 +437,55 @@ export default function CodigosSapPage() {
       const novosMateriais = brutos.map(paraMaterialEditavel)
       if (novosMateriais.length > 0) {
         setMateriais((atual) => {
+          const indice = atual.findIndex((m) => m._id === id)
+          if (indice === -1) return atual
           const copia = [...atual]
-          copia.splice(index, 1, ...novosMateriais)
-          if (copia.every((m) => m.codigo_material !== '')) copia.push(materialVazio())
+          copia.splice(indice, 1, ...novosMateriais)
+          if (copia.every((m) => m.codigo_material !== '')) copia.push(novaLinhaSap())
           return copia
         })
+        setSujo(true)
       }
     } catch {
       setErro('Não foi possível interpretar o texto colado.')
     }
     return true
-  }
+  }, [setSujo])
 
   async function salvar() {
+    // Força o commit do blur ANTES de ler o estado (2026-07-17, mesmo truque do
+    // `handleLocalSave` do CodeForm.jsx antigo) -- células de texto só propagam pro estado da
+    // linha no blur (ver CelulaTexto acima); sem isso, clicar em "Salvar" direto com uma célula
+    // ainda focada perderia o valor digenado que nunca chegou a desfocar.
+    if (document.activeElement instanceof HTMLElement) document.activeElement.blur()
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
     setErro(null)
     setSalvando(true)
     try {
+      // Lê o estado JÁ COM o commit do blur aplicado (setState funcional só pra espiar o valor
+      // atual, sem programar outro re-render -- retorna a mesma referência).
+      let materiaisAtuais: LinhaSap[] = []
+      setMateriais((atual) => {
+        materiaisAtuais = atual
+        return atual
+      })
+
       // A linha em branco no final é só espaço pra continuar colando/digitando -- nunca é
       // persistida como material de verdade (bug real encontrado em 2026-07-15: virava um
       // "material fantasma" sem código, disparando erros de validação bobos no envio).
-      const materiaisPreenchidos = materiais.filter((m) => m.codigo_material.trim() !== '')
+      const materiaisPreenchidos = materiaisAtuais.filter((m) => m.codigo_material.trim() !== '')
+      const payload = materiaisPreenchidos.map(({ _id, ...resto }) => resto)
       await api.post('/bitins/draft', {
         mongo_id: mongoId,
-        content: { ...conteudoExistente, materiais: materiaisPreenchidos },
+        content: { ...conteudoExistente, materiais: payload },
       })
-      setMateriais([...materiaisPreenchidos, materialVazio()])
+      setMateriais([...materiaisPreenchidos, novaLinhaSap()])
+      setSujo(false)
+      return true
     } catch {
       setErro('Não foi possível salvar. Tente novamente.')
+      return false
     } finally {
       setSalvando(false)
     }
@@ -242,15 +505,44 @@ export default function CodigosSapPage() {
     navigate(`/bitins/${mongoId}`)
   }
 
+  // useMemo (2026-07-17) -- antes recalculado com .filter() inline no JSX a cada render
+  // (2 vezes: cabeçalho e cada linha), sem depender de nada que muda por digitação. Também dá
+  // ao React.memo de LinhaSapRow uma referência estável de array pra comparar.
+  const camposIdentificacao = useMemo(
+    () => (schema ? schema.identificacao.filter((campo) => !COLUNAS_IDENTIFICACAO_OCULTAS.has(campo.key)) : []),
+    [schema],
+  )
+
   if (carregando || !schema) {
     return <p className="text-sm text-ink-muted">Carregando...</p>
   }
 
   return (
     <div className="mx-auto max-w-[1600px] pb-24">
-      <Link to={`/bitins/${mongoId}`} className="text-sm text-ink-muted hover:text-ink hover:underline">
+      {/* Intercepta o clique se houver alteração não salva (2026-07-17, ver
+          hooks/useAvisoSairSemSalvar.ts) -- botão em vez de Link, senão navegaria antes de
+          dar chance de mostrar o modal. */}
+      <button
+        type="button"
+        onClick={() => {
+          if (tentarSair()) navigate(`/bitins/${mongoId}`)
+        }}
+        className="text-sm text-ink-muted hover:text-ink hover:underline"
+      >
         ← Voltar pro BITin
-      </Link>
+      </button>
+
+      {mostrarModal && (
+        <AvisoSairModal
+          salvando={salvando}
+          onCancelar={() => setMostrarModal(false)}
+          onSairSemSalvar={() => navigate(`/bitins/${mongoId}`)}
+          onSalvarESair={async () => {
+            const ok = await salvar()
+            if (ok) navigate(`/bitins/${mongoId}`)
+          }}
+        />
+      )}
 
       <div className="mt-3 flex flex-wrap items-center gap-3">
         <h1 className="text-2xl font-semibold text-ink">{bitin?.codigo || 'Rascunho sem código'}</h1>
@@ -265,9 +557,13 @@ export default function CodigosSapPage() {
             final pra continuar colando; "+ Nova linha" adiciona espaço extra.
           </p>
           <p>
+            Cada campo tem 2 colunas lado a lado -- ex. <strong>Descrição</strong> (como está
+            hoje no SAP) e <strong>Descrição nova</strong> (o que muda). Os dois continuam
+            editáveis também na aba BITin, nenhuma tela depende da outra.
+          </p>
+          <p>
             <strong>Salvar</strong> grava sem sair da tela. <strong>Importar pra BITin</strong>{' '}
-            salva e leva direto pra aba BITin, com os materiais já prontos. A grade é
-            compartilhada entre as duas telas -- nenhuma depende da outra.
+            salva e leva direto pra aba BITin, com os materiais já prontos.
           </p>
         </AjudaPopover>
         <div className="ml-auto flex gap-2">
@@ -315,7 +611,10 @@ export default function CodigosSapPage() {
           </button>
           <button
             type="button"
-            onClick={() => setMateriais((atual) => [...atual, materialVazio()])}
+            onClick={() => {
+              setMateriais((atual) => [...atual, novaLinhaSap()])
+              setSujo(true)
+            }}
             className="ml-auto rounded-lg border border-dashed border-line px-3 py-1.5 text-xs font-medium text-ink-muted hover:bg-surface"
           >
             + Nova linha
@@ -325,6 +624,10 @@ export default function CodigosSapPage() {
         <div className="mt-2 overflow-x-auto rounded border border-line">
           <table className="w-full text-left text-sm">
             <thead>
+              {/* Cabeçalho de 1 linha só (2026-07-17, revisado -- era 2 linhas com "De"/"Para"
+                  genérico embaixo, trocado a pedido do usuário): cada campo de dados_basicos
+                  vira 2 colunas com nome próprio, ex. "Descrição" e "Descrição nova", em vez de
+                  um rótulo agrupado + sub-rótulo. */}
               <tr className="bg-surface-alt text-xs uppercase tracking-wide text-ink-muted">
                 <th className="w-8 px-3 py-2">
                   <input
@@ -334,92 +637,37 @@ export default function CodigosSapPage() {
                     aria-label="Selecionar todas as linhas"
                   />
                 </th>
-                {schema.identificacao
-                  .filter((campo) => !COLUNAS_IDENTIFICACAO_OCULTAS.has(campo.key))
-                  .map((campo) => (
-                    <th key={campo.key} className="whitespace-nowrap px-3 py-2 font-medium">
-                      {campo.label}
-                    </th>
-                  ))}
-                {schema.dados_basicos.map((campo) => (
+                {camposIdentificacao.map((campo) => (
                   <th key={campo.key} className="whitespace-nowrap px-3 py-2 font-medium">
                     {campo.label}
                   </th>
+                ))}
+                {schema.dados_basicos.map((campo) => (
+                  <Fragment key={campo.key}>
+                    <th className="whitespace-nowrap px-3 py-2 font-medium">{campo.label}</th>
+                    <th className="whitespace-nowrap px-3 py-2 font-medium">
+                      {campo.label} {GENERO_NOVO[campo.key] ?? 'novo'}
+                    </th>
+                  </Fragment>
                 ))}
                 <th className="w-10" />
               </tr>
             </thead>
             <tbody className="divide-y divide-line">
-              {materiais.map((m, i) => (
-                <tr key={i}>
-                  <td className="px-3 py-1.5 text-center">
-                    <input
-                      type="checkbox"
-                      checked={selecionadas.has(i)}
-                      onChange={() => alternarSelecao(i)}
-                      aria-label={`Selecionar linha ${i + 1}`}
-                    />
-                  </td>
-                  {schema.identificacao
-                    .filter((campo) => !COLUNAS_IDENTIFICACAO_OCULTAS.has(campo.key))
-                    .map((campo) =>
-                      // Centro é a planta SAP -- restrito a 2001 (Marau) / 2005 (Passo Fundo)
-                      // desde 2026-07-16 (mesma regra de MaterialEditorCard.tsx/validate_bitin).
-                      // NÃO confundir com "depósito" (outras colunas de dados_basicos, ex.:
-                      // deposito_producao/deposito_suprimento_externo -- conceito diferente,
-                      // sem essa restrição, seguem texto livre).
-                      campo.key === 'centro' ? (
-                        <td key={campo.key} className="p-1.5">
-                          <select
-                            value={String(m[campo.key as keyof MaterialEditavel] ?? '')}
-                            onChange={(e) => atualizarIdentificacao(i, campo.key as keyof MaterialEditavel, e.target.value)}
-                            className="dark:[color-scheme:dark] [color-scheme:light] w-32 rounded border border-line bg-surface px-2 py-1.5 text-sm text-ink focus:border-brand-navy focus:outline-none"
-                          >
-                            <option value="">--</option>
-                            <option value="2001">2001 — Marau</option>
-                            <option value="2005">2005 — Passo Fundo</option>
-                          </select>
-                        </td>
-                      ) : (
-                        <td key={campo.key} className="p-1.5">
-                          <input
-                            type="text"
-                            value={String(m[campo.key as keyof MaterialEditavel] ?? '')}
-                            onChange={(e) => atualizarIdentificacao(i, campo.key as keyof MaterialEditavel, e.target.value)}
-                            onPaste={async (e) => {
-                              const texto = e.clipboardData.getData('text')
-                              if (await colarNaLinha(i, texto)) e.preventDefault()
-                            }}
-                            className="w-32 rounded border border-line bg-surface px-2 py-1.5 text-sm text-ink focus:border-brand-navy focus:outline-none"
-                          />
-                        </td>
-                      ),
-                    )}
-                  {schema.dados_basicos.map((campo) => (
-                    <td key={campo.key} className="p-1.5">
-                      <input
-                        type="text"
-                        value={m.alteracoes.dados_basicos[campo.key]?.de ?? ''}
-                        onChange={(e) => atualizarDadoBasicoDe(i, campo.key, e.target.value)}
-                        onPaste={async (e) => {
-                          const texto = e.clipboardData.getData('text')
-                          if (await colarNaLinha(i, texto)) e.preventDefault()
-                        }}
-                        className="w-32 rounded border border-line bg-surface px-2 py-1.5 text-sm text-ink focus:border-brand-navy focus:outline-none"
-                      />
-                    </td>
-                  ))}
-                  <td className="p-1.5 text-center">
-                    <button
-                      type="button"
-                      onClick={() => removerLinha(i)}
-                      className="text-ink-faint hover:text-red-600"
-                      aria-label="Remover linha"
-                    >
-                      ×
-                    </button>
-                  </td>
-                </tr>
+              {materiais.map((linha) => (
+                <LinhaSapRow
+                  key={linha._id}
+                  linha={linha}
+                  selecionada={selecionadas.has(linha._id)}
+                  camposIdentificacao={camposIdentificacao}
+                  camposDadosBasicos={schema.dados_basicos}
+                  onIdentificacaoCommit={atualizarIdentificacao}
+                  onDadoBasicoDeCommit={atualizarDadoBasicoDe}
+                  onDadoBasicoParaCommit={atualizarDadoBasicoPara}
+                  onRemover={removerLinha}
+                  onToggleSelecao={alternarSelecao}
+                  onColar={colarNaLinha}
+                />
               ))}
             </tbody>
           </table>

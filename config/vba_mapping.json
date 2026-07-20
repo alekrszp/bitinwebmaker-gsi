@@ -227,7 +227,8 @@
       "origem_material": 63,
       "producao_interna": 65,
       "texto_pedidos_compras": 67,
-      "marcacao_eliminar_nivel_mandante": 69
+      "marcacao_eliminar_nivel_mandante": 69,
+      "marcacao_eliminar_nivel_centro": 71
     }
   }
 }

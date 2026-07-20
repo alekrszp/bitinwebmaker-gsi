@@ -460,6 +460,52 @@ BITin, editável em qualquer uma das três, nenhuma dependendo da outra pra exis
   nenhum error boundary. Aplicado em toda tela que carrega materiais do backend
   (BitinDetail/CodigosSapPage/ListaTecnicaPage).
 
+## Automações VBA, fila Cadastro/Processos e polish geral (2026-07-16 a 2026-07-20)
+
+Sessão longa, três frentes principais — auditoria das automações do VBA original (checklist,
+Alt/Esp/DWG-SAT), o fluxo novo de roteamento pós-envio (setores Cadastro e Processos) e uma
+rodada de performance/polish nas telas de edição. Regra de negócio e ciclo de vida completos
+em `docs/BITIN_MODEL.md`/`docs/BACKEND.md` — aqui só o que muda na UI.
+
+- **Checklist/setores ao vivo (`POST /bitins/preview-resumo`)**: antes só recalculava depois
+  de "Salvar"; agora `BitinDetail.tsx` chama esse endpoint com debounce (500ms) a cada
+  alteração de campo, sem persistir rascunho — reaproveita 100% da lógica Python de
+  `bitin_view.render_bitin_summary`, não duplica regra de negócio em TypeScript.
+- **Sugestão automática de Alt/Esp/nota DWG-SAT** (`aplicarSugestoes` em `BitinDetail.tsx`):
+  a partir do código de Grupo de Mercadorias, só preenche campo ainda em branco (`"-"`) —
+  nunca sobrescreve o que o engenheiro já declarou. Código SAP desconhecido não sugere nada,
+  não trava.
+- **Aviso "Revisar roteiro de fabricação"** (`MateriaisSection.tsx`): banner por material
+  quando o Alt declarado é `"D/P"` ou `"-/P"` — mesmo lembrete que a macro original escrevia,
+  não afeta checklist/setores.
+- **Aviso de alterações não salvas** (`AvisoSairModal.tsx` + `hooks/useAvisoSairSemSalvar.ts`):
+  intercepta navegação (troca de rota ou fechar aba) com alteração pendente em `BitinDetail`,
+  oferece Salvar e sair / Sair sem salvar / Cancelar.
+- **Fila do setor Cadastro** (`CadastroPage.tsx`, rota `/cadastro`) — substitui de vez o
+  e-mail/PDF manual que existia antes (removido: botão "Enviar e-mail" de `MeusBitins.tsx`,
+  endpoint `GET /users/cadastro-emails`). Três abas: "Recebidos" (recém-enviado, com botão
+  condicional — "Encaminhar para roteiro" ou "Não precisa de roteiro", dependendo da regra
+  automática `precisa_roteiro`), "Enviados para roteiros" (aguardando o Processos) e
+  "Retornados de roteiro" (estado final, com "Baixar PDF" pra registro externo).
+- **Setor Processos** (nível `89`, `isProcessos()`/`NIVEL_PROCESSOS` em `lib/permissions.ts`):
+  recebe da fila do Cadastro (`encaminhado_roteiro=true`), reedita um BITin já `"enviado"`
+  (única exceção do sistema a "enviado é travado pra sempre") e conclui
+  ("Concluir processamento" em `BitinDetail.tsx`). Não cria BITin — "+ Novo BITin" some pra
+  esse nível em `MeusBitins.tsx`/`Home.tsx` (o backend também recusa com 403). `MeusBitins.tsx`
+  ganha uma coluna "Processamento" (Pendente/Concluído) só pra esse nível.
+- **Gestão de usuários**: `CriarUsuarioForm.tsx`/`GestaoUsuarios.tsx` ganham as opções
+  `89`/`"processos"` nos seletores de permissão/setor. Nem Cadastro nem Processos exigem
+  Subgrupo mais (tirados de `NIVEIS_QUE_EXIGEM_SUBGRUPO` no backend).
+- **Performance** (pedido explícito, "usa como base o frontend antigo que tinha uma
+  otimização feita"): `React.memo` + padrão de estado local/commit-on-blur em
+  `MaterialEditorCard.tsx`, ids estáveis por material (`crypto.randomUUID()` client-side em
+  vez de índice de array), code-splitting por rota (`lazy`) em `App.tsx`.
+- **Polish de UI**: dropdown de Centro removido de onde não fazia sentido, default `HALB`
+  removido, colunas De/Para em `CodigosSapPage.tsx` (ZBPP009) com rótulo `"{campo}"`/`"{campo}
+  nova"` por coluna, campo Operação removido (auto-derivado), campos de quantidade da Lista
+  Técnica voltaram a ser `type="text"` + `inputMode="decimal"` (o seletor nativo de
+  `type="number"` tinha ficado ruim visualmente).
+
 ## O que já funciona
 
 Validado com Playwright ad-hoc contra o backend real nesta máquina (sem MongoDB real, ver

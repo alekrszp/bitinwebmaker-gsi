@@ -132,8 +132,9 @@ class AuthApiTest(unittest.TestCase):
         self.assertEqual(resp.status_code, 400)
 
     def test_registro_com_setor_invalido_falha(self) -> None:
-        """Usuario.setor (rótulo de cargo) só aceita cadastro/gestor/usuario -- validado via
-        SETORES_VALIDOS (backend/auth/schemas.py). NÃO tem relação com controle de acesso."""
+        """Usuario.setor (rótulo de cargo) só aceita cadastro/gestor/usuario/processos --
+        validado via SETORES_VALIDOS (backend/auth/schemas.py). NÃO tem relação com controle
+        de acesso."""
         resp = self.client.post(
             "/api/v1/auth/register",
             json={
@@ -415,7 +416,7 @@ class AuthApiTest(unittest.TestCase):
 
         resp_negado = self.client.patch(
             f"/api/v1/users/{alvo.id}/permission",
-            json={"permission_level": 99},
+            json={"permission_level": 99, "senha_admin": "Senha123!"},
             headers={"Authorization": f"Bearer {create_access_token(gestor.id)}"},
         )
         self.assertEqual(resp_negado.status_code, 403)
@@ -423,11 +424,41 @@ class AuthApiTest(unittest.TestCase):
         admin = self._create_user(3, permission_level=99)
         resp_ok = self.client.patch(
             f"/api/v1/users/{alvo.id}/permission",
-            json={"permission_level": 99},
+            json={"permission_level": 99, "senha_admin": "Senha123!"},
             headers={"Authorization": f"Bearer {create_access_token(admin.id)}"},
         )
         self.assertEqual(resp_ok.status_code, 200, resp_ok.text)
         self.assertEqual(resp_ok.json()["permission_level"], 99)
+
+    def test_alterar_permissao_com_senha_admin_incorreta_falha(self) -> None:
+        """"quando eu trocar permissão de usuário já cadastrado sempre pedir a minha senha
+        para confirmar" (2026-07-17, pedido explícito) -- checada ANTES de qualquer outra
+        validação, mesmo padrão de create_user_by_admin."""
+        admin = self._create_user(1, permission_level=99)  # senha real: "Senha123!"
+        alvo = self._create_user(2, permission_level=66)
+
+        resp = self.client.patch(
+            f"/api/v1/users/{alvo.id}/permission",
+            json={"permission_level": 77, "senha_admin": "SenhaErrada1!"},
+            headers={"Authorization": f"Bearer {create_access_token(admin.id)}"},
+        )
+        self.assertEqual(resp.status_code, 400, resp.text)
+        self.assertIn("Senha incorreta", resp.json()["detail"])
+
+        db = self.SessionLocal()
+        inalterado = db.query(Usuario).filter(Usuario.id == alvo.id).first()
+        db.close()
+        self.assertEqual(inalterado.permission_level, 66)
+
+    def test_alterar_permissao_sem_senha_admin_da_422(self) -> None:
+        admin = self._create_user(1, permission_level=99)
+        alvo = self._create_user(2, permission_level=66)
+        resp = self.client.patch(
+            f"/api/v1/users/{alvo.id}/permission",
+            json={"permission_level": 77},
+            headers={"Authorization": f"Bearer {create_access_token(admin.id)}"},
+        )
+        self.assertEqual(resp.status_code, 422, resp.text)
 
     def test_subgrupos_listar_e_publico(self) -> None:
         resp = self.client.get("/api/v1/subgrupos")
@@ -689,8 +720,10 @@ class AuthApiTest(unittest.TestCase):
         self.assertEqual(me_depois.status_code, 200, me_depois.text)
         self.assertFalse(me_depois.json()["senha_temporaria"])
 
-    # Revisão do modelo de permissões (2026-07-16): 4 níveis -- 66 Usuário, 77 Gestor,
-    # 88 Cadastro, 99 Admin. Usuário/Gestor/Cadastro exigem ao menos 1 subgrupo; Admin não.
+    # Revisão do modelo de permissões (2026-07-16): 66 Usuário, 77 Gestor, 88 Cadastro,
+    # 99 Admin. Usuário/Gestor exigem ao menos 1 subgrupo. Cadastro (88) e Processos (89,
+    # 2026-07-17) tirados dessa exigência -- times centrais, não presos a um Subgrupo
+    # específico. Admin nunca precisou.
 
     def test_criar_usuario_nivel_66_sem_subgrupo_falha(self) -> None:
         admin = self._create_user(1, permission_level=99)
@@ -716,7 +749,9 @@ class AuthApiTest(unittest.TestCase):
         )
         self.assertEqual(resp.status_code, 400, resp.text)
 
-    def test_criar_usuario_nivel_88_sem_subgrupo_falha(self) -> None:
+    def test_criar_usuario_nivel_88_sem_subgrupo_sucede(self) -> None:
+        """Cadastro (88) é um time central que recebe BITins de qualquer Subgrupo -- tirado
+        de NIVEIS_QUE_EXIGEM_SUBGRUPO em 2026-07-17 (pedido explícito do usuário)."""
         admin = self._create_user(1, permission_level=99)
         resp = self.client.post(
             "/api/v1/users",
@@ -726,7 +761,20 @@ class AuthApiTest(unittest.TestCase):
             },
             headers={"Authorization": f"Bearer {create_access_token(admin.id)}"},
         )
-        self.assertEqual(resp.status_code, 400, resp.text)
+        self.assertEqual(resp.status_code, 200, resp.text)
+
+    def test_criar_usuario_nivel_89_sem_subgrupo_sucede(self) -> None:
+        """Processos (89), mesmo raciocínio do Cadastro logo acima."""
+        admin = self._create_user(1, permission_level=99)
+        resp = self.client.post(
+            "/api/v1/users",
+            json={
+                "email": "semsetor89@example.com", "nome": "Sem Subgrupo", "permission_level": 89,
+                "setor": "processos", "senha_admin": "Senha123!",
+            },
+            headers={"Authorization": f"Bearer {create_access_token(admin.id)}"},
+        )
+        self.assertEqual(resp.status_code, 200, resp.text)
 
     def test_criar_usuario_nivel_88_com_subgrupo_sucede(self) -> None:
         admin = self._create_user(1, permission_level=99)
@@ -764,7 +812,7 @@ class AuthApiTest(unittest.TestCase):
 
         resp = self.client.patch(
             f"/api/v1/users/{admin_alvo.id}/permission",
-            json={"permission_level": 66},
+            json={"permission_level": 66, "senha_admin": "Senha123!"},
             headers={"Authorization": f"Bearer {create_access_token(admin1.id)}"},
         )
         self.assertEqual(resp.status_code, 400, resp.text)
@@ -785,7 +833,7 @@ class AuthApiTest(unittest.TestCase):
 
         resp = self.client.patch(
             f"/api/v1/users/{admin_alvo.id}/permission",
-            json={"permission_level": 66},
+            json={"permission_level": 66, "senha_admin": "Senha123!"},
             headers={"Authorization": f"Bearer {create_access_token(super_admin.id)}"},
         )
         self.assertEqual(resp.status_code, 200, resp.text)
@@ -795,7 +843,7 @@ class AuthApiTest(unittest.TestCase):
         super_admin = self._create_user(1, permission_level=99, email="alessandro.pereiradarosafilho@grainproteintech.com")
         resp = self.client.patch(
             f"/api/v1/users/{super_admin.id}/permission",
-            json={"permission_level": 66},
+            json={"permission_level": 66, "senha_admin": "Senha123!"},
             headers={"Authorization": f"Bearer {create_access_token(super_admin.id)}"},
         )
         self.assertEqual(resp.status_code, 400, resp.text)
@@ -1119,40 +1167,6 @@ class AuthApiTest(unittest.TestCase):
             headers={"Authorization": f"Bearer {create_access_token(admin.id)}"},
         )
         self.assertEqual(resp.status_code, 422, resp.text)
-
-    # GET /users/cadastro-emails (2026-07-16) -- QUALQUER usuário autenticado pode chamar
-    # (sem check_permission), porque qualquer engenheiro precisa saber pra quem mandar um
-    # BITin pra cadastro. Só devolve nome+email, nada mais.
-
-    def test_cadastro_emails_acessivel_por_qualquer_usuario_autenticado(self) -> None:
-        comum = self._create_user(1, permission_level=66, setor="usuario")
-        resp = self.client.get(
-            "/api/v1/users/cadastro-emails",
-            headers={"Authorization": f"Bearer {create_access_token(comum.id)}"},
-        )
-        self.assertEqual(resp.status_code, 200, resp.text)
-
-    def test_cadastro_emails_filtra_apenas_setor_cadastro(self) -> None:
-        cadastro1 = self._create_user(1, permission_level=88, setor="cadastro")
-        cadastro2 = self._create_user(2, permission_level=99, setor="cadastro")
-        self._create_user(3, permission_level=66, setor="usuario")
-        self._create_user(4, permission_level=77, setor="gestor")
-
-        resp = self.client.get(
-            "/api/v1/users/cadastro-emails",
-            headers={"Authorization": f"Bearer {create_access_token(cadastro1.id)}"},
-        )
-        self.assertEqual(resp.status_code, 200, resp.text)
-        emails = {item["email"] for item in resp.json()}
-        self.assertEqual(emails, {cadastro1.email, cadastro2.email})
-        # payload mínimo -- só nome+email, sem permission_level/subgrupo_ids/etc.
-        for item in resp.json():
-            self.assertEqual(set(item.keys()), {"nome", "email"})
-
-    def test_cadastro_emails_sem_autenticacao_falha(self) -> None:
-        resp = self.client.get("/api/v1/users/cadastro-emails")
-        self.assertEqual(resp.status_code, 401, resp.text)
-
 
 if __name__ == "__main__":
     unittest.main()

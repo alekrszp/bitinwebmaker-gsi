@@ -84,13 +84,6 @@ export interface Subgrupo {
   descricao: string | null
 }
 
-// Espelha GET /users/cadastro-emails (2026-07-16, NOVO) -- usuários com setor=='cadastro',
-// usado por MeusBitins.tsx pra montar o mailto de "Enviar e-mail" de um BITin enviado.
-export interface CadastroEmail {
-  nome: string
-  email: string
-}
-
 // Espelha backend/api/bitins.py::BitinResponse -- devolvido por GET /bitins (lista, escopada
 // pro próprio usuário -- "Meus Bitins", ver docs/FRONTEND.md) e GET /bitins/{mongo_id}.
 export interface Bitin {
@@ -103,6 +96,19 @@ export interface Bitin {
   created_at: string
   updated_at: string
   pode_editar: boolean
+  // Fila do setor Cadastro (2026-07-17, ver scripts/bitin_lifecycle.py::encaminhar_para_roteiro)
+  encaminhado_roteiro: boolean
+  data_encaminhado_roteiro: string | null
+  // Setor Processos (2026-07-17, ver scripts/bitin_lifecycle.py::concluir_processamento)
+  processos_concluido: boolean
+  data_processos_concluido: string | null
+  // true quando chegou ao estado final sem passar pela reedição do Processos (ver
+  // scripts/bitin_lifecycle.py::concluir_sem_roteiro) -- só pra exibição/auditoria, os
+  // filtros continuam lendo processos_concluido.
+  sem_necessidade_roteiro: boolean
+  // Calculado por requisição (ver scripts/bitin_document.py::precisa_roteiro) -- decide se
+  // CadastroPage.tsx mostra "Encaminhar para roteiro" ou "Não precisa de roteiro".
+  precisa_roteiro: boolean
 }
 
 // Espelha scripts/bitin_model.py::build_materiais_schema -- devolvido por

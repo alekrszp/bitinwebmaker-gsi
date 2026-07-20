@@ -66,6 +66,11 @@ def get_current_active_user(current_user: Usuario = Depends(get_current_user)) -
 NIVEL_USUARIO = 66
 NIVEL_GESTOR = 77
 NIVEL_CADASTRO = 88
+# Recebe BITins que o Cadastro encaminhou (encaminhado_roteiro=true) e pode reeditá-los
+# mesmo já enviados (2026-07-17) -- ver bitin_lifecycle.concluir_processamento e
+# backend/api/bitins.py::_pode_editar. Não escopado por Subgrupo (time central, recebe de
+# qualquer Cadastro) -- por isso não entra em NIVEIS_QUE_EXIGEM_SUBGRUPO.
+NIVEL_PROCESSOS = 89
 NIVEL_ADMIN = 99
 
 # Super-admin oculto (2026-07-17, pedido explícito: "me coloca como admin TOTAL... isso vai

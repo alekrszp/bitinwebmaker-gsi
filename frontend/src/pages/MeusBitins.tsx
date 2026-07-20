@@ -5,8 +5,8 @@ import StatusBadge from '../components/bitin/StatusBadge'
 import { useAuth } from '../hooks/useAuth'
 import { api } from '../lib/api'
 import { criarRascunhoENavegar } from '../lib/criarBitin'
-import { isAdmin } from '../lib/permissions'
-import type { Bitin, CadastroEmail } from '../lib/types'
+import { NIVEL_PROCESSOS, isAdmin, isProcessos } from '../lib/permissions'
+import type { Bitin } from '../lib/types'
 
 // Escopo desta rodada (decidido com o usuário, ver docs/FRONTEND.md): listagem + clique na
 // linha abre uma visualização só-leitura (BitinDetail.tsx). GET /bitins vem escopado por
@@ -45,9 +45,6 @@ export default function MeusBitins() {
   const [termo, setTermo] = useState('')
   const [bitins, setBitins] = useState<Bitin[] | null>(null)
   const [erro, setErro] = useState<string | null>(null)
-  // Id do BITin cujo PDF/e-mail está sendo preparado agora -- desabilita só o botão daquela
-  // linha (2026-07-16, "Enviar e-mail" em BITins já enviados).
-  const [enviandoEmailId, setEnviandoEmailId] = useState<string | null>(null)
 
   // "Solicitante" como opção de busca só faz sentido pra quem lida com BITins de várias
   // pessoas -- um engenheiro comum normalmente é o próprio solicitante dos seus BITins
@@ -55,6 +52,15 @@ export default function MeusBitins() {
   // (2026-07-15), então ganha a mesma opção que já existia só pra admin.
   const ehGestorOuAdmin = (user?.permission_level ?? 0) >= GESTOR_LEVEL
   const ehAdmin = isAdmin(user?.permission_level)
+  // Setor Processos (2026-07-17) -- ganha uma coluna extra mostrando quais BITins da fila
+  // (encaminhados pelo Cadastro) ainda precisam de atenção vs já foram concluídos, já que
+  // GET /bitins devolve os dois juntos pra esse nível (ver backend/api/bitins.py::list_bitins).
+  const ehProcessos = isProcessos(user?.permission_level)
+  // Diferente de `ehProcessos` acima (que inclui admin, pra permissão de UI genérica) --
+  // aqui precisa ser EXATAMENTE o nível Processos, porque admin continua podendo criar BITin
+  // normalmente (2026-07-17, pedido explícito: "processos não pode fazer bitin, só fazer a
+  // parte da revisão de roteiro").
+  const ehSoProcessos = user?.permission_level === NIVEL_PROCESSOS
   const camposBusca = useMemo(() => {
     const base: { value: CampoBusca; label: string }[] = [
       { value: 'todos', label: 'Tudo' },
@@ -115,53 +121,6 @@ export default function MeusBitins() {
     }
   }
 
-  // "Enviar e-mail" (2026-07-16, pedido explícito) -- baixa o PDF do BITin já enviado pro
-  // computador do usuário e abre um rascunho de e-mail pro time de Cadastro (GET /users/
-  // cadastro-emails, setor=='cadastro'); não existe servidor de e-mail integrado, então o PDF
-  // precisa ser anexado manualmente antes de enviar (mesmo espírito de mailto: já usado em
-  // CriarUsuarioForm.tsx::montarMailto).
-  function montarMailtoEnvio(bitin: Bitin, emails: string[]): string {
-    const codigo = bitin.codigo ?? '—'
-    const destinatarios = emails.join(',')
-    const assunto = `BITin ${codigo} — envio para Cadastro`
-    const corpo =
-      `Olá,\n\n` +
-      `O PDF do BITin ${codigo} acabou de ser baixado para o seu computador (verifique a pasta ` +
-      `de downloads).\n\n` +
-      `Antes de enviar este e-mail, anexe manualmente esse arquivo PDF baixado.\n\n` +
-      `Obrigado.`
-    return `mailto:${destinatarios}?subject=${encodeURIComponent(assunto)}&body=${encodeURIComponent(corpo)}`
-  }
-
-  async function enviarEmail(bitin: Bitin) {
-    setErro(null)
-    setEnviandoEmailId(bitin.mongo_id)
-    try {
-      const [pdfResp, emailsResp] = await Promise.all([
-        api.get(`/bitins/${bitin.mongo_id}/pdf`, { responseType: 'blob' }),
-        api.get<CadastroEmail[]>('/users/cadastro-emails'),
-      ])
-      const emails = emailsResp.data.map((c) => c.email)
-      if (emails.length === 0) {
-        setErro('Nenhum usuário do setor Cadastro está cadastrado -- não é possível montar o e-mail.')
-        return
-      }
-      const url = window.URL.createObjectURL(new Blob([pdfResp.data]))
-      const a = document.createElement('a')
-      a.href = url
-      a.download = `BITin-${bitin.codigo ?? bitin.mongo_id}.pdf`
-      document.body.appendChild(a)
-      a.click()
-      a.remove()
-      window.URL.revokeObjectURL(url)
-      window.location.href = montarMailtoEnvio(bitin, emails)
-    } catch {
-      setErro('Não foi possível preparar o e-mail. Tente novamente.')
-    } finally {
-      setEnviandoEmailId(null)
-    }
-  }
-
   async function excluir(bitin: Bitin) {
     const mensagem =
       bitin.status === 'enviado'
@@ -214,13 +173,18 @@ export default function MeusBitins() {
               <ChevronDownIcon className="pointer-events-none absolute right-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-ink-faint" />
             </div>
           </div>
-          <button
-            type="button"
-            onClick={novoBitin}
-            className="whitespace-nowrap rounded-lg bg-brand-navy px-4 py-3 text-sm font-medium text-white transition-colors hover:bg-brand-navy-dark"
-          >
-            + Novo BITin
-          </button>
+          {/* Processos não cria BITin, só revisa os encaminhados pelo Cadastro (2026-07-17,
+              pedido explícito) -- backend também recusa (403) se essa checagem de UI for
+              contornada, ver POST /bitins/draft::create_or_update_draft. */}
+          {!ehSoProcessos && (
+            <button
+              type="button"
+              onClick={novoBitin}
+              className="whitespace-nowrap rounded-lg bg-brand-navy px-4 py-3 text-sm font-medium text-white transition-colors hover:bg-brand-navy-dark"
+            >
+              + Novo BITin
+            </button>
+          )}
         </div>
       </div>
 
@@ -256,6 +220,7 @@ export default function MeusBitins() {
                 <th className="px-4 py-2 font-medium">Motivo</th>
                 <th className="px-4 py-2 font-medium">Solicitante</th>
                 <th className="px-4 py-2 font-medium">Status</th>
+                {ehProcessos && <th className="px-4 py-2 font-medium">Processamento</th>}
                 <th className="w-10" />
               </tr>
             </thead>
@@ -282,17 +247,24 @@ export default function MeusBitins() {
                       <StatusBadge status={b.status} />
                     </Link>
                   </td>
+                  {ehProcessos && (
+                    <td className="px-4 py-2">
+                      {b.encaminhado_roteiro ? (
+                        <span
+                          className={`whitespace-nowrap rounded-full px-2 py-0.5 text-xs font-medium ${
+                            b.processos_concluido
+                              ? 'bg-green-100 text-green-700'
+                              : 'bg-amber-100 text-amber-800'
+                          }`}
+                        >
+                          {b.processos_concluido ? 'Concluído' : 'Pendente'}
+                        </span>
+                      ) : (
+                        <span className="text-xs text-ink-faint">—</span>
+                      )}
+                    </td>
+                  )}
                   <td className="px-4 py-2 text-center">
-                    {b.status === 'enviado' && (
-                      <button
-                        type="button"
-                        onClick={() => enviarEmail(b)}
-                        disabled={enviandoEmailId === b.mongo_id}
-                        className="mr-2 whitespace-nowrap text-xs font-medium text-brand-navy hover:underline disabled:cursor-not-allowed disabled:opacity-60"
-                      >
-                        {enviandoEmailId === b.mongo_id ? 'Preparando...' : 'Enviar e-mail'}
-                      </button>
-                    )}
                     {b.status === 'rascunho' && b.pode_editar && (
                       <button
                         type="button"

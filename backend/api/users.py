@@ -15,7 +15,6 @@ from backend.auth.schemas import (
     SETORES_VALIDOS,
     AdminUserCreate,
     AdminUserCreateOut,
-    CadastroEmailOut,
     UserOut,
     UserReactivate,
     UserUpdatePermission,
@@ -61,20 +60,6 @@ def read_current_user(current_user: Usuario = Depends(get_current_active_user)) 
     return UserOut.from_usuario(current_user)
 
 
-@router.get("/cadastro-emails", response_model=list[CadastroEmailOut])
-def list_cadastro_emails(
-    db: Session = Depends(get_db),
-    _current_user: Usuario = Depends(get_current_active_user),
-) -> list[CadastroEmailOut]:
-    """Lista nome+email de todo usuário com Usuario.setor == 'cadastro' (2026-07-16) --
-    QUALQUER usuário autenticado pode chamar (sem check_permission), porque qualquer
-    engenheiro precisa saber pra quem mandar um BITin pra cadastro. `setor` aqui é só o
-    rótulo descritivo de cargo (ver backend/auth/models.py::Usuario.setor), não tem relação
-    nenhuma com permission_level nem com Subgrupo (Proteína Animal/Armazenagem de Grãos)."""
-    usuarios = db.query(Usuario).filter(Usuario.setor == "cadastro").all()
-    return [CadastroEmailOut(nome=u.nome, email=u.email) for u in usuarios]
-
-
 @router.post("", response_model=AdminUserCreateOut)
 def create_user_by_admin(
     user_in: AdminUserCreate,
@@ -106,9 +91,11 @@ def create_user_by_admin(
     if existing and existing.ativo:
         raise HTTPException(status_code=400, detail="E-mail já cadastrado")
 
-    # Usuário/Gestor/Cadastro (66/77/88) precisam de ao menos um Subgrupo -- 2026-07-16, revisão
-    # do modelo de permissões (só Admin, 99, enxerga tudo sem escopo nenhum e por isso pode
-    # ficar sem subgrupo). Mesmo estilo de erro 400 de _resolve_subgrupos logo abaixo.
+    # Usuário/Gestor (66/77) precisam de ao menos um Subgrupo -- 2026-07-16, revisão do modelo
+    # de permissões. Cadastro/Processos (88/89) tirados dessa exigência em 2026-07-17 (times
+    # centrais, não presos a um Subgrupo específico, ver NIVEIS_QUE_EXIGEM_SUBGRUPO). Admin
+    # (99) sempre ficou de fora (enxerga tudo sem escopo nenhum). Mesmo estilo de erro 400 de
+    # _resolve_subgrupos logo abaixo.
     if user_in.permission_level in NIVEIS_QUE_EXIGEM_SUBGRUPO and not user_in.subgrupo_ids:
         raise HTTPException(
             status_code=400,
@@ -197,6 +184,11 @@ def update_user_permission(
     db: Session = Depends(get_db),
     current_user: Usuario = Depends(check_permission(NIVEL_ADMIN)),  # só admin promove/rebaixa
 ) -> UserOut:
+    # Reconfirmação de senha do admin (2026-07-17, pedido explícito) -- checada ANTES de
+    # qualquer outra validação/escrita, mesmo padrão de create_user_by_admin.
+    if not verify_password(payload.senha_admin, current_user.hashed_password):
+        raise HTTPException(status_code=400, detail="Senha incorreta.")
+
     user = db.query(Usuario).filter(Usuario.id == user_id).first()
     if not user:
         raise HTTPException(status_code=404, detail="Usuário não encontrado")
@@ -230,9 +222,9 @@ def update_user_subgrupos(
     """Reatribuição de subgrupo(s) de um usuário JÁ cadastrado (2026-07-16, pedido explícito do
     admin) -- endpoint dedicado, à parte de /permission e /setor, mesmo espírito de "uma rota
     PATCH por aspecto" já usado nesse arquivo. Mesma regra de NIVEIS_QUE_EXIGEM_SUBGRUPO de
-    create_user_by_admin acima: Usuário/Gestor/Cadastro (66/77/88) não podem ficar sem
-    nenhum subgrupo; Admin (99) não é afetado por essa regra (pode ficar sem subgrupo).
-    Renomeado de update_user_sectors / PATCH /sectors (2026-07-16)."""
+    create_user_by_admin acima: Usuário/Gestor (66/77) não podem ficar sem nenhum subgrupo;
+    Cadastro/Processos (88/89) e Admin (99) não são afetados por essa regra (podem ficar sem
+    subgrupo). Renomeado de update_user_sectors / PATCH /sectors (2026-07-16)."""
     user = db.query(Usuario).filter(Usuario.id == user_id).first()
     if not user:
         raise HTTPException(status_code=404, detail="Usuário não encontrado")

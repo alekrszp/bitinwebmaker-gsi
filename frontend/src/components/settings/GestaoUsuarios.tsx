@@ -17,6 +17,7 @@ const NIVEIS_QUE_EXIGEM_SUBGRUPO = new Set([66, 77, 88])
 // independente de Permissão e de Subgrupo.
 const OPCOES_SETOR: { value: string; label: string }[] = [
   { value: 'cadastro', label: 'Cadastro' },
+  { value: 'processos', label: 'Processos' },
   { value: 'gestor', label: 'Gestor' },
   { value: 'usuario', label: 'Usuário' },
 ]
@@ -25,6 +26,14 @@ export default function GestaoUsuarios({ subgrupos }: { subgrupos: Subgrupo[] })
   const { user: currentUser } = useAuth()
   const [users, setUsers] = useState<User[] | null>(null)
   const [error, setError] = useState<string | null>(null)
+  // Confirmação visual depois de cada auto-save (2026-07-17, pedido explícito: "colocar...
+  // confirmação que foi tudo alterado") -- continua salvando na hora a cada mudança (auto-save
+  // já existente), só ganhou um "Salvo!" transitório depois de cada PATCH bem-sucedido.
+  const [sucesso, setSucesso] = useState<string | null>(null)
+  function avisarSucesso(mensagem: string) {
+    setSucesso(mensagem)
+    setTimeout(() => setSucesso((atual) => (atual === mensagem ? null : atual)), 2500)
+  }
   const [salvandoId, setSalvandoId] = useState<number | null>(null)
   // Id do usuário cujo subgrupo está sendo salvo -- separado de salvandoId (nível) pra não
   // desabilitar o <select> de nível enquanto só o subgrupo está sendo salvo, e vice-versa.
@@ -53,12 +62,29 @@ export default function GestaoUsuarios({ subgrupos }: { subgrupos: Subgrupo[] })
       .catch(() => setError('Não foi possível carregar a lista de usuários.'))
   }, [])
 
+  // Reconfirmação de senha do PRÓPRIO admin (2026-07-17, pedido explícito: "quando eu trocar
+  // permissão de usuário já cadastrado sempre pedir a minha senha para confirmar") -- prompt()
+  // em vez de um modal próprio, mesmo padrão leve já usado em reativarUsuario (prompt de
+  // e-mail) nesta tela; trade-off aceito é que prompt() não mascara a senha digitada (sem
+  // equivalente a type="password"), diferente do campo de verdade em CriarUsuarioForm.tsx --
+  // ok pra uma ferramenta interna de admin, mas vale trocar por um modal de verdade se isso
+  // incomodar.
   async function alterarNivel(userId: number, novoNivel: number) {
+    const senhaAdmin = window.prompt('Confirme sua senha pra trocar o nível deste usuário:')
+    if (senhaAdmin === null) return // cancelou o prompt
+    if (!senhaAdmin) {
+      setError('Senha não pode ficar vazia.')
+      return
+    }
     setSalvandoId(userId)
     setError(null)
     try {
-      const resp = await api.patch(`/users/${userId}/permission`, { permission_level: novoNivel })
+      const resp = await api.patch(`/users/${userId}/permission`, {
+        permission_level: novoNivel,
+        senha_admin: senhaAdmin,
+      })
       setUsers((atual) => atual?.map((u) => (u.id === userId ? resp.data : u)) ?? null)
+      avisarSucesso('Nível salvo!')
     } catch (err) {
       // extrairErro (não só mensagem genérica) -- alvo sendo admin dá 400 do servidor com
       // motivo específico pra quem não tem o privilégio de mexer em outro admin (ver
@@ -79,6 +105,7 @@ export default function GestaoUsuarios({ subgrupos }: { subgrupos: Subgrupo[] })
     try {
       const resp = await api.patch(`/users/${userId}/subgrupos`, { subgrupo_ids: novosSubgrupoIds })
       setUsers((atual) => atual?.map((u) => (u.id === userId ? resp.data : u)) ?? null)
+      avisarSucesso('Subgrupo salvo!')
     } catch (err) {
       // extrairErro (2026-07-17, achado de auditoria, era mensagem genérica fixa) -- mesmo
       // padrão de alterarNivel/excluirUsuario, senão o 400 específico do servidor (ex.: alvo
@@ -97,6 +124,7 @@ export default function GestaoUsuarios({ subgrupos }: { subgrupos: Subgrupo[] })
     try {
       const resp = await api.patch(`/users/${userId}/setor`, { setor: novoSetor })
       setUsers((atual) => atual?.map((u) => (u.id === userId ? resp.data : u)) ?? null)
+      avisarSucesso('Setor salvo!')
     } catch (err) {
       setError(extrairErro(err, 'Não foi possível alterar o setor desse usuário.'))
     } finally {
@@ -213,6 +241,7 @@ export default function GestaoUsuarios({ subgrupos }: { subgrupos: Subgrupo[] })
       )}
 
       {error && <p className="mt-3 text-sm text-red-600">{error}</p>}
+      {sucesso && <p className="mt-3 text-sm text-green-600">{sucesso}</p>}
       {!users && !error && <p className="mt-3 text-sm text-ink-muted">Carregando...</p>}
 
       {users && (
@@ -354,6 +383,7 @@ export default function GestaoUsuarios({ subgrupos }: { subgrupos: Subgrupo[] })
                         {/* Só o número no UI (2026-07-17, pedido explícito) -- mesmo padrão
                             de CriarUsuarioForm.tsx. */}
                         <option value={99}>99</option>
+                        <option value={89}>89</option>
                         <option value={88}>88</option>
                         <option value={77}>77</option>
                         <option value={66}>66</option>

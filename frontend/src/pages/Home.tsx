@@ -4,6 +4,7 @@ import StatusBadge from '../components/bitin/StatusBadge'
 import { useAuth } from '../hooks/useAuth'
 import { api } from '../lib/api'
 import { criarRascunhoENavegar } from '../lib/criarBitin'
+import { NIVEL_PROCESSOS } from '../lib/permissions'
 import type { Bitin, ResumoUsuario } from '../lib/types'
 
 // Upgrade da Home (2026-07-14): "Meus Bitins" (listagem + detalhe + cadastro) já existe agora,
@@ -16,6 +17,9 @@ export default function Home() {
   const { user } = useAuth()
   const navigate = useNavigate()
   const primeiroNome = user?.nome?.split(' ')[0]
+  // Processos não cria BITin, só revisa os encaminhados pelo Cadastro (2026-07-17, mesmo
+  // raciocínio de MeusBitins.tsx::ehSoProcessos).
+  const ehSoProcessos = user?.permission_level === NIVEL_PROCESSOS
   const [resumo, setResumo] = useState<ResumoUsuario | null>(null)
   const [recentes, setRecentes] = useState<Bitin[] | null>(null)
   const [erroNovo, setErroNovo] = useState<string | null>(null)
@@ -59,13 +63,15 @@ export default function Home() {
           </h1>
           <p className="mt-1 text-sm text-ink-muted">Seu resumo de BITins e atividade recente.</p>
         </div>
-        <button
-          type="button"
-          onClick={novoBitin}
-          className="whitespace-nowrap rounded-lg bg-brand-navy px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-brand-navy-dark"
-        >
-          + Novo BITin
-        </button>
+        {!ehSoProcessos && (
+          <button
+            type="button"
+            onClick={novoBitin}
+            className="whitespace-nowrap rounded-lg bg-brand-navy px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-brand-navy-dark"
+          >
+            + Novo BITin
+          </button>
+        )}
       </div>
 
       {erroNovo && <p className="mt-2 text-sm text-red-600">{erroNovo}</p>}
@@ -85,7 +91,9 @@ export default function Home() {
 
         {!recentes && <p className="mt-3 text-sm text-ink-muted">Carregando...</p>}
         {recentes && recentes.length === 0 && (
-          <p className="mt-3 text-sm text-ink-muted">Nenhum BITin ainda -- crie o primeiro.</p>
+          <p className="mt-3 text-sm text-ink-muted">
+            {ehSoProcessos ? 'Nenhum BITin na fila do Processos ainda.' : 'Nenhum BITin ainda -- crie o primeiro.'}
+          </p>
         )}
         {recentes && recentes.length > 0 && (
           <div className="mt-3 overflow-hidden rounded-lg border border-line">

@@ -1,3 +1,37 @@
+import { memo, useEffect, useState } from 'react'
+
+// Célula de descrição memoizada com estado local (2026-07-17, corrige bug real: o input
+// mostrava `item.descricao` (vem de `resumo.checklist`, só atualizado depois de um save+
+// refetch), mas `onDescricaoChange` só gravava num estado LOCAL separado
+// (`checklistDescricoes` em BitinDetail.tsx) que nunca realimentava `resumo` -- ou seja, o
+// valor exibido nunca refletia o que era digitado, fazendo o campo parecer travado/brigando
+// consigo mesmo a cada tecla ("não tá sendo instantâneo"). Estado local aqui resolve os dois
+// problemas de uma vez: exibe o que foi digitado imediatamente (sem depender de `resumo`
+// estar sincronizado) e só propaga pro estado do pai no blur (não a cada tecla, mesmo padrão
+// de CodigosSapPage.tsx/ListaTecnicaPage.tsx).
+const DescricaoInput = memo(function DescricaoInput({
+  valor,
+  onCommit,
+}: {
+  valor: string
+  onCommit: (novoValor: string) => void
+}) {
+  const [local, setLocal] = useState(valor)
+  useEffect(() => setLocal(valor), [valor])
+  return (
+    <input
+      type="text"
+      value={local}
+      onChange={(e) => setLocal(e.target.value)}
+      onBlur={() => {
+        if (local !== valor) onCommit(local)
+      }}
+      placeholder="Anotação (ex.: centro de custo, conta razão)..."
+      className="mt-1.5 w-full rounded border border-line bg-surface px-2 py-1 text-xs text-ink placeholder:text-ink-faint focus:border-brand-navy focus:outline-none"
+    />
+  )
+})
+
 interface ChecklistItem {
   id: string
   etapa: string
@@ -84,13 +118,7 @@ export default function ChecklistTable({
             )}
             {mostrarDescricao &&
               (onDescricaoChange ? (
-                <input
-                  type="text"
-                  value={item.descricao}
-                  onChange={(e) => onDescricaoChange(item.id, e.target.value)}
-                  placeholder="Anotação (ex.: centro de custo, conta razão)..."
-                  className="mt-1.5 w-full rounded border border-line bg-surface px-2 py-1 text-xs text-ink placeholder:text-ink-faint focus:border-brand-navy focus:outline-none"
-                />
+                <DescricaoInput valor={item.descricao} onCommit={(valor) => onDescricaoChange(item.id, valor)} />
               ) : (
                 <p className="mt-1.5 text-xs text-ink-muted">{item.descricao}</p>
               ))}

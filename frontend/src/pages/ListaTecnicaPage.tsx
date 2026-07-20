@@ -1,10 +1,12 @@
-import { useEffect, useState } from 'react'
-import { Link, useNavigate, useParams } from 'react-router-dom'
+import { memo, useCallback, useEffect, useState } from 'react'
+import { useNavigate, useParams } from 'react-router-dom'
 import Card from '../components/Card'
 import AjudaPopover from '../components/bitin/AjudaPopover'
+import AvisoSairModal from '../components/bitin/AvisoSairModal'
 import EdicaoBottomBar from '../components/bitin/EdicaoBottomBar'
 import ErrosEnvioBanner from '../components/bitin/ErrosEnvioBanner'
 import StatusBadge from '../components/bitin/StatusBadge'
+import { useAvisoSairSemSalvar } from '../hooks/useAvisoSairSemSalvar'
 import { api } from '../lib/api'
 import { materialVazio, normalizarMaterial } from '../lib/bitinDefaults'
 import { useEnviarBitin } from '../lib/useEnviarBitin'
@@ -23,22 +25,158 @@ import type { Bitin, ItemListaTecnica, MaterialEditavel, OperacaoListaTecnica } 
 // material novo "vazio" é criado só pra ter onde anexar os componentes (mesmo materialVazio()
 // usado em "+ Novo material"), preservando a regra de que nenhuma das três telas depende da
 // outra pra existir.
-interface LinhaListaTecnica extends ItemListaTecnica {
+interface LinhaListaTecnicaBase extends ItemListaTecnica {
   codigo_pai: string
 }
 
+// `_id` client-side estável por linha (2026-07-17, otimização de performance -- mesmo padrão
+// de CodigosSapPage.tsx, ver GPT_Engineering_BITIN/frontend/src/components/CodeForm.jsx).
+type LinhaListaTecnica = LinhaListaTecnicaBase & { _id: string }
+
 function linhaVazia(): LinhaListaTecnica {
-  return { codigo_pai: '', operacao: 'alterar', codigo_filho: '', quantidade_de: '', quantidade_para: '' }
+  return {
+    codigo_pai: '',
+    // "alterar" só como placeholder interno -- o valor de verdade é recalculado em
+    // `derivarOperacao` na hora de salvar (ver comentário lá), não editado na UI.
+    operacao: 'alterar',
+    codigo_filho: '',
+    quantidade_de: '',
+    quantidade_para: '',
+    _id: crypto.randomUUID(),
+  }
+}
+
+// Campo "Operação" removido da UI (2026-07-17, pedido explícito: "tira o campo operação é
+// desnecessário") -- mas o backend/export (scripts/lista_tecnica_export.py) ainda precisa dele
+// pra validar (Inserir exige Quantidade para, Excluir exige Quantidade de) e marcar a coluna
+// certa (X) na planilha Winshuttle. Deriva sozinho a partir de qual quantidade foi preenchida,
+// em vez de pedir escolha manual -- mesma regra que a validação já usa, só invertida (a
+// validação checa "se é Inserir, Quantidade para tem que estar preenchida"; aqui: "se só
+// Quantidade para está preenchida, é Inserir"):
+// - só "para" preenchido (De vazio) -- item novo, ainda não existia -- Inserir.
+// - só "de" preenchido (Para vazio) -- item removido -- Excluir.
+// - os dois preenchidos (ou nenhum, linha em branco filtrada antes de chegar aqui) -- Alterar.
+function derivarOperacao(item: ItemListaTecnica): OperacaoListaTecnica {
+  const temDe = item.quantidade_de.trim() !== ''
+  const temPara = item.quantidade_para.trim() !== ''
+  if (!temDe && temPara) return 'inserir'
+  if (temDe && !temPara) return 'excluir'
+  return 'alterar'
 }
 
 function materiaisParaLinhas(materiais: MaterialEditavel[]): LinhaListaTecnica[] {
   const linhas = materiais.flatMap((m) =>
-    m.alteracoes.lista_tecnica.map((item) => ({ codigo_pai: m.codigo_material, ...item })),
+    m.alteracoes.lista_tecnica.map((item) => ({ codigo_pai: m.codigo_material, ...item, _id: crypto.randomUUID() })),
   )
   // Sempre sobra uma linha em branco no final pra continuar preenchendo (mesmo padrão da
   // ZBPP009 -- não obriga clicar em "+ Nova linha" primeiro).
   return [...linhas, linhaVazia()]
 }
+
+// Célula de texto memoizada com estado local (2026-07-17, mesmo padrão de CodigosSapPage.tsx)
+// -- digitar só propaga pro estado da linha no blur, não a cada tecla.
+const CelulaTexto = memo(function CelulaTexto({
+  valor,
+  onCommit,
+  numerico,
+  className,
+}: {
+  valor: string
+  onCommit: (novoValor: string) => void
+  // Quantidade aceita só número (2026-07-17, pedido explícito: "deixa o campo aberto
+  // aceitando só números"). `type="number"` (tentativa anterior) foi revertido -- pedido
+  // explícito: "esse seletor aí ficou um lixo" (as setinhas de incremento/decremento do
+  // input nativo, que nem fazem sentido pra um código de quantidade). `type="text"` +
+  // filtro no onChange (só dígitos, um "." opcional pra quantidade fracionária) +
+  // `inputMode="decimal"` -- mantém o teclado numérico no celular sem o visual de spinner.
+  numerico?: boolean
+  className: string
+}) {
+  const [local, setLocal] = useState(valor)
+  useEffect(() => setLocal(valor), [valor])
+  return (
+    <input
+      type="text"
+      inputMode={numerico ? 'decimal' : undefined}
+      value={local}
+      onChange={(e) => setLocal(numerico ? e.target.value.replace(/[^0-9.]/g, '') : e.target.value)}
+      onBlur={() => {
+        if (local !== valor) onCommit(local)
+      }}
+      className={className}
+    />
+  )
+})
+
+// Linha memoizada (2026-07-17) -- `linha` só muda de referência quando ela mesma é editada.
+const LinhaTecnicaRow = memo(function LinhaTecnicaRow({
+  linha,
+  selecionada,
+  onCampoCommit,
+  onRemover,
+  onToggleSelecao,
+}: {
+  linha: LinhaListaTecnica
+  selecionada: boolean
+  onCampoCommit: (id: string, campo: keyof LinhaListaTecnicaBase, valor: string) => void
+  onRemover: (id: string) => void
+  onToggleSelecao: (id: string) => void
+}) {
+  const classeInput =
+    'rounded border border-line bg-surface px-2 py-1.5 text-sm text-ink focus:border-brand-navy focus:outline-none'
+  return (
+    <tr>
+      <td className="px-3 py-1.5 text-center">
+        <input
+          type="checkbox"
+          checked={selecionada}
+          onChange={() => onToggleSelecao(linha._id)}
+          aria-label="Selecionar linha"
+        />
+      </td>
+      <td className="p-1.5">
+        <CelulaTexto
+          valor={linha.codigo_pai}
+          onCommit={(valor) => onCampoCommit(linha._id, 'codigo_pai', valor)}
+          className={`w-32 ${classeInput}`}
+        />
+      </td>
+      <td className="p-1.5">
+        <CelulaTexto
+          valor={linha.codigo_filho}
+          onCommit={(valor) => onCampoCommit(linha._id, 'codigo_filho', valor)}
+          className={`w-40 ${classeInput}`}
+        />
+      </td>
+      <td className="p-1.5">
+        <CelulaTexto
+          valor={linha.quantidade_de}
+          onCommit={(valor) => onCampoCommit(linha._id, 'quantidade_de', valor)}
+          numerico
+          className={`w-28 ${classeInput}`}
+        />
+      </td>
+      <td className="p-1.5">
+        <CelulaTexto
+          valor={linha.quantidade_para}
+          onCommit={(valor) => onCampoCommit(linha._id, 'quantidade_para', valor)}
+          numerico
+          className={`w-28 ${classeInput}`}
+        />
+      </td>
+      <td className="p-1.5 text-center">
+        <button
+          type="button"
+          onClick={() => onRemover(linha._id)}
+          className="text-ink-faint hover:text-red-600"
+          aria-label="Remover linha"
+        >
+          ×
+        </button>
+      </td>
+    </tr>
+  )
+})
 
 export default function ListaTecnicaPage() {
   const { mongoId } = useParams<{ mongoId: string }>()
@@ -50,8 +188,12 @@ export default function ListaTecnicaPage() {
   const [carregando, setCarregando] = useState(true)
   const [salvando, setSalvando] = useState(false)
   const [erro, setErro] = useState<string | null>(null)
-  const [selecionadas, setSelecionadas] = useState<Set<number>>(new Set())
+  // Seleção por _id estável, não índice (2026-07-17) -- mesmo motivo de CodigosSapPage.tsx.
+  const [selecionadas, setSelecionadas] = useState<Set<string>>(new Set())
   const { enviando, errosEnvio, bitinEnviado, enviar } = useEnviarBitin(mongoId)
+  // Aviso de alterações não salvas (2026-07-17, pedido explícito) -- ver
+  // hooks/useAvisoSairSemSalvar.ts.
+  const { setSujo, mostrarModal, setMostrarModal, tentarSair } = useAvisoSairSemSalvar()
 
   // Envio bem-sucedido navega direto pra aba BITin, já travada em modo enviado (2026-07-16,
   // mesma ideia de "Importar pra BITin" -- useEnviarBitin não navega mais sozinho, ver
@@ -81,65 +223,87 @@ export default function ListaTecnicaPage() {
     }
   }, [mongoId])
 
-  function atualizarLinha(index: number, campo: keyof LinhaListaTecnica, valor: string) {
+  // useCallback (2026-07-17) -- identidade estável permite o React.memo de LinhaTecnicaRow/
+  // CelulaTexto pular re-render de linhas não tocadas. Operam por `_id`, não índice.
+  const atualizarCampo = useCallback((id: string, campo: keyof LinhaListaTecnicaBase, valor: string) => {
     setLinhas((atual) => {
-      const copia = atual.map((l, i) => (i === index ? { ...l, [campo]: valor } : l))
+      const copia = atual.map((l) => (l._id === id ? { ...l, [campo]: valor } : l))
       // Igual à ZBPP009: garante sempre uma linha em branco no final pra continuar digitando.
       if (copia.every((l) => l.codigo_pai.trim() !== '' || l.codigo_filho.trim() !== '')) copia.push(linhaVazia())
       return copia
     })
-  }
+    setSujo(true)
+  }, [setSujo])
 
-  function removerLinha(index: number) {
-    setLinhas((atual) => atual.filter((_, i) => i !== index))
-  }
+  const removerLinha = useCallback((id: string) => {
+    setLinhas((atual) => atual.filter((l) => l._id !== id))
+    setSelecionadas((atual) => {
+      if (!atual.has(id)) return atual
+      const copia = new Set(atual)
+      copia.delete(id)
+      return copia
+    })
+    setSujo(true)
+  }, [setSujo])
 
   // Mesma barra de ferramentas da ZBPP009 (CodigosSapPage.tsx), 2026-07-16 -- decisão do
-  // usuário: "faz isso tb na lista técnica". Seleção por índice; "Excluir selecionadas" filtra
-  // numa única passada (não faz .splice em loop) pra não deslocar índices e apagar a linha
-  // errada.
-  function removerSelecionadas() {
+  // usuário: "faz isso tb na lista técnica".
+  const removerSelecionadas = useCallback(() => {
     setLinhas((atual) => {
-      const restantes = atual.filter((_, i) => !selecionadas.has(i))
+      const restantes = atual.filter((l) => !selecionadas.has(l._id))
       if (restantes.length === 0) return [linhaVazia()]
-      // Mesma regra de "sempre uma linha em branco no final" usada em atualizarLinha.
+      // Mesma regra de "sempre uma linha em branco no final" usada em atualizarCampo.
       if (restantes.every((l) => l.codigo_pai.trim() !== '' || l.codigo_filho.trim() !== '')) restantes.push(linhaVazia())
       return restantes
     })
     setSelecionadas(new Set())
-  }
+    setSujo(true)
+  }, [selecionadas, setSujo])
 
   function limparTudo() {
     if (!window.confirm('Limpar toda a tabela? Essa ação não pode ser desfeita.')) return
     setLinhas([linhaVazia()])
     setSelecionadas(new Set())
+    setSujo(true)
   }
 
-  function alternarSelecao(index: number) {
+  const alternarSelecao = useCallback((id: string) => {
     setSelecionadas((atual) => {
       const copia = new Set(atual)
-      if (copia.has(index)) copia.delete(index)
-      else copia.add(index)
+      if (copia.has(id)) copia.delete(id)
+      else copia.add(id)
       return copia
     })
-  }
+  }, [])
 
   function alternarSelecaoTodas() {
-    setSelecionadas((atual) => (atual.size === linhas.length ? new Set() : new Set(linhas.map((_, i) => i))))
+    setSelecionadas((atual) => (atual.size === linhas.length ? new Set() : new Set(linhas.map((l) => l._id))))
   }
 
   async function salvar() {
+    // Força o commit do blur ANTES de ler o estado (2026-07-17, mesmo truque de
+    // CodigosSapPage.tsx) -- células de texto só propagam pro estado da linha no blur.
+    if (document.activeElement instanceof HTMLElement) document.activeElement.blur()
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
     setErro(null)
     setSalvando(true)
     try {
+      let linhasAtuais: LinhaListaTecnica[] = []
+      setLinhas((atual) => {
+        linhasAtuais = atual
+        return atual
+      })
+
       // Linha sem código pai ou sem código filho não vira componente de verdade (mesma regra
       // de "linha em branco não persiste" da ZBPP009/BitinDetail).
-      const linhasPreenchidas = linhas.filter((l) => l.codigo_pai.trim() !== '' && l.codigo_filho.trim() !== '')
+      const linhasPreenchidas = linhasAtuais.filter((l) => l.codigo_pai.trim() !== '' && l.codigo_filho.trim() !== '')
       const grupos = new Map<string, ItemListaTecnica[]>()
       for (const l of linhasPreenchidas) {
-        const { codigo_pai, ...item } = l
+        const { codigo_pai, _id, ...item } = l
         const chave = codigo_pai.trim()
-        grupos.set(chave, [...(grupos.get(chave) ?? []), item])
+        // Operação derivada aqui (2026-07-17, campo removido da UI) -- ver derivarOperacao.
+        grupos.set(chave, [...(grupos.get(chave) ?? []), { ...item, operacao: derivarOperacao(item) }])
       }
 
       let materiaisAtualizados = materiais.map((m) => ({
@@ -165,8 +329,11 @@ export default function ListaTecnicaPage() {
       })
       setMateriais(materiaisAtualizados)
       setLinhas(materiaisParaLinhas(materiaisAtualizados))
+      setSujo(false)
+      return true
     } catch {
       setErro('Não foi possível salvar. Tente novamente.')
+      return false
     } finally {
       setSalvando(false)
     }
@@ -191,9 +358,30 @@ export default function ListaTecnicaPage() {
 
   return (
     <div className="mx-auto max-w-[1600px] pb-24">
-      <Link to={`/bitins/${mongoId}`} className="text-sm text-ink-muted hover:text-ink hover:underline">
+      {/* Intercepta o clique se houver alteração não salva (2026-07-17, ver
+          hooks/useAvisoSairSemSalvar.ts) -- botão em vez de Link, senão navegaria antes de
+          dar chance de mostrar o modal. */}
+      <button
+        type="button"
+        onClick={() => {
+          if (tentarSair()) navigate(`/bitins/${mongoId}`)
+        }}
+        className="text-sm text-ink-muted hover:text-ink hover:underline"
+      >
         ← Voltar pro BITin
-      </Link>
+      </button>
+
+      {mostrarModal && (
+        <AvisoSairModal
+          salvando={salvando}
+          onCancelar={() => setMostrarModal(false)}
+          onSairSemSalvar={() => navigate(`/bitins/${mongoId}`)}
+          onSalvarESair={async () => {
+            const ok = await salvar()
+            if (ok) navigate(`/bitins/${mongoId}`)
+          }}
+        />
+      )}
 
       <div className="mt-3 flex flex-wrap items-center gap-3">
         <h1 className="text-2xl font-semibold text-ink">{bitin?.codigo || 'Rascunho sem código'}</h1>
@@ -206,8 +394,9 @@ export default function ListaTecnicaPage() {
             automaticamente ao salvar, só com esse código, pra receber os componentes).
           </p>
           <p>
-            <strong>Operação</strong>: Inserir (novo, exige "Quantidade para"), Alterar (padrão,
-            exige "Quantidade para") ou Excluir (exige "Quantidade de").
+            Sem campo de <strong>Operação</strong> pra escolher -- é deduzido sozinho pelo que
+            você preenche: só "Quantidade para" = item novo (Inserir); só "Quantidade de" =
+            item removido (Excluir); os dois preenchidos = alteração normal (Alterar).
           </p>
           <p>
             <strong>Salvar</strong> guarda sem sair da tela. <strong>Importar</strong> salva e já
@@ -260,7 +449,10 @@ export default function ListaTecnicaPage() {
           </button>
           <button
             type="button"
-            onClick={() => setLinhas((atual) => [...atual, linhaVazia()])}
+            onClick={() => {
+              setLinhas((atual) => [...atual, linhaVazia()])
+              setSujo(true)
+            }}
             className="ml-auto rounded-lg border border-dashed border-line px-3 py-1.5 text-xs font-medium text-ink-muted hover:bg-surface"
           >
             + Nova linha
@@ -280,7 +472,6 @@ export default function ListaTecnicaPage() {
                   />
                 </th>
                 <th className="whitespace-nowrap px-3 py-2 font-medium">Código pai</th>
-                <th className="whitespace-nowrap px-3 py-2 font-medium">Operação</th>
                 <th className="whitespace-nowrap px-3 py-2 font-medium">Código filho</th>
                 <th className="whitespace-nowrap px-3 py-2 font-medium">Quantidade de</th>
                 <th className="whitespace-nowrap px-3 py-2 font-medium">Quantidade para</th>
@@ -288,72 +479,15 @@ export default function ListaTecnicaPage() {
               </tr>
             </thead>
             <tbody className="divide-y divide-line">
-              {linhas.map((l, i) => (
-                <tr key={i}>
-                  <td className="px-3 py-1.5 text-center">
-                    <input
-                      type="checkbox"
-                      checked={selecionadas.has(i)}
-                      onChange={() => alternarSelecao(i)}
-                      aria-label={`Selecionar linha ${i + 1}`}
-                    />
-                  </td>
-                  <td className="p-1.5">
-                    <input
-                      type="text"
-                      value={l.codigo_pai}
-                      onChange={(e) => atualizarLinha(i, 'codigo_pai', e.target.value)}
-                      className="w-32 rounded border border-line bg-surface px-2 py-1.5 text-sm text-ink focus:border-brand-navy focus:outline-none"
-                    />
-                  </td>
-                  <td className="p-1.5">
-                    <select
-                      value={l.operacao}
-                      onChange={(e) => atualizarLinha(i, 'operacao', e.target.value as OperacaoListaTecnica)}
-                      className="dark:[color-scheme:dark] [color-scheme:light] w-32 rounded border border-line bg-surface px-2 py-1.5 text-sm text-ink focus:border-brand-navy focus:outline-none"
-                    >
-                      <option value="inserir">Inserir</option>
-                      <option value="alterar">Alterar</option>
-                      <option value="excluir">Excluir</option>
-                    </select>
-                  </td>
-                  <td className="p-1.5">
-                    <input
-                      type="text"
-                      value={l.codigo_filho}
-                      onChange={(e) => atualizarLinha(i, 'codigo_filho', e.target.value)}
-                      className="w-40 rounded border border-line bg-surface px-2 py-1.5 text-sm text-ink focus:border-brand-navy focus:outline-none"
-                    />
-                  </td>
-                  <td className="p-1.5">
-                    <input
-                      type="text"
-                      value={l.quantidade_de}
-                      onChange={(e) => atualizarLinha(i, 'quantidade_de', e.target.value)}
-                      disabled={l.operacao === 'inserir'}
-                      className="w-28 rounded border border-line bg-surface px-2 py-1.5 text-sm text-ink focus:border-brand-navy focus:outline-none disabled:opacity-40"
-                    />
-                  </td>
-                  <td className="p-1.5">
-                    <input
-                      type="text"
-                      value={l.quantidade_para}
-                      onChange={(e) => atualizarLinha(i, 'quantidade_para', e.target.value)}
-                      disabled={l.operacao === 'excluir'}
-                      className="w-28 rounded border border-line bg-surface px-2 py-1.5 text-sm text-ink focus:border-brand-navy focus:outline-none disabled:opacity-40"
-                    />
-                  </td>
-                  <td className="p-1.5 text-center">
-                    <button
-                      type="button"
-                      onClick={() => removerLinha(i)}
-                      className="text-ink-faint hover:text-red-600"
-                      aria-label="Remover linha"
-                    >
-                      ×
-                    </button>
-                  </td>
-                </tr>
+              {linhas.map((l) => (
+                <LinhaTecnicaRow
+                  key={l._id}
+                  linha={l}
+                  selecionada={selecionadas.has(l._id)}
+                  onCampoCommit={atualizarCampo}
+                  onRemover={removerLinha}
+                  onToggleSelecao={alternarSelecao}
+                />
               ))}
             </tbody>
           </table>

@@ -359,6 +359,75 @@ status + por material (Alt/Esp/diffs de dados básicos/itens de lista técnica) 
 serve tanto de prévia durante o rascunho quanto de tela final depois de enviado. É um dict
 estruturado (não HTML/markdown) — a formatação visual fica a cargo do frontend.
 
+## Roteamento pós-envio (Cadastro → Processos, 2026-07-17)
+
+Depois de `"enviado"`, o BITin ainda passa por um segundo ciclo — não é mais só o estado
+binário rascunho/enviado. Substitui o e-mail automático que o VBA original (Módulo12.bas)
+disparava via Outlook ao enviar; em vez de e-mail, o setor Cadastro tem uma fila própria
+(`CadastroPage.tsx`) e o BITin carrega o próprio estado de roteamento em 3 campos novos,
+espelhados TANTO no documento Mongo top-level QUANTO dentro de `content` (achado real desta
+sessão: `encaminhar_para_roteiro`/`concluir_processamento`/`concluir_sem_roteiro`, abaixo,
+mutam o dict `content` que recebem — se um endpoint substituir `content` inteiro sem
+preservar esses campos, o espelho se perde mesmo o doc top-level continuando correto; ver
+`backend/api/bitins.py::atualizar_processos_endpoint`, bloco `campos_do_sistema`, pra como
+isso é reforçado no servidor):
+
+- `encaminhado_roteiro: bool` + `data_encaminhado_roteiro` — BITin foi encaminhado pro setor
+  Processos.
+- `processos_concluido: bool` + `data_processos_concluido` — Processos terminou a revisão (ou
+  o Cadastro decidiu que nem precisava, ver `sem_necessidade_roteiro` abaixo). Estado final —
+  o PDF de registro externo (`GET /bitins/{mongo_id}/pdf`) só faz sentido pra exibir/baixar
+  depois daqui (aba "Retornados de roteiro" em `CadastroPage.tsx`).
+- `sem_necessidade_roteiro: bool` — só pra exibição/auditoria, diferencia os dois jeitos de
+  chegar em `processos_concluido=True` (passou pelo Processos de verdade, ou o Cadastro
+  concluiu direto). Nenhum filtro depende dele — todos leem `processos_concluido`.
+
+**Decisão automática "precisa de roteiro"** — `bitin_document.precisa_roteiro(bitin)`: `True`
+se QUALQUER material do BITin tem `Alt` em `{"D/P", "D/-", "-/P"}` (pedido explícito do
+usuário, 2026-07-17: "quando não houver: D/P, D/- ou -/P... se tiver isso na alteração do
+código é roteiro, quando não tiver não é"). **Não confundir** com
+`bitin_document.revisar_roteiro(material)` — o lembrete "REVISAR ROTEIRO" por material,
+herdado do VBA original (Módulo4.bas), que usa um conjunto DIFERENTE (`{"D/P", "-/P"}`, sem
+o `"D/-"`) e não afeta roteamento nenhum, é só um aviso visual na tela de edição.
+
+`CadastroPage.tsx` usa essa decisão pra escolher qual ação mostrar na aba "Recebidos":
+
+```text
+enviado ──┬── precisa_roteiro=True  ──> Cadastro clica "Encaminhar para roteiro"
+          │                              (encaminhar_para_roteiro) ──> encaminhado_roteiro=True
+          │                              ──> Processos edita (única exceção a "enviado é
+          │                              travado pra sempre", ver abaixo) ──> Processos clica
+          │                              "Concluir processamento" (concluir_processamento)
+          │                              ──> processos_concluido=True
+          │
+          └── precisa_roteiro=False ──> Cadastro clica "Não precisa de roteiro"
+                                         (concluir_sem_roteiro) ──> os dois campos viram True
+                                         de uma vez, sem passar pelo Processos
+```
+
+As 3 funções de roteamento vivem em `scripts/bitin_lifecycle.py`, mesmo estilo de
+`enviar_bitin` (mutam o `bitin`/`content` recebido, levantam `ValueError` se a pré-condição
+não bate):
+
+- `encaminhar_para_roteiro(bitin)` — exige `status == "enviado"` e ainda não encaminhado.
+- `concluir_processamento(bitin)` — exige já encaminhado e ainda não concluído.
+- `concluir_sem_roteiro(bitin)` — exige `status == "enviado"` e ainda não encaminhado; seta
+  `encaminhado_roteiro`/`processos_concluido`/`sem_necessidade_roteiro` todos `True` de uma
+  vez. O endpoint (`backend/api/bitins.py::concluir_sem_roteiro_endpoint`) reforça
+  `precisa_roteiro` de novo no servidor antes de chamar — 400 se o BITin na verdade precisa
+  de roteiro (não confia só no frontend esconder o botão errado).
+
+**Única exceção a "enviado é travado pra sempre"**: enquanto `encaminhado_roteiro=True` e
+`processos_concluido=False`, o setor Processos (nível `NIVEL_PROCESSOS=89`, ou admin) PODE
+reeditar o BITin — `backend/api/bitins.py::_bitin_liberado_para_processos`/`_pode_editar`.
+Isso NÃO reaproveita `POST /bitins/draft` (esse caminho reverte `status` pra `"rascunho"` via
+`replace_one`, o que corromperia um BITin já enviado) — usa uma rota dedicada,
+`POST /bitins/{mongo_id}/atualizar-processos`, que só troca o campo `content` via `$set`,
+preservando status/número/histórico do envio.
+
+Processos não cria BITin (`POST /bitins/draft` sem `mongo_id` recusa com 403 pra esse
+nível) — só recebe da fila do Cadastro e revisa.
+
 ## Uso
 
 - `scripts/bitin_model.py`:

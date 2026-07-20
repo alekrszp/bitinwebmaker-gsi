@@ -1,15 +1,31 @@
+import { lazy, Suspense } from 'react'
 import { Route, Routes } from 'react-router-dom'
 import Layout from './components/Layout'
 import RequireAuth from './components/RequireAuth'
-import BitinDetail from './pages/BitinDetail'
-import CodigosSapPage from './pages/CodigosSapPage'
-import DefinirSenha from './pages/DefinirSenha'
-import GestaoUsuariosPage from './pages/GestaoUsuariosPage'
-import Home from './pages/Home'
-import ListaTecnicaPage from './pages/ListaTecnicaPage'
 import Login from './pages/Login'
-import MeusBitins from './pages/MeusBitins'
-import Settings from './pages/Settings'
+
+// Code-splitting por rota (2026-07-17, otimização de performance -- pedido explícito: "usa
+// como base o frontend antigo que tinha uma otimização feita"). Antes todas as páginas
+// (BitinDetail, CodigosSapPage, ListaTecnicaPage -- as telas mais pesadas do app) entravam
+// no MESMO bundle inicial, carregado antes até da tela de login aparecer. `lazy` faz cada
+// rota virar um chunk próprio, baixado só quando o engenheiro navega até ela -- carrega mais
+// rápido, principalmente em conexão ruim/celular (uso de campo, não só escritório). `Login`
+// fica FORA do lazy de propósito -- é a primeira tela pra quem não está logado, lazy-load
+// dela só atrasaria o primeiro paint sem ganho nenhum (o chunk teria que baixar de qualquer
+// jeito antes de mostrar algo).
+const Home = lazy(() => import('./pages/Home'))
+const MeusBitins = lazy(() => import('./pages/MeusBitins'))
+const BitinDetail = lazy(() => import('./pages/BitinDetail'))
+const CodigosSapPage = lazy(() => import('./pages/CodigosSapPage'))
+const ListaTecnicaPage = lazy(() => import('./pages/ListaTecnicaPage'))
+const Settings = lazy(() => import('./pages/Settings'))
+const GestaoUsuariosPage = lazy(() => import('./pages/GestaoUsuariosPage'))
+const CadastroPage = lazy(() => import('./pages/CadastroPage'))
+const DefinirSenha = lazy(() => import('./pages/DefinirSenha'))
+
+function CarregandoRota() {
+  return <p className="p-6 text-sm text-ink-muted">Carregando...</p>
+}
 
 function App() {
   return (
@@ -23,7 +39,9 @@ function App() {
         path="/definir-senha"
         element={
           <RequireAuth>
-            <DefinirSenha />
+            <Suspense fallback={<CarregandoRota />}>
+              <DefinirSenha />
+            </Suspense>
           </RequireAuth>
         }
       />
@@ -34,16 +52,73 @@ function App() {
           </RequireAuth>
         }
       >
-        <Route path="/" element={<Home />} />
-        <Route path="/bitins" element={<MeusBitins />} />
+        <Route
+          path="/"
+          element={
+            <Suspense fallback={<CarregandoRota />}>
+              <Home />
+            </Suspense>
+          }
+        />
+        <Route
+          path="/bitins"
+          element={
+            <Suspense fallback={<CarregandoRota />}>
+              <MeusBitins />
+            </Suspense>
+          }
+        />
         {/* /bitins/novo removida (2026-07-16) -- "+ Novo BITin" agora cria o rascunho direto
             via POST /bitins/draft e navega pro /bitins/:mongoId real, sem tela intermediária
             em branco (ver lib/criarBitin.ts). */}
-        <Route path="/bitins/:mongoId/codigos-sap" element={<CodigosSapPage />} />
-        <Route path="/bitins/:mongoId/lista-tecnica" element={<ListaTecnicaPage />} />
-        <Route path="/bitins/:mongoId" element={<BitinDetail />} />
-        <Route path="/configuracoes" element={<Settings />} />
-        <Route path="/usuarios" element={<GestaoUsuariosPage />} />
+        <Route
+          path="/bitins/:mongoId/codigos-sap"
+          element={
+            <Suspense fallback={<CarregandoRota />}>
+              <CodigosSapPage />
+            </Suspense>
+          }
+        />
+        <Route
+          path="/bitins/:mongoId/lista-tecnica"
+          element={
+            <Suspense fallback={<CarregandoRota />}>
+              <ListaTecnicaPage />
+            </Suspense>
+          }
+        />
+        <Route
+          path="/bitins/:mongoId"
+          element={
+            <Suspense fallback={<CarregandoRota />}>
+              <BitinDetail />
+            </Suspense>
+          }
+        />
+        <Route
+          path="/configuracoes"
+          element={
+            <Suspense fallback={<CarregandoRota />}>
+              <Settings />
+            </Suspense>
+          }
+        />
+        <Route
+          path="/usuarios"
+          element={
+            <Suspense fallback={<CarregandoRota />}>
+              <GestaoUsuariosPage />
+            </Suspense>
+          }
+        />
+        <Route
+          path="/cadastro"
+          element={
+            <Suspense fallback={<CarregandoRota />}>
+              <CadastroPage />
+            </Suspense>
+          }
+        />
       </Route>
     </Routes>
   )

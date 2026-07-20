@@ -194,6 +194,7 @@ export default function CriarUsuarioForm({ subgrupos, onCriado }: { subgrupos: S
             {/* Permissão É o número (permission_level) -- só o número no UI (2026-07-17,
                 pedido explícito), sem rótulo textual ao lado. */}
             <option value={99}>99</option>
+            <option value={89}>89</option>
             <option value={88}>88</option>
             <option value={77}>77</option>
             <option value={66}>66</option>
@@ -211,6 +212,7 @@ export default function CriarUsuarioForm({ subgrupos, onCriado }: { subgrupos: S
             className="w-full rounded-lg border border-line bg-surface px-3 py-2 text-sm text-ink focus:border-brand-navy focus:outline-none focus:ring-2 focus:ring-brand-navy/20"
           >
             <option value="cadastro">Cadastro</option>
+            <option value="processos">Processos</option>
             <option value="gestor">Gestor</option>
             <option value="usuario">Usuário</option>
           </select>

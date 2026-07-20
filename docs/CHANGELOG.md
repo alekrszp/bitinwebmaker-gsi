@@ -2,6 +2,71 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v0.9.0] - 2026-07-20
+
+Auditoria completa das automações do VBA original (checklist, Alt/Esp/DWG-SAT, "REVISAR
+ROTEIRO"), fluxo novo de roteamento pós-envio com os setores Cadastro e Processos (substitui
+o e-mail automático do VBA), e uma suíte de testes de ponta a ponta dedicada que já pegou 2
+bugs reais no processo.
+
+### Added
+
+- **Sugestão automática de Alt/Esp/nota DWG-SAT** (`scripts/bitin_document.py::
+  suggest_impactos`) a partir do código de Grupo de Mercadorias — só preenche campo em
+  branco, nunca sobrescreve o que o engenheiro já declarou; código SAP desconhecido não
+  sugere nada.
+- **Checklist/setores recalculam ao vivo** (`POST /bitins/preview-resumo`) — antes só
+  atualizava depois de "Salvar".
+- **Aviso "Revisar roteiro de fabricação"** por material quando Alt é `"D/P"`/`"-/P"`
+  (`bitin_document.revisar_roteiro`) — lembrete herdado da macro original (Módulo4.bas).
+- **Setor Cadastro** (`CadastroPage.tsx`, `permission_level=88`): fila própria com 3 abas
+  (Recebidos/Enviados para roteiros/Retornados de roteiro) — substitui o e-mail automático
+  via Outlook que o VBA original disparava (Módulo12.bas).
+- **Setor Processos** (novo nível `permission_level=89`, `NIVEL_PROCESSOS`): recebe BITins
+  encaminhados pelo Cadastro, é a **única exceção do sistema** a "BITin enviado é travado pra
+  sempre" — reedita enquanto `encaminhado_roteiro=True` e `processos_concluido=False`
+  (`POST /bitins/{id}/atualizar-processos`), depois conclui
+  (`POST /bitins/{id}/concluir-processos`). Não cria BITin.
+- **Decisão automática "precisa de roteiro"** (`bitin_document.precisa_roteiro`): `True` se
+  algum material tem Alt em `{"D/P", "D/-", "-/P"}` — quando `False`, o Cadastro conclui
+  direto sem passar pelo Processos (`POST /bitins/{id}/concluir-sem-roteiro`), PDF liberado
+  na hora.
+- **`tests/test_bitin_workflow_e2e.py`**: suite de ponta a ponta dedicada — história completa
+  do BITin pelos 4 papéis (Engenheiro/Cadastro/Processos/Admin), nos dois ramos (precisa ou
+  não de roteiro), com matriz de visibilidade por papel.
+
+### Fixed
+
+- **Visibilidade do Cadastro estava escopada por Subgrupo** — herdada de quando esse nível só
+  significava "colega com acesso extra" (2026-07-16), de antes de virar hub de roteamento;
+  fazia BITins de fora do Subgrupo do Cadastro sumirem da fila "Recebidos". Achado pelo teste
+  de ponta a ponta novo. Agora é global: qualquer BITin `"enviado"`, de qualquer autor.
+- **`POST /atualizar-processos` apagava `encaminhado_roteiro` de dentro de `content`** quando
+  o payload não vinha com esse campo espelhado — o `/concluir-processos` seguinte quebrava
+  com "ainda não foi encaminhado", mesmo o BITin estando de fato encaminhado. O servidor
+  agora reforça todo campo administrado pelo sistema (`bitin`, `status`,
+  `encaminhado_roteiro`, `processos_concluido`, etc.) por cima do payload do cliente.
+
+### Removed
+
+- **Botão "Enviar e-mail"** (`MeusBitins.tsx`) e o endpoint `GET /users/cadastro-emails` —
+  substituídos de vez pela fila do Cadastro.
+
+### Changed
+
+- Nem Cadastro (88) nem Processos (89) exigem Subgrupo mais (tirados de
+  `NIVEIS_QUE_EXIGEM_SUBGRUPO`) — os dois são times centrais, não presos a um Subgrupo
+  específico.
+- "+ Novo BITin" some pra quem é só Processos (`MeusBitins.tsx`/`Home.tsx`) — backend também
+  recusa com 403.
+
+### Notes
+
+- 322 testes automatizados (motor Python + backend + ponta a ponta), `ruff`/`tsc`/`oxlint`/
+  `vite build` limpos.
+- Documentação atualizada em `docs/BITIN_MODEL.md` (seção "Roteamento pós-envio") e
+  `docs/BACKEND.md` (tabela de permissões + endpoints novos).
+
 ## [v0.8.5] - 2026-07-17
 
 Reativação de usuário vira recadastro (e-mail + senha novos do zero), admin "super" oculto

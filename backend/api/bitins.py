@@ -10,7 +10,14 @@ from sqlalchemy.orm import Session
 
 import backend.scripts_path as scripts_path  # noqa: F401  (garante sys.path antes dos imports abaixo)
 from backend.api.users import _usuarios_do_mesmo_subgrupo_query
-from backend.auth.deps import NIVEL_ADMIN, NIVEL_CADASTRO, NIVEL_GESTOR, get_current_active_user
+from backend.auth.deps import (
+    NIVEL_ADMIN,
+    NIVEL_CADASTRO,
+    NIVEL_GESTOR,
+    NIVEL_PROCESSOS,
+    check_permission,
+    get_current_active_user,
+)
 from backend.auth.models import Usuario
 from backend.bitin_number import SetorInvalido, gerar_e_salvar_bitin_sql
 from backend.db.mongodb import get_mongo_db
@@ -52,6 +59,14 @@ class SapPasteRequest(BaseModel):
     raw_text: str
 
 
+class PreviewResumoRequest(BaseModel):
+    content: dict[str, Any]
+
+
+class AtualizarProcessosRequest(BaseModel):
+    content: dict[str, Any]
+
+
 class BitinResponse(BaseModel):
     mongo_id: str
     codigo: str | None = None
@@ -65,6 +80,18 @@ class BitinResponse(BaseModel):
     # (modo leitura) quando quem está vendo não pode editar, em vez de deixar editar e só
     # descobrir o 403 ao tentar salvar. Ver _pode_editar. Adicionado em 2026-07-14.
     pode_editar: bool = True
+    # Fila do setor Cadastro (2026-07-17, substitui o e-mail automático do Módulo12.bas) --
+    # só passa a ter sentido depois de status==enviado, ver bitin_lifecycle.encaminhar_para_roteiro.
+    encaminhado_roteiro: bool = False
+    data_encaminhado_roteiro: str | None = None
+    # Setor Processos (2026-07-17) -- ver bitin_lifecycle.concluir_processamento.
+    processos_concluido: bool = False
+    data_processos_concluido: str | None = None
+    sem_necessidade_roteiro: bool = False
+    # Calculado por requisição (não vem do Mongo, ver bitin_document.precisa_roteiro) -- true
+    # se algum material tem Alt em {"D/P","D/-","-/P"}. Decide se a CadastroPage.tsx mostra
+    # "Encaminhar para roteiro" ou "Não precisa de roteiro" na aba "Recebidos".
+    precisa_roteiro: bool = False
 
 
 class EnviarResponse(BaseModel):
@@ -73,13 +100,26 @@ class EnviarResponse(BaseModel):
     bitin: BitinResponse | None = None
 
 
+def _bitin_liberado_para_processos(doc: dict[str, Any], current_user: Usuario) -> bool:
+    """Única exceção à regra "enviado é travado pra sempre" (2026-07-17) -- Processos/Admin
+    podem reeditar um BITin já enviado ENQUANTO ele estiver na fila do Cadastro
+    (`encaminhado_roteiro=True`) e ainda não tiver sido concluído
+    (`processos_concluido`). Ver bitin_lifecycle.concluir_processamento."""
+    return (
+        current_user.permission_level in (NIVEL_PROCESSOS, NIVEL_ADMIN)
+        and doc.get("encaminhado_roteiro", False)
+        and not doc.get("processos_concluido", False)
+    )
+
+
 def _pode_editar(doc: dict[str, Any], current_user: Usuario) -> bool:
     """Mesmo critério de _require_owner_or_admin, mas devolve bool em vez de levantar --
     usado pro frontend saber de antemão se deve abrir a tela travada (modo leitura), em vez
-    de deixar editar e só descobrir com um 403 ao tentar salvar. Um BITin já enviado nunca
-    pode ser editado, nem pelo dono/admin (ver bitin_lifecycle)."""
+    de deixar editar e só descobrir com um 403 ao tentar salvar. Um BITin já enviado é travado
+    pra todo mundo (nem dono/admin edita), EXCETO a janela de reedição do Processos, ver
+    _bitin_liberado_para_processos."""
     if doc.get("status") == STATUS_ENVIADO:
-        return False
+        return _bitin_liberado_para_processos(doc, current_user)
     criado_por = doc.get("criado_por")
     if criado_por and criado_por != current_user.email and current_user.permission_level < NIVEL_ADMIN:
         return False
@@ -97,6 +137,12 @@ def _doc_to_response(doc: dict[str, Any], current_user: Usuario) -> BitinRespons
         created_at=doc.get("created_at", ""),
         updated_at=doc.get("updated_at", ""),
         pode_editar=_pode_editar(doc, current_user),
+        encaminhado_roteiro=doc.get("encaminhado_roteiro", False),
+        data_encaminhado_roteiro=doc.get("data_encaminhado_roteiro"),
+        processos_concluido=doc.get("processos_concluido", False),
+        data_processos_concluido=doc.get("data_processos_concluido"),
+        sem_necessidade_roteiro=doc.get("sem_necessidade_roteiro", False),
+        precisa_roteiro=bitin_document.precisa_roteiro(doc.get("content", {})),
     )
 
 
@@ -190,6 +236,15 @@ async def create_or_update_draft(
         # frontend, que qualquer requisição manual poderia contornar.
         solicitante = existing.get("content", {}).get("solicitante")
     else:
+        # Processos (2026-07-17, pedido explícito: "processos não pode fazer bitin, só fazer
+        # a parte da revisão de roteiro") -- só reedita BITins que chegaram na fila
+        # (draft_in.mongo_id preenchido, bloco acima), nunca cria um do zero. Admin continua
+        # liberado (não é um nível operacional restrito, mesmo padrão dos outros gates).
+        if current_user.permission_level == NIVEL_PROCESSOS:
+            raise HTTPException(
+                status_code=403,
+                detail="O setor Processos não cria BITins -- só revisa os encaminhados pelo Cadastro.",
+            )
         mongo_id = str(uuid.uuid4())
         created_at = now
         criado_por = current_user.email
@@ -263,6 +318,8 @@ async def list_bitins(
     status: str | None = None,
     termo: str | None = None,
     campo: str | None = None,
+    encaminhado_roteiro: bool | None = None,
+    processos_concluido: bool | None = None,
     limit: int = 20,
     skip: int = 0,
     current_user: Usuario = Depends(get_current_active_user),
@@ -279,10 +336,18 @@ async def list_bitins(
     #   cai pra "só os próprios", pra não perder o acesso ao próprio trabalho (mesmo raciocínio
     #   de list_users, mas aqui a consequência de "não vê nada" seria pior: perderia os
     #   rascunhos que ele mesmo criou).
-    # - Cadastro (88, NOVO 2026-07-16): cadastra/edita BITins mas não é gestor de ninguém --
-    #   vê os PRÓPRIOS BITins em qualquer status (incl. rascunho), e dos colegas de mesmo
-    #   Subgrupo só os já ENVIADOS (rascunho alheio continua privado). Sem subgrupo nenhum, cai
-    #   pra "só os próprios", mesmo raciocínio do Gestor acima.
+    # - Cadastro (88): time central que recebe TODO BITin enviado por QUALQUER pessoa, de
+    #   qualquer Subgrupo (é literalmente o trabalho do setor -- "Recebidos"/"Enviados para
+    #   roteiros"/"Retornados de roteiro" em CadastroPage.tsx cobrem o sistema inteiro, não só
+    #   um Subgrupo). Vê também os PRÓPRIOS BITins em qualquer status (incl. rascunho, igual
+    #   usuário comum) -- só rascunho ALHEIO continua privado. Corrigido em 2026-07-20: até
+    #   aqui a regra ainda escopava "enviados de colega" por Subgrupo em comum (herdada de
+    #   2026-07-16, de antes do Cadastro virar um hub de roteamento) -- um teste de ponta a
+    #   ponta (tests/test_bitin_workflow_e2e.py) pegou um BITin de um engenheiro sem Subgrupo
+    #   em comum com o Cadastro sumindo da fila "Recebidos", que é exatamente o cenário real
+    #   que este nível existe pra cobrir.
+    # - Processos (89, NOVO 2026-07-17): mesmo raciocínio de "time central" -- ver o `elif`
+    #   dedicado logo abaixo, não cai nesta lista porque teria que vir ANTES do `>= NIVEL_GESTOR`.
     # - Admin (99): sem restrição nenhuma -- vê o sistema inteiro (decisão de 2026-07-15:
     #   antes admin também ficava preso a "só os meus" aqui; usuário confirmou "Admin vê tudo").
     #
@@ -294,17 +359,27 @@ async def list_bitins(
     if current_user.permission_level >= NIVEL_ADMIN:
         pass  # sem restrição -- nenhuma condição de escopo
     elif current_user.permission_level == NIVEL_CADASTRO:
-        colegas = _usuarios_do_mesmo_subgrupo_query(db, current_user).all()
-        emails_colegas = [u.email for u in colegas if u.email != current_user.email]
-        if emails_colegas:
-            condicoes.append({
-                "$or": [
-                    {"criado_por": current_user.email},
-                    {"criado_por": {"$in": emails_colegas}, "status": STATUS_ENVIADO},
-                ]
-            })
-        else:
-            condicoes.append({"criado_por": current_user.email})
+        # Global de propósito (2026-07-20, ver comentário acima) -- qualquer BITin enviado,
+        # de qualquer autor/Subgrupo, mais os próprios em qualquer status (rascunho incluso).
+        condicoes.append({
+            "$or": [
+                {"criado_por": current_user.email},
+                {"status": STATUS_ENVIADO},
+            ]
+        })
+    elif current_user.permission_level == NIVEL_PROCESSOS:
+        # Time central (não escopado por Subgrupo, ver NIVEL_PROCESSOS em backend/auth/deps.py)
+        # -- vê os PRÓPRIOS BITins em qualquer status, mais TODA a fila encaminhada pelo
+        # Cadastro (concluída ou não, pra "aparecer os que devem ir ou não pra processo").
+        # Checado ANTES de `>= NIVEL_GESTOR` de propósito: 89 também seria capturado por esse
+        # `>=` (é maior que 77), o que daria a Processos o escopo errado (colegas de Subgrupo)
+        # em vez do escopo certo (fila global).
+        condicoes.append({
+            "$or": [
+                {"criado_por": current_user.email},
+                {"encaminhado_roteiro": True},
+            ]
+        })
     elif current_user.permission_level >= NIVEL_GESTOR:
         colegas = _usuarios_do_mesmo_subgrupo_query(db, current_user).all()
         emails = [u.email for u in colegas]
@@ -316,6 +391,22 @@ async def list_bitins(
         condicoes.append({"criado_por": current_user.email})
     if status:
         condicoes.append({"status": status})
+    if encaminhado_roteiro is not None:
+        # Só faz sentido combinado com status=enviado (a fila do Cadastro sempre manda os
+        # dois juntos) -- sem filtro de status, filtra em qualquer status mesmo assim, sem
+        # erro (rascunhos nunca têm esse campo == True, então o resultado natural é vazio).
+        # BITins enviados ANTES deste campo existir não têm a chave no Mongo -- "$ne: True"
+        # (em vez de "== False") trata "campo ausente" como "ainda não encaminhado", senão
+        # eles ficariam invisíveis pras duas abas da fila do Cadastro.
+        condicoes.append({
+            "encaminhado_roteiro": {"$ne": True} if not encaminhado_roteiro else True
+        })
+    if processos_concluido is not None:
+        # Mesmo raciocínio de encaminhado_roteiro acima -- alimenta a 3ª aba da CadastroPage
+        # ("Pronto para cadastro", 2026-07-17): Processos concluiu e devolveu pro Cadastro.
+        condicoes.append({
+            "processos_concluido": {"$ne": True} if not processos_concluido else True
+        })
     if termo:
         # re.escape antes de virar $regex do Mongo -- sem isso, metacaracteres de regex
         # digitados pelo usuário (ex.: "(", "*") viram parte do padrão em vez de texto
@@ -391,6 +482,23 @@ async def get_resumo(
     if not doc:
         raise HTTPException(status_code=404, detail="BITin não encontrado")
     return bitin_view.render_bitin_summary(doc["content"], VBA_MAPPING_CONFIG, DOCUMENT_CONFIG)
+
+
+@router.post("/preview-resumo")
+def preview_resumo(
+    payload: PreviewResumoRequest,
+    _current_user: Usuario = Depends(get_current_active_user),
+):
+    """Mesmo cálculo de GET /{mongo_id}/resumo (checklist com sugestão automática, setores
+    acionados), mas a partir do `content` que está NA TELA agora -- sem salvar nada, sem
+    Mongo/mongo_id nenhum envolvido (2026-07-17, pedido explícito: "eu quero que marque ao
+    vivo igual com os setores afetados" -- checklist/setores só recarregavam depois de um
+    Salvar; esta rota deixa o frontend chamar em background, com um pequeno debounce, sem
+    persistir rascunho nenhum, então não interfere com o aviso de "alterações não salvas"
+    (BitinDetail.tsx) nem precisa de autosave de verdade. `render_bitin_summary` já usa
+    `.get(...)` com default em tudo (ver scripts/bitin_view.py), então um `content` parcial
+    (sem `status`/`data_envio`, que só existem no doc persistido) funciona sem erro."""
+    return bitin_view.render_bitin_summary(payload.content, VBA_MAPPING_CONFIG, DOCUMENT_CONFIG)
 
 
 @router.post("/{mongo_id}/enviar", response_model=EnviarResponse)
@@ -476,3 +584,161 @@ async def enviar_bitin_endpoint(
 
     updated_doc = await collection.find_one({"_id": mongo_id})
     return EnviarResponse(ok=True, errors=[], bitin=_doc_to_response(updated_doc, current_user))
+
+
+@router.post("/{mongo_id}/encaminhar-roteiro", response_model=BitinResponse)
+async def encaminhar_roteiro_endpoint(
+    mongo_id: str,
+    current_user: Usuario = Depends(check_permission(NIVEL_CADASTRO, NIVEL_ADMIN)),
+    mongo_db=Depends(get_mongo_db),
+):
+    """Substitui o e-mail automático do Módulo12.bas: quem é do Cadastro (ou admin) marca
+    aqui que terminou de processar o BITin e encaminhou pro setor Roteiro -- alimenta a fila
+    em CadastroPage.tsx (aba "Enviados para roteiro"). Ver bitin_lifecycle.encaminhar_para_roteiro."""
+    collection = mongo_db["bitin_contents"]
+    doc = await collection.find_one({"_id": mongo_id})
+    if not doc:
+        raise HTTPException(status_code=404, detail="BITin não encontrado")
+
+    content = doc.get("content", {})
+    try:
+        bitin_lifecycle.encaminhar_para_roteiro(content)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    await collection.update_one(
+        {"_id": mongo_id},
+        {"$set": {
+            "content": content,
+            "encaminhado_roteiro": True,
+            "data_encaminhado_roteiro": content["data_encaminhado_roteiro"],
+            "updated_at": datetime.now().isoformat(),
+        }},
+    )
+    updated_doc = await collection.find_one({"_id": mongo_id})
+    return _doc_to_response(updated_doc, current_user)
+
+
+@router.post("/{mongo_id}/concluir-sem-roteiro", response_model=BitinResponse)
+async def concluir_sem_roteiro_endpoint(
+    mongo_id: str,
+    current_user: Usuario = Depends(check_permission(NIVEL_CADASTRO, NIVEL_ADMIN)),
+    mongo_db=Depends(get_mongo_db),
+):
+    """Alternativa a /encaminhar-roteiro quando o BITin não precisa passar pelo Processos
+    (2026-07-17, ver bitin_document.precisa_roteiro) -- chega direto no estado final (PDF
+    liberado, aba "Retornados de roteiro" em CadastroPage.tsx), sem abrir a janela de
+    reedição do Processos. Reforça a regra no servidor (não confia só no frontend esconder o
+    botão errado): 400 se o BITin na verdade precisa de roteiro."""
+    collection = mongo_db["bitin_contents"]
+    doc = await collection.find_one({"_id": mongo_id})
+    if not doc:
+        raise HTTPException(status_code=404, detail="BITin não encontrado")
+
+    content = doc.get("content", {})
+    if bitin_document.precisa_roteiro(content):
+        raise HTTPException(
+            status_code=400,
+            detail="Este BITin tem alteração de Alt que exige revisão de roteiro -- use Encaminhar para roteiro.",
+        )
+    try:
+        bitin_lifecycle.concluir_sem_roteiro(content)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    await collection.update_one(
+        {"_id": mongo_id},
+        {"$set": {
+            "content": content,
+            "encaminhado_roteiro": True,
+            "data_encaminhado_roteiro": content["data_encaminhado_roteiro"],
+            "processos_concluido": True,
+            "data_processos_concluido": content["data_processos_concluido"],
+            "sem_necessidade_roteiro": True,
+            "updated_at": datetime.now().isoformat(),
+        }},
+    )
+    updated_doc = await collection.find_one({"_id": mongo_id})
+    return _doc_to_response(updated_doc, current_user)
+
+
+@router.post("/{mongo_id}/atualizar-processos", response_model=BitinResponse)
+async def atualizar_processos_endpoint(
+    mongo_id: str,
+    payload: AtualizarProcessosRequest,
+    current_user: Usuario = Depends(check_permission(NIVEL_PROCESSOS, NIVEL_ADMIN)),
+    mongo_db=Depends(get_mongo_db),
+):
+    """Única forma de editar um BITin já enviado -- NÃO reaproveita POST /draft de propósito:
+    o caminho de atualização de /draft faz um replace_one com status=rascunho HARDCODED (ver
+    create_or_update_draft), que reverteria este BITin pra rascunho e apagaria sql_ref_id/
+    data_envio/encaminhado_roteiro se o bloqueio de lá fosse simplesmente relaxado. Aqui o
+    $set toca SÓ o campo content -- status/número/histórico do envio ficam intactos."""
+    collection = mongo_db["bitin_contents"]
+    doc = await collection.find_one({"_id": mongo_id})
+    if not doc:
+        raise HTTPException(status_code=404, detail="BITin não encontrado")
+    if not _bitin_liberado_para_processos(doc, current_user):
+        raise HTTPException(
+            status_code=400,
+            detail="Este BITin não está liberado para edição pelo Processos no momento.",
+        )
+
+    # Campos administrados pelo SISTEMA dentro de `content` (não só "bitin") são reforçados
+    # aqui no servidor, nunca confiados ao payload -- mesmo raciocínio de "solicitante" em
+    # create_or_update_draft. Achado real (2026-07-20, testes de ponta a ponta em
+    # tests/test_bitin_workflow_e2e.py): `encaminhar_para_roteiro`/`concluir_processamento`
+    # espelham seu estado DENTRO de `content` (não só no doc top-level) -- um payload montado
+    # do zero (sem vir de `...conteudoExistente` como o frontend sempre faz, ver
+    # BitinDetail.tsx::montarConteudo) apagava esse espelho e quebrava
+    # concluir_processamento logo em seguida ("ainda não foi encaminhado"), mesmo o BITin
+    # estando de fato encaminhado no doc.
+    campos_do_sistema = (
+        "bitin", "status", "data_envio", "encaminhado_roteiro", "data_encaminhado_roteiro",
+        "processos_concluido", "data_processos_concluido", "sem_necessidade_roteiro",
+        "data_solicitacao", "solicitante",
+    )
+    doc_content = doc.get("content", {})
+    content = {
+        **payload.content,
+        **{campo: doc_content[campo] for campo in campos_do_sistema if campo in doc_content},
+    }
+    await collection.update_one(
+        {"_id": mongo_id},
+        {"$set": {"content": content, "updated_at": datetime.now().isoformat()}},
+    )
+    updated_doc = await collection.find_one({"_id": mongo_id})
+    return _doc_to_response(updated_doc, current_user)
+
+
+@router.post("/{mongo_id}/concluir-processos", response_model=BitinResponse)
+async def concluir_processos_endpoint(
+    mongo_id: str,
+    current_user: Usuario = Depends(check_permission(NIVEL_PROCESSOS, NIVEL_ADMIN)),
+    mongo_db=Depends(get_mongo_db),
+):
+    """Fecha a janela de reedição aberta por /encaminhar-roteiro -- depois disso o BITin
+    volta a ficar travado pra todo mundo, inclusive Processos. Ver
+    bitin_lifecycle.concluir_processamento."""
+    collection = mongo_db["bitin_contents"]
+    doc = await collection.find_one({"_id": mongo_id})
+    if not doc:
+        raise HTTPException(status_code=404, detail="BITin não encontrado")
+
+    content = doc.get("content", {})
+    try:
+        bitin_lifecycle.concluir_processamento(content)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    await collection.update_one(
+        {"_id": mongo_id},
+        {"$set": {
+            "content": content,
+            "processos_concluido": True,
+            "data_processos_concluido": content["data_processos_concluido"],
+            "updated_at": datetime.now().isoformat(),
+        }},
+    )
+    updated_doc = await collection.find_one({"_id": mongo_id})
+    return _doc_to_response(updated_doc, current_user)

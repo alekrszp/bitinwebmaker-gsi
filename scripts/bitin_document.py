@@ -86,6 +86,91 @@ def suggest_esp(plan2_row: dict[int, str], config: dict[str, Any]) -> str:
     return "-"
 
 
+def _plan2_row_from_material(material: dict[str, Any], document_config: dict[str, Any]) -> dict[int, str]:
+    """Adapta `materiais[].alteracoes.dados_basicos` (nosso formato -- chaveado por nome de
+    campo, ex. `dados_basicos["grupo_mercadorias"]["de"]`) pro formato `dict[coluna] -> valor`
+    que `suggest_alt`/`suggest_esp`/`suggest_dwg_sat_action` esperam (o layout real da aba
+    Plan2 que a macro original lia). NÃO é um adaptador genérico pra Plan2 inteira -- só os 4
+    campos que essas 3 funções realmente usam (grupo_mercadorias, desenho, nivel_revisao,
+    texto_pedidos_compras)."""
+    dados_basicos = material.get("alteracoes", {}).get("dados_basicos", {})
+    cols = document_config["plan2_columns"]
+
+    def entry(campo: str) -> dict[str, str]:
+        return dados_basicos.get(campo, {})
+
+    grupo = entry("grupo_mercadorias")
+    desenho = entry("desenho")
+    nivel_revisao = entry("nivel_revisao")
+    texto_pedido = entry("texto_pedidos_compras")
+
+    return {
+        cols["grupo_mercadorias_atual"]: grupo.get("de", ""),
+        cols["grupo_mercadorias_novo"]: grupo.get("para", ""),
+        cols["desenho_atual"]: desenho.get("de", ""),
+        cols["nivel_revisao_novo"]: nivel_revisao.get("para", ""),
+        cols["texto_pedido_compras_novo"]: texto_pedido.get("para", ""),
+    }
+
+
+def suggest_impactos(material: dict[str, Any], document_config: dict[str, Any]) -> dict[str, str | None]:
+    """Sugestões automáticas de Alt/Esp/nota DWG-SAT a partir do código de Grupo de
+    Mercadorias (2026-07-17, pedido explícito do usuário: "coloca os dois, códigos já
+    existentes puxam mas o engenheiro pode mexer, mas tem que preencher automatico sozinho").
+
+    Reabre PARCIALMENTE a decisão de 2026-07-10 (docs/BITIN_MODEL.md, "Alt/Esp declarados
+    pelo engenheiro") -- aquela decisão vale ainda: o campo AUTORITATIVO continua sendo o que
+    o engenheiro declarou em `impactos_operacionais` (nunca sobrescrito à força), e o risco
+    documentado (catálogo de código SAP é vasto e muda) continua real. A diferença agora é só
+    que a sugestão passou de "nunca usada" pra "usada como PONTO DE PARTIDA, só quando o campo
+    ainda está em branco" (ver frontend/src/pages/BitinDetail.tsx, onde a sugestão só
+    preenche `impactos_operacionais.alt`/`.esp` quando o valor ainda é "-", e só adiciona a
+    nota DWG/SAT se ela ainda não existir) -- código SAP desconhecido/não mapeado não sugere
+    nada (`suggest_dwg_sat_action` devolve `None`), o campo fica em branco esperando o
+    engenheiro preencher, exatamente como já era antes; nunca quebra silenciosamente algo que
+    o engenheiro já declarou."""
+    row = _plan2_row_from_material(material, document_config)
+    return {
+        "alt": suggest_alt(row, document_config),
+        "esp": suggest_esp(row, document_config),
+        "dwg_sat_acao": suggest_dwg_sat_action(row, document_config),
+    }
+
+
+_ALTS_QUE_EXIGEM_REVISAR_ROTEIRO = {"D/P", "-/P"}
+
+
+def revisar_roteiro(material: dict[str, Any]) -> bool:
+    """Lembrete "REVISAR ROTEIRO" (Módulo4.bas linhas ~204-209): quando o Alt declarado é
+    "D/P" ou "-/P" (revisão de desenho mudou sem troca de fornecedor), a macro original escrevia
+    esse aviso fixo em Plan4. Não afeta checklist/setores -- é só um lembrete visual pro
+    engenheiro revisar o roteiro de fabricação. Lê o Alt AUTORITATIVO (declarado pelo
+    engenheiro em impactos_operacionais), não a sugestão -- mesmo raciocínio de
+    read_impactos_operacionais: o campo que vale é sempre o que foi de fato preenchido."""
+    return read_impactos_operacionais(material)["alt"] in _ALTS_QUE_EXIGEM_REVISAR_ROTEIRO
+
+
+# Regra de negócio do setor Cadastro (2026-07-17, pedido explícito): decide se um BITin
+# precisa passar pelo setor Roteiro/Processos antes de virar PDF final -- "quando não houver:
+# D/P, D/- ou -/P... se tiver isso na alteração do código é roteiro, quando não tiver não é".
+# Conjunto DIFERENTE de _ALTS_QUE_EXIGEM_REVISAR_ROTEIRO acima (inclui "D/-" também) --
+# são duas regras distintas por natureza: aquela é um lembrete por material (herdado da macro
+# VBA original), esta é a decisão de roteamento do BITin inteiro (nova, não existia na macro).
+_ALTS_QUE_EXIGEM_ROTEIRO = {"D/P", "D/-", "-/P"}
+
+
+def precisa_roteiro(bitin: dict[str, Any]) -> bool:
+    """True se PELO MENOS UM material do BITin tem Alt em _ALTS_QUE_EXIGEM_ROTEIRO -- decide
+    se o Cadastro precisa encaminhar pro setor Processos (roteiro) ou pode concluir direto
+    (ver bitin_lifecycle.concluir_sem_roteiro / concluir_para_roteiro em
+    backend/api/bitins.py)."""
+    materiais = bitin.get("materiais", [])
+    return any(
+        read_impactos_operacionais(material)["alt"] in _ALTS_QUE_EXIGEM_ROTEIRO
+        for material in materiais
+    )
+
+
 def read_impactos_operacionais(material: dict[str, Any]) -> dict[str, Any]:
     """Alt/Esp/Est/LP/Pre/OC/OF/atualizar_dwg_sat são declarados pelo engenheiro
     (impactos_operacionais), não derivados de código SAP — ver docs/BITIN_MODEL.md,

@@ -1,7 +1,17 @@
-import { useId, useState } from 'react'
+import { memo, useId, useMemo, useState } from 'react'
 import Card from '../Card'
 import ListaTecnicaInline from './ListaTecnicaInline'
 import type { ItemListaTecnica, MateriaisSchema, MaterialEditavel } from '../../lib/types'
+
+// Ignora acento/maiúscula pra busca tolerante (2026-07-16) -- movida pro escopo do módulo
+// (2026-07-17) pra ser reaproveitada tanto por adicionarCampo (confirma o campo escolhido)
+// quanto pelas sugestões ao vivo da busca (ver `sugestoesCampo` abaixo) -- antes só existia
+// dentro de adicionarCampo, então as sugestões usavam o <datalist> nativo do navegador, que
+// NÃO ignora acento (buscar "ni" não achava "Nível de Revisão" porque o "í" acentuado não bate
+// como substring de "ni" sem acento).
+function normalizar(s: string): string {
+  return s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase()
+}
 
 const COLUNAS_IMPACTO = [
   { chave: 'alt', label: 'Alt' },
@@ -41,19 +51,28 @@ const COLUNAS_IMPACTO = [
 // -- continua no modelo (`material.tipo_material`, obrigatório em bitin_model.py) e por isso
 // `materialVazio()` já preenche um padrão sensato ("HALB"), já que não há mais controle na UI
 // pra digitá-lo.
-export default function MaterialEditorCard({
+// React.memo (2026-07-17, otimização de performance -- pedido explícito: "usa como base o
+// frontend antigo que tinha uma otimização feita", ver GPT_Engineering_BITIN/frontend/src/
+// components/CodeForm.jsx) -- sem isso, MateriaisSection re-renderiza TODOS os cards a cada
+// render de BitinDetail (ex.: editar um campo em QUALQUER outro card, ou até digitar em
+// produto/motivo em DadosGeraisCard). Comparador padrão (shallow): só funciona porque
+// `onChange`/`onRemove` agora são passados direto do pai (useCallback em BitinDetail.tsx),
+// não reembrulhados numa closure nova por card a cada render (ver MateriaisSection.tsx).
+const MaterialEditorCard = memo(function MaterialEditorCard({
+  id,
   material,
   schema,
   onChange,
   onRemove,
 }: {
+  id: string
   material: MaterialEditavel
   schema: MateriaisSchema
-  onChange: (m: MaterialEditavel) => void
-  onRemove?: () => void
+  onChange: (id: string, m: MaterialEditavel) => void
+  onRemove?: (id: string) => void
 }) {
   const idPrefixo = useId()
-  const camposSapConhecidos = new Set(schema.dados_basicos.map((c) => c.key))
+  const camposSapConhecidos = useMemo(() => new Set(schema.dados_basicos.map((c) => c.key)), [schema])
 
   const [novoCampo, setNovoCampo] = useState('')
   const [mostrarAddCampo, setMostrarAddCampo] = useState(false)
@@ -64,7 +83,7 @@ export default function MaterialEditorCard({
   const [mostrarListaTecnica, setMostrarListaTecnica] = useState(material.alteracoes.lista_tecnica.length > 0)
 
   function setListaTecnica(itens: ItemListaTecnica[]) {
-    onChange({ ...material, alteracoes: { ...material.alteracoes, lista_tecnica: itens } })
+    onChange(id, { ...material, alteracoes: { ...material.alteracoes, lista_tecnica: itens } })
   }
   // Campo com "de" preenchido (vindo da ZBPP009, snapshot atual do SAP) também entra na
   // tabela editável, não só campo que já tem "para" -- achado real (2026-07-16): importar da
@@ -82,18 +101,18 @@ export default function MaterialEditorCard({
   )
 
   function set<K extends keyof MaterialEditavel>(key: K, value: MaterialEditavel[K]) {
-    onChange({ ...material, [key]: value })
+    onChange(id, { ...material, [key]: value })
   }
 
   function setImpacto(key: string, value: string | boolean) {
-    onChange({
+    onChange(id, {
       ...material,
       alteracoes: { ...material.alteracoes, impactos_operacionais: { ...material.alteracoes.impactos_operacionais, [key]: value } },
     })
   }
 
   function setDadoBasico(campo: string, de: string, para: string) {
-    onChange({
+    onChange(id, {
       ...material,
       alteracoes: {
         ...material.alteracoes,
@@ -105,7 +124,7 @@ export default function MaterialEditorCard({
   function removerDadoBasico(campo: string) {
     const resto = { ...material.alteracoes.dados_basicos }
     delete resto[campo]
-    onChange({ ...material, alteracoes: { ...material.alteracoes, dados_basicos: resto } })
+    onChange(id, { ...material, alteracoes: { ...material.alteracoes, dados_basicos: resto } })
     setCamposEmEdicao((atual) => {
       const copia = new Set(atual)
       copia.delete(campo)
@@ -129,7 +148,7 @@ export default function MaterialEditorCard({
     const dadosBasicos = Object.fromEntries(
       entradasAtuais.map(([c, v]) => (c === campoAntigo ? [novoTexto, { de: '', para: '' }] : [c, v])),
     )
-    onChange({ ...material, alteracoes: { ...material.alteracoes, dados_basicos: dadosBasicos } })
+    onChange(id, { ...material, alteracoes: { ...material.alteracoes, dados_basicos: dadosBasicos } })
   }
 
   function adicionarCampo(textoDigitado: string) {
@@ -140,7 +159,6 @@ export default function MaterialEditorCard({
     // campo (letra maiúscula acentro etc)... se escrever niv vai achar Nível de Revisão") --
     // ignora acento/maiúscula e casa por trecho, não só igualdade exata. Prioriza: chave exata
     // > label exata (já tolerante a acento/caixa) > label que CONTÉM o texto digitado.
-    const normalizar = (s: string) => s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase()
     const textoNormalizado = normalizar(texto)
     const campoConhecido =
       schema.dados_basicos.find((c) => c.key === texto) ??
@@ -163,19 +181,44 @@ export default function MaterialEditorCard({
 
   const labelDoCampo = (key: string) => schema.dados_basicos.find((c) => c.key === key)?.label ?? key
 
-  const entradas = Object.entries(material.alteracoes.dados_basicos)
-  const entradasSap = entradas.filter(
-    ([campo]) => camposSapConhecidos.has(campo) && camposEmEdicao.has(campo),
+  // useMemo (2026-07-17) -- antes recalculadas no corpo do render a cada render, mesmo quando
+  // nada que afeta o resultado mudou (ex.: um sibling card editado, que antes re-renderizava
+  // este card também -- agora não re-renderiza mais, ver React.memo acima, mas mesmo os
+  // re-renders que sobram por mudança própria não precisam refazer os 4 `.filter`/
+  // `Object.entries` se `material`/`camposSapConhecidos`/`camposEmEdicao`/`schema` não mudaram).
+  const entradas = useMemo(() => Object.entries(material.alteracoes.dados_basicos), [material])
+  const entradasSap = useMemo(
+    () => entradas.filter(([campo]) => camposSapConhecidos.has(campo) && camposEmEdicao.has(campo)),
+    [entradas, camposSapConhecidos, camposEmEdicao],
   )
-  const entradasLivres = entradas.filter(([campo]) => !camposSapConhecidos.has(campo))
-  const camposDisponiveis = schema.dados_basicos.filter((c) => !camposEmEdicao.has(c.key))
+  const entradasLivres = useMemo(
+    () => entradas.filter(([campo]) => !camposSapConhecidos.has(campo)),
+    [entradas, camposSapConhecidos],
+  )
+  const camposDisponiveis = useMemo(
+    () => schema.dados_basicos.filter((c) => !camposEmEdicao.has(c.key)),
+    [schema, camposEmEdicao],
+  )
+
+  // Sugestões ao vivo (2026-07-17, pedido explícito: "se eu buscar só 'ni' já aparece...
+  // nivel de revisão. hoje precisa escrever exatamente o nome do campo pra achar") --
+  // substitui o <datalist> nativo (removido abaixo), que não ignora acento (buscar "ni" não
+  // achava "Nível de Revisão" no navegador, só a busca por trecho de `adicionarCampo` já
+  // fazia isso, mas só ao CONFIRMAR, não enquanto digitava). Mesma função `normalizar`
+  // (escopo do módulo) usada nos dois lugares, pra não divergir.
+  const sugestoesCampo = useMemo(() => {
+    const texto = normalizar(novoCampo.trim())
+    if (!texto) return []
+    return camposDisponiveis.filter((c) => normalizar(c.label).includes(texto)).slice(0, 8)
+  }, [novoCampo, camposDisponiveis])
+  const [sugestoesAbertas, setSugestoesAbertas] = useState(false)
 
   return (
     <Card>
       {onRemove && (
         <button
           type="button"
-          onClick={onRemove}
+          onClick={() => onRemove(id)}
           className="absolute right-5 top-5 text-xs font-medium text-red-600 hover:underline"
         >
           Remover
@@ -214,8 +257,9 @@ export default function MaterialEditorCard({
             className="dark:[color-scheme:dark] [color-scheme:light] w-full rounded border border-line bg-surface px-2 py-1.5 text-sm text-ink focus:border-brand-navy focus:outline-none"
           >
             <option value="">--</option>
-            <option value="2001">2001 — Marau</option>
-            <option value="2005">2005 — Passo Fundo</option>
+            {/* Só o número (2026-07-17, pedido explícito) -- sem "— Marau"/"— Passo Fundo". */}
+            <option value="2001">2001</option>
+            <option value="2005">2005</option>
           </select>
         </div>
         <div className="min-w-[12rem] flex-1">
@@ -312,6 +356,13 @@ export default function MaterialEditorCard({
           Nunca numa tabela De/Para (decisão do usuário, 2026-07-15). */}
       {entradasLivres.length > 0 && (
         <div className="mt-3 space-y-1 text-center">
+          {/* key={posicao} é deliberado, não um esquecimento (revisado 2026-07-17) -- a
+              "identidade" de uma nota livre É o próprio texto (dados_basicos é um objeto
+              chaveado pelo texto digitado, sem id próprio), e esse texto muda a CADA tecla
+              digitada (renomearNotaLivre substitui a chave no lugar); usar key={campo} remontaria
+              o <input> a cada tecla, perdendo o foco/cursor no meio da digitação. Posição é a
+              única identidade estável disponível aqui sem uma mudança estrutural maior
+              (dados_basicos viraria array de objetos com id próprio em vez de Record). */}
           {entradasLivres.map(([campo], posicao) => (
             <div key={posicao} className="group inline-flex items-center gap-1.5">
               <input
@@ -344,19 +395,40 @@ export default function MaterialEditorCard({
           </button>
         ) : (
           <div className="flex flex-wrap items-center gap-2">
-            <input
-              type="text"
-              list={`campos-sap-${material.codigo_material}`}
-              value={novoCampo}
-              onChange={(e) => setNovoCampo(e.target.value)}
-              placeholder="Nome do campo SAP ou uma nota livre (ex.: 'Salvar DWG')"
-              className="w-80 rounded-lg border border-line bg-surface px-3 py-1.5 text-sm text-ink focus:border-brand-navy focus:outline-none"
-            />
-            <datalist id={`campos-sap-${material.codigo_material}`}>
-              {camposDisponiveis.map((c) => (
-                <option key={c.key} value={c.label} />
-              ))}
-            </datalist>
+            <div className="relative w-80">
+              <input
+                type="text"
+                value={novoCampo}
+                onChange={(e) => {
+                  setNovoCampo(e.target.value)
+                  setSugestoesAbertas(true)
+                }}
+                onFocus={() => setSugestoesAbertas(true)}
+                // Delay antes de fechar (2026-07-17) -- dá tempo do onMouseDown da sugestão
+                // (abaixo) disparar ANTES do blur fechar a lista; onClick sozinho perderia a
+                // corrida (blur fecha a lista antes do click da sugestão ser processado).
+                onBlur={() => setTimeout(() => setSugestoesAbertas(false), 150)}
+                placeholder="Nome do campo SAP ou uma nota livre (ex.: 'Salvar DWG')"
+                className="w-full rounded-lg border border-line bg-surface px-3 py-1.5 text-sm text-ink focus:border-brand-navy focus:outline-none"
+              />
+              {/* Sugestões ao vivo, tolerantes a acento/maiúscula (2026-07-17) -- substitui o
+                  <datalist> nativo, ver comentário em `sugestoesCampo` acima. */}
+              {sugestoesAbertas && sugestoesCampo.length > 0 && (
+                <ul className="absolute left-0 right-0 top-full z-10 mt-1 max-h-56 overflow-auto rounded-lg border border-line bg-surface py-1 shadow-lg">
+                  {sugestoesCampo.map((c) => (
+                    <li key={c.key}>
+                      <button
+                        type="button"
+                        onMouseDown={() => adicionarCampo(c.label)}
+                        className="block w-full px-3 py-1.5 text-left text-sm text-ink hover:bg-surface-alt"
+                      >
+                        {c.label}
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
             <button
               type="button"
               onClick={() => adicionarCampo(novoCampo)}
@@ -398,4 +470,6 @@ export default function MaterialEditorCard({
       )}
     </Card>
   )
-}
+})
+
+export default MaterialEditorCard

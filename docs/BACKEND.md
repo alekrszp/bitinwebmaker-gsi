@@ -342,8 +342,41 @@ numérica:
 |---|---|---|---|---|---|
 | **66** | `NIVEL_USUARIO` (era `0`) | Só os próprios (qualquer status). | Não acessa `GET /users`. | Sim — 400 se `subgrupo_ids` vier vazio. | Nenhuma. |
 | **77** | `NIVEL_GESTOR` (era `1`) | Rascunho + enviado de quem compartilha ao menos 1 Subgrupo com ele, além dos próprios. | Não acessa `GET /users` (revogado em 2026-07-16 — só Admin gerencia usuários hoje). | Sim — 400 se vazio. | Nenhuma. |
-| **88** | `NIVEL_CADASTRO` (novo, 2026-07-16) | Só os **enviados** (não rascunho) de colegas de mesmo Subgrupo, além dos próprios em qualquer status. Cria/edita/envia os próprios normalmente. | Não acessa `GET /users`. | Sim — 400 se vazio. | Nenhuma. |
+| **88** | `NIVEL_CADASTRO` | **Global** (2026-07-20, corrigido — era escopado por Subgrupo até então, ver nota abaixo): qualquer BITin `"enviado"`, de qualquer autor/Subgrupo, além dos próprios em qualquer status (incl. rascunho). Cria/edita/envia os próprios normalmente. | Não acessa `GET /users`. | Não (tirado em 2026-07-17 — time central, não preso a um Subgrupo). | Único nível (com Admin) que pode `encaminhar-roteiro`/`concluir-sem-roteiro` um BITin — ver "Roteamento pós-envio" em `docs/BITIN_MODEL.md`. |
+| **89** | `NIVEL_PROCESSOS` (novo, 2026-07-17) | Fila global de BITins com `encaminhado_roteiro=True` (concluídos ou não pelo Processos), além dos próprios em qualquer status. | Não acessa `GET /users`. | Não — time central, mesmo raciocínio do Cadastro. | Não cria BITin (`POST /bitins/draft` sem `mongo_id` recusa com 403 pra esse nível — só revisa o que chega encaminhado). Única exceção do sistema a "BITin enviado é travado pra sempre": pode reeditar via `POST .../atualizar-processos` enquanto `encaminhado_roteiro=True` e `processos_concluido=False`. |
 | **99** | `NIVEL_ADMIN` | Todos, sem escopo de Subgrupo. | Único nível com acesso — cria, lista, promove/rebaixa, exclui (soft-delete) e reativa usuário. | Não — único nível que pode ficar sem Subgrupo. | Nunca pode ser rebaixado (`PATCH .../permission` rejeita com 400 se o ALVO já é 99) nem excluído (`DELETE /users/{id}` idem) — nem por outro admin, **exceto o super-admin oculto** (ver seção abaixo). Sem rota de despromoção pública pra quem não é o super-admin (só edição direta no banco). |
+
+**Cadastro virou global em 2026-07-20**: até essa data a visibilidade do nível 88 era
+escopada por Subgrupo (herdada de quando esse nível só significava "colega de trabalho com
+acesso extra", 2026-07-16) — um teste de ponta a ponta novo
+(`tests/test_bitin_workflow_e2e.py`) mostrou que isso fazia BITins de engenheiros fora do
+Subgrupo do Cadastro sumirem da fila "Recebidos" (`CadastroPage.tsx`), o que não fazia
+sentido: Cadastro é o ponto de recebimento de TODO BITin enviado, não um recorte por
+Subgrupo. Corrigido em `backend/api/bitins.py::list_bitins`.
+
+### Endpoints de roteamento pós-envio (2026-07-17/20)
+
+Regra de negócio e ciclo de vida completos em `docs/BITIN_MODEL.md`, seção "Roteamento
+pós-envio (Cadastro → Processos)" — aqui só o resumo dos 4 endpoints novos, todos em
+`backend/api/bitins.py`:
+
+- `POST /bitins/{mongo_id}/encaminhar-roteiro` — `check_permission(NIVEL_CADASTRO,
+  NIVEL_ADMIN)`. Marca `encaminhado_roteiro=True`, abre a janela de reedição do Processos.
+- `POST /bitins/{mongo_id}/concluir-sem-roteiro` — `check_permission(NIVEL_CADASTRO,
+  NIVEL_ADMIN)`. Alternativa ao encaminhamento quando `bitin_document.precisa_roteiro`
+  devolve `False` — 400 se devolver `True` (reforço no servidor, não confia só no frontend
+  esconder o botão errado).
+- `POST /bitins/{mongo_id}/atualizar-processos` — `check_permission(NIVEL_PROCESSOS,
+  NIVEL_ADMIN)`. Única forma de editar conteúdo de um BITin já `"enviado"` — `$set` só no
+  campo `content` (nunca `status`/`sql_ref_id`), e reforça no servidor todo campo
+  administrado pelo sistema dentro de `content` (`bitin`, `status`,
+  `encaminhado_roteiro`/`processos_concluido`/etc.) por cima do que o payload mandar.
+- `POST /bitins/{mongo_id}/concluir-processos` — `check_permission(NIVEL_PROCESSOS,
+  NIVEL_ADMIN)`. Fecha a janela de reedição — `processos_concluido=True`.
+
+Todos os 4 devolvem 404 se o `mongo_id` não existir, e usam o mesmo `BitinResponse` de
+`GET /bitins/{mongo_id}` (inclui `precisa_roteiro`, `encaminhado_roteiro`,
+`processos_concluido`, `sem_necessidade_roteiro` e seus `data_*`).
 
 ### Super-admin oculto (2026-07-17)
 

@@ -1,6 +1,7 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import AjudaPopover from '../components/bitin/AjudaPopover'
+import AvisoSairModal from '../components/bitin/AvisoSairModal'
 import DadosGeraisCard from '../components/bitin/DadosGeraisCard'
 import EdicaoBottomBar from '../components/bitin/EdicaoBottomBar'
 import ErrosEnvioBanner from '../components/bitin/ErrosEnvioBanner'
@@ -8,12 +9,13 @@ import MateriaisSection from '../components/bitin/MateriaisSection'
 import OrdemClienteSection from '../components/bitin/OrdemClienteSection'
 import StatusBadge from '../components/bitin/StatusBadge'
 import { useAuth } from '../hooks/useAuth'
+import { useAvisoSairSemSalvar } from '../hooks/useAvisoSairSemSalvar'
 import { api } from '../lib/api'
 import { materialVazio, normalizarMaterial } from '../lib/bitinDefaults'
 import type { BitinResumo } from '../lib/bitinTypes'
 import { isAdmin } from '../lib/permissions'
 import { useEnviarBitin } from '../lib/useEnviarBitin'
-import type { Bitin, MateriaisSchema, MaterialEditavel } from '../lib/types'
+import type { Bitin, MateriaisSchema, MaterialEditavel, Subgrupo } from '../lib/types'
 
 // Visualização e edição são a mesma tela (decisão do usuário, 2026-07-14): "clicar num BITin
 // em rascunho já abre editável, não é mais só visualização". Um BITin enviado usa a mesma
@@ -42,22 +44,49 @@ import type { Bitin, MateriaisSchema, MaterialEditavel } from '../lib/types'
 // de components/bitin/ (DadosGeraisCard, MateriaisSection, etc.), decisão do usuário
 // (2026-07-15: "não ta nada componentizado o bitindetail, ajusta isso").
 //
+// `_id` client-side estável por material (2026-07-17, otimização de performance -- mesmo
+// padrão de LinhaSap em CodigosSapPage.tsx). `key={index}`/callbacks fechados sobre o índice
+// faziam QUALQUER edição em QUALQUER material re-renderizar todos os MaterialEditorCard (via
+// MateriaisSection), porque a callback passada pra cada card era uma closure NOVA a cada
+// render (`(m) => onChangeMaterial(i, m)`), quebrando o React.memo mesmo se ele existisse.
+// Com `_id` estável + callbacks por id (useCallback) + MaterialEditorCard memoizado, editar o
+// material 5 não re-renderiza os outros N-1.
+type MaterialComId = MaterialEditavel & { _id: string }
+
 export default function BitinDetail() {
   const { mongoId } = useParams<{ mongoId: string }>()
   const navigate = useNavigate()
   const { user } = useAuth()
   const { enviando, errosEnvio, bitinEnviado, enviar } = useEnviarBitin(mongoId)
+  // Aviso de alterações não salvas (2026-07-17, pedido explícito) -- ver
+  // hooks/useAvisoSairSemSalvar.ts.
+  const { setSujo, mostrarModal, setMostrarModal, tentarSair } = useAvisoSairSemSalvar()
 
   // Campos editáveis (dados gerais + materiais).
-  const [produto, setProduto] = useState('')
-  const [motivo, setMotivo] = useState('')
+  const [produto, setProdutoBase] = useState('')
+  const [motivo, setMotivoBase] = useState('')
   const [solicitante, setSolicitante] = useState('')
-  const [setor, setSetor] = useState('')
-  const [materiais, setMateriais] = useState<MaterialEditavel[]>([])
+  const [setor, setSetorBase] = useState('')
+  // Wrappers que marcam "sujo" (2026-07-17) -- passados pra baixo em vez dos setters puros,
+  // pra saber que existe alteração ainda não salva.
+  function setProduto(v: string) {
+    setProdutoBase(v)
+    setSujo(true)
+  }
+  function setMotivo(v: string) {
+    setMotivoBase(v)
+    setSujo(true)
+  }
+  function setSetor(v: string) {
+    setSetorBase(v)
+    setSujo(true)
+  }
+  const [materiais, setMateriais] = useState<MaterialComId[]>([])
   const [checklistOverrides, setChecklistOverrides] = useState<Record<string, boolean>>({})
   const [checklistDescricoes, setChecklistDescricoes] = useState<Record<string, string>>({})
   const [conteudoExistente, setConteudoExistente] = useState<Record<string, unknown>>({})
   const [schema, setSchema] = useState<MateriaisSchema | null>(null)
+  const [subgrupos, setSubgrupos] = useState<Subgrupo[]>([])
 
   // Estado do documento (o que veio do backend).
   const [status, setStatus] = useState('rascunho')
@@ -72,8 +101,17 @@ export default function BitinDetail() {
   const [excluindo, setExcluindo] = useState(false)
   const [confirmacaoEnvio, setConfirmacaoEnvio] = useState<string | null>(null)
 
-  const editavel = status === 'rascunho' && podeEditar
+  // Confia 100% em `podeEditar` (o servidor decide, ver backend/api/bitins.py::_pode_editar)
+  // -- desde 2026-07-17 isso pode ser `true` mesmo com status "enviado" (setor Processos
+  // reeditando um BITin encaminhado pelo Cadastro, ver bitin_lifecycle.concluir_processamento).
+  // Botões específicos de rascunho (Enviar, excluir rascunho) continuam checando
+  // `status === 'rascunho'` diretamente, não `editavel`.
+  const editavel = podeEditar
   const ehAdmin = isAdmin(user?.permission_level)
+  // BITin "enviado" mas ainda editável só acontece no cenário Processos (ou admin fazendo a
+  // mesma coisa) -- usado pra rotear salvar()/alternarChecklist() pra /atualizar-processos em
+  // vez de /draft, e pra mostrar o botão "Concluir processamento".
+  const editandoComoProcessos = status === 'enviado' && editavel
 
   useEffect(() => {
     let cancelado = false
@@ -90,11 +128,18 @@ export default function BitinDetail() {
         setPodeEditar(b.pode_editar)
         setCodigo(b.codigo)
         const content = b.content
-        setProduto(String(content.produto ?? ''))
-        setMotivo(String(content.motivo ?? ''))
+        // Setters BASE (não os wrappers que marcam "sujo") -- isto é carregar o BITin, não
+        // uma edição do engenheiro.
+        setProdutoBase(String(content.produto ?? ''))
+        setMotivoBase(String(content.motivo ?? ''))
         setSolicitante(String(content.solicitante ?? user?.nome ?? ''))
-        setSetor(String(content.setor ?? ''))
-        setMateriais(((content.materiais as MaterialEditavel[] | undefined) ?? []).map(normalizarMaterial))
+        setSetorBase(String(content.setor ?? ''))
+        setMateriais(
+          ((content.materiais as MaterialEditavel[] | undefined) ?? []).map((m) => ({
+            ...normalizarMaterial(m),
+            _id: crypto.randomUUID(),
+          })),
+        )
         setChecklistOverrides((content.checklist_overrides as Record<string, boolean> | undefined) ?? {})
         setChecklistDescricoes((content.checklist_descricoes as Record<string, string> | undefined) ?? {})
         setConteudoExistente(content)
@@ -114,6 +159,34 @@ export default function BitinDetail() {
       .catch(() => {})
   }, [])
 
+  useEffect(() => {
+    api
+      .get<Subgrupo[]>('/subgrupos')
+      .then((resp) => setSubgrupos(resp.data))
+      .catch(() => {})
+  }, [])
+
+  // Setor do BITin (2026-07-17, pedido explícito) -- restrito ao(s) Subgrupo(s) do usuário
+  // logado: "a pessoa que é dos dois pode escolher qual setor ela quer fazer bitin. se ela
+  // tiver só 1 setor vinculado só o do setor vinculado dela". Admin tem `subgrupo_ids` vazio
+  // (único nível que pode ficar sem Subgrupo, ver NIVEIS_QUE_EXIGEM_SUBGRUPO) -- por isso
+  // "sem subgrupo nenhum" cai pra "sem restrição" (todos os subgrupos cadastrados), não pra
+  // lista vazia. Nome do subgrupo é literalmente o valor salvo em `content.setor` (P/A no
+  // número sequencial, ver backend/bitin_number.py) -- não um conceito diferente.
+  const setoresPermitidos =
+    (user?.subgrupo_ids?.length ?? 0) === 0
+      ? subgrupos.map((s) => s.nome)
+      : subgrupos.filter((s) => user!.subgrupo_ids.includes(s.id)).map((s) => s.nome)
+
+  // Só 1 subgrupo vinculado -- trava sozinho, sem exigir escolha manual. Só preenche se `setor`
+  // ainda estiver vazio (não sobrescreve um rascunho já salvo com outro setor). setSetorBase
+  // (não o wrapper) -- preenchimento automático não é uma edição do engenheiro, não deveria
+  // marcar "sujo" sozinho ao abrir a tela.
+  useEffect(() => {
+    if (setor === '' && setoresPermitidos.length === 1) setSetorBase(setoresPermitidos[0])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [setor, setoresPermitidos.join('|')])
+
   async function carregarResumo() {
     try {
       const resp = await api.get(`/bitins/${mongoId}/resumo`)
@@ -129,6 +202,67 @@ export default function BitinDetail() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mongoId])
 
+  // Aplica sugestão automática de Alt/Esp/nota DWG-SAT (2026-07-17, pedido explícito: "coloca
+  // os dois, códigos já existentes puxam mas o engenheiro pode mexer, mas tem que preencher
+  // automatico sozinho tb") -- SÓ em campo ainda em branco ("-") e SÓ adiciona a nota DWG/SAT
+  // se ela ainda não existir; nunca sobrescreve o que o engenheiro já declarou (mesmo espírito
+  // de checklist_overrides: sugestão só preenche o vazio, não briga com escolha manual).
+  // scripts/bitin_document.py::suggest_impactos é quem calcula -- aqui só decide SE aplica.
+  function aplicarSugestoes(materiaisResumo: BitinResumo['materiais']) {
+    for (const resumoMaterial of materiaisResumo) {
+      if (!resumoMaterial.codigo_material) continue
+      const local = materiais.find((m) => m.codigo_material === resumoMaterial.codigo_material)
+      if (!local) continue
+      const sugestoes = resumoMaterial.sugestoes
+      const impactos = local.alteracoes.impactos_operacionais
+      const novosImpactos = { ...impactos }
+      let mudou = false
+      if (impactos.alt === '-' && sugestoes.alt && sugestoes.alt !== '-') {
+        novosImpactos.alt = sugestoes.alt
+        mudou = true
+      }
+      if (impactos.esp === '-' && sugestoes.esp && sugestoes.esp !== '-') {
+        novosImpactos.esp = sugestoes.esp
+        mudou = true
+      }
+      let novosDadosBasicos = local.alteracoes.dados_basicos
+      if (sugestoes.dwg_sat_acao && !Object.prototype.hasOwnProperty.call(novosDadosBasicos, sugestoes.dwg_sat_acao)) {
+        novosDadosBasicos = { ...novosDadosBasicos, [sugestoes.dwg_sat_acao]: { de: '', para: '' } }
+        mudou = true
+      }
+      if (mudou) {
+        atualizarMaterial(local._id, {
+          ...local,
+          alteracoes: { ...local.alteracoes, impactos_operacionais: novosImpactos, dados_basicos: novosDadosBasicos },
+        })
+      }
+    }
+  }
+
+  // Checklist/setores ao vivo (2026-07-17, pedido explícito: "eu quero que marque ao vivo
+  // igual com os setores afetados") -- antes só recarregava depois de um Salvar de verdade.
+  // POST /bitins/preview-resumo (backend/api/bitins.py::preview_resumo) calcula com o MESMO
+  // código de GET /{id}/resumo a partir do que está na tela agora, sem persistir nada --
+  // então não interfere com `sujo`/o aviso de "alterações não salvas". Debounce de 500ms
+  // (não a cada tecla) porque os campos de texto (produto/motivo, dados_basicos das telas)
+  // só propagam pro estado no blur mesmo, então uma pausa curta já é natural; o debounce aqui
+  // é só pra não disparar 1 request por campo quando várias mudanças vêm juntas (ex.: colar
+  // do SAP cria N materiais de uma vez).
+  useEffect(() => {
+    if (carregando || !editavel) return
+    const id = setTimeout(() => {
+      api
+        .post('/bitins/preview-resumo', { content: montarConteudo() })
+        .then((resp) => {
+          setResumo(resp.data)
+          aplicarSugestoes(resp.data.materiais)
+        })
+        .catch(() => {})
+    }, 500)
+    return () => clearTimeout(id)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [produto, motivo, setor, materiais, checklistOverrides, checklistDescricoes, carregando, editavel])
+
   // Pós-envio (2026-07-16, pedido do usuário: "coloque uma informação na tela de quando envia
   // bitin de confirmação que atualize a pagina e vai direto no bitin já enviado"). Mesma URL
   // (/bitins/:mongoId) antes e depois de enviar -- não navega, só troca o estado local pra
@@ -140,7 +274,12 @@ export default function BitinDetail() {
     setPodeEditar(bitinEnviado.pode_editar)
     setCodigo(bitinEnviado.codigo)
     setConteudoExistente(bitinEnviado.content)
-    setMateriais(((bitinEnviado.content.materiais as MaterialEditavel[] | undefined) ?? []).map(normalizarMaterial))
+    setMateriais(
+      ((bitinEnviado.content.materiais as MaterialEditavel[] | undefined) ?? []).map((m) => ({
+        ...normalizarMaterial(m),
+        _id: crypto.randomUUID(),
+      })),
+    )
     setConfirmacaoEnvio(`BITin enviado com sucesso! Código: ${bitinEnviado.codigo ?? '—'}`)
     carregarResumo()
     const id = setTimeout(() => setConfirmacaoEnvio(null), 8000)
@@ -148,17 +287,23 @@ export default function BitinDetail() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [bitinEnviado])
 
-  function atualizarMaterial(index: number, atualizado: MaterialEditavel) {
-    setMateriais((atual) => atual.map((m, i) => (i === index ? atualizado : m)))
-  }
+  // useCallback (2026-07-17) -- identidade estável entre renders é o que permite o
+  // React.memo de MaterialEditorCard pular re-render de cards não tocados (ver comentário em
+  // MaterialComId acima). Operam por `_id`, não índice.
+  const atualizarMaterial = useCallback((id: string, atualizado: MaterialEditavel) => {
+    setMateriais((atual) => atual.map((m) => (m._id === id ? { ...atualizado, _id: id } : m)))
+    setSujo(true)
+  }, [setSujo])
 
-  function adicionarMaterial() {
-    setMateriais((atual) => [...atual, materialVazio()])
-  }
+  const adicionarMaterial = useCallback(() => {
+    setMateriais((atual) => [...atual, { ...materialVazio(), _id: crypto.randomUUID() }])
+    setSujo(true)
+  }, [setSujo])
 
-  function removerMaterial(index: number) {
-    setMateriais((atual) => atual.filter((_, i) => i !== index))
-  }
+  const removerMaterial = useCallback((id: string) => {
+    setMateriais((atual) => atual.filter((m) => m._id !== id))
+    setSujo(true)
+  }, [setSujo])
 
   // Sempre parte do estado atual de TODOS os campos editáveis (não só `conteudoExistente`,
   // que só é atualizado depois de um POST bem-sucedido) -- salvar a checklist sozinha não
@@ -171,7 +316,9 @@ export default function BitinDetail() {
     // engenheiro terminar de preencher (bug real encontrado em 2026-07-15 no mesmo padrão em
     // Códigos SAP: linha em branco virando "material fantasma" e disparando erros de
     // validação bobos no envio).
-    const materiaisPreenchidos = materiais.filter((m) => m.codigo_material.trim() !== '')
+    const materiaisPreenchidos = materiais
+      .filter((m) => m.codigo_material.trim() !== '')
+      .map(({ _id, ...resto }) => resto)
     return {
       ...conteudoExistente,
       produto,
@@ -187,17 +334,30 @@ export default function BitinDetail() {
 
   function alternarDescricaoChecklist(id: string, descricao: string) {
     setChecklistDescricoes((atual) => ({ ...atual, [id]: descricao }))
+    setSujo(true)
+  }
+
+  // Roteia pro endpoint certo -- BITin "enviado" só é editável no cenário Processos
+  // (editandoComoProcessos), e esse caminho NUNCA pode passar por /draft: o caminho de
+  // atualização de /draft reverte status pra "rascunho" (ver backend/api/bitins.py::
+  // create_or_update_draft), o que corromperia um BITin já enviado. /atualizar-processos só
+  // troca o conteúdo, preservando status/número/histórico.
+  async function salvarConteudo(content: Record<string, unknown>) {
+    if (editandoComoProcessos) {
+      return api.post(`/bitins/${mongoId}/atualizar-processos`, { content })
+    }
+    return api.post('/bitins/draft', { mongo_id: mongoId, content })
   }
 
   async function alternarChecklist(id: string, afeta: boolean) {
     const overridesAtualizados = { ...checklistOverrides, [id]: afeta }
     setChecklistOverrides(overridesAtualizados)
     try {
-      const resp = await api.post('/bitins/draft', {
-        mongo_id: mongoId,
-        content: montarConteudo({ checklist_overrides: overridesAtualizados }),
-      })
+      const resp = await salvarConteudo(montarConteudo({ checklist_overrides: overridesAtualizados }))
       setConteudoExistente(resp.data.content)
+      // montarConteudo() já bundla TODOS os campos editáveis (não só a checklist), então esse
+      // POST salva tudo que estava pendente também -- reseta "sujo" igual ao salvar() normal.
+      setSujo(false)
       await carregarResumo()
     } catch {
       setErro('Não foi possível salvar a checklist. Tente novamente.')
@@ -208,12 +368,10 @@ export default function BitinDetail() {
     setErro(null)
     setSalvando(true)
     try {
-      const resp = await api.post('/bitins/draft', {
-        mongo_id: mongoId,
-        content: montarConteudo(),
-      })
+      const resp = await salvarConteudo(montarConteudo())
       const novoId = resp.data.mongo_id as string
       setConteudoExistente(resp.data.content)
+      setSujo(false)
       await carregarResumo()
       return novoId
     } catch {
@@ -267,6 +425,24 @@ export default function BitinDetail() {
     }
   }
 
+  // Fecha a janela de reedição do Processos (2026-07-17) -- depois disso o BITin volta a
+  // ficar travado, inclusive pra quem concluiu. Recarrega a página pra refletir o novo estado
+  // só-leitura (mais simples e mais confiável do que tentar reconciliar todo o estado local).
+  async function handleConcluirProcessos() {
+    if (!mongoId) return
+    if (!window.confirm('Concluir o processamento deste BITin? Ele volta a ficar travado depois disso.')) return
+    setSalvando(true)
+    setErro(null)
+    try {
+      await salvarConteudo(montarConteudo())
+      await api.post(`/bitins/${mongoId}/concluir-processos`)
+      window.location.reload()
+    } catch {
+      setErro('Não foi possível concluir o processamento. Tente novamente.')
+      setSalvando(false)
+    }
+  }
+
   if (carregando) {
     return <p className="text-sm text-ink-muted">Carregando...</p>
   }
@@ -286,9 +462,30 @@ export default function BitinDetail() {
 
   return (
     <div className="mx-auto max-w-[1600px] pb-24">
-      <Link to="/bitins" className="text-sm text-ink-muted hover:text-ink hover:underline">
+      {/* Intercepta o clique se houver alteração não salva (2026-07-17, ver
+          hooks/useAvisoSairSemSalvar.ts) -- botão em vez de Link, senão navegaria antes de
+          dar chance de mostrar o modal. */}
+      <button
+        type="button"
+        onClick={() => {
+          if (tentarSair()) navigate('/bitins')
+        }}
+        className="text-sm text-ink-muted hover:text-ink hover:underline"
+      >
         ← Voltar pra Meus Bitins
-      </Link>
+      </button>
+
+      {mostrarModal && (
+        <AvisoSairModal
+          salvando={salvando}
+          onCancelar={() => setMostrarModal(false)}
+          onSairSemSalvar={() => navigate('/bitins')}
+          onSalvarESair={async () => {
+            const ok = await salvar()
+            if (ok) navigate('/bitins')
+          }}
+        />
+      )}
 
       <div className="mt-3 flex flex-wrap items-center gap-3">
         <h1 className="text-2xl font-semibold text-ink">{codigo || 'Rascunho sem código'}</h1>
@@ -296,10 +493,13 @@ export default function BitinDetail() {
         {editavel && (
           <AjudaPopover titulo="Como usar a aba BITin">
             <p>
-              A checklist é inteiramente manual -- nada é marcado automaticamente a partir dos
-              materiais. Um material pode ser cadastrado inteiramente aqui ("+ Novo material") ou
-              importado da tela ZBPP009; as duas telas operam sobre os mesmos dados e nenhuma
-              depende da outra.
+              A checklist tem sugestão automática pra alguns itens, verificada contra a macro
+              original: Alt (Desenho/Processo/Fornecedor), Est/LP/Pré/OC/OF preenchidos, e uma
+              nota igual a "SALVAR DWG" ou "SALVAR SAT" (Atualizar DWG/SAT). O resto continua
+              100% manual. Clicar num item sempre vence a sugestão, nos dois sentidos. Um
+              material pode ser cadastrado inteiramente aqui ("+ Novo material") ou importado
+              da tela ZBPP009; as duas telas operam sobre os mesmos dados e nenhuma depende da
+              outra.
             </p>
             <p>
               Lembretes de envio: qualquer item da checklist marcado "Sim" que exija descrição
@@ -310,7 +510,7 @@ export default function BitinDetail() {
           </AjudaPopover>
         )}
 
-        {editavel && (
+        {editavel && status === 'rascunho' && (
           <button
             type="button"
             onClick={handleExcluir}
@@ -345,6 +545,20 @@ export default function BitinDetail() {
             {salvando ? 'Salvando...' : 'Salvar'}
           </button>
         )}
+
+        {/* Setor Processos (2026-07-17) -- fecha a janela de reedição aberta pelo Cadastro.
+            Só aparece nesse cenário específico (enviado + editável = Processos/admin
+            reeditando um BITin encaminhado, ver editandoComoProcessos). */}
+        {editandoComoProcessos && (
+          <button
+            type="button"
+            onClick={handleConcluirProcessos}
+            disabled={salvando || enviando}
+            className="rounded-lg bg-brand-navy px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-brand-navy-dark disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {salvando ? 'Salvando...' : 'Concluir processamento'}
+          </button>
+        )}
       </div>
 
       {erro && <p className="mt-3 text-sm text-red-600">{erro}</p>}
@@ -357,6 +571,7 @@ export default function BitinDetail() {
         motivo={motivo}
         solicitante={solicitante}
         setor={setor}
+        setoresPermitidos={setoresPermitidos}
         onProdutoChange={setProduto}
         onMotivoChange={setMotivo}
         onSetorChange={setSetor}
@@ -378,7 +593,7 @@ export default function BitinDetail() {
         mongoId={mongoId}
       />
 
-      {editavel && mongoId && (
+      {editavel && status === 'rascunho' && mongoId && (
         <EdicaoBottomBar mongoId={mongoId} enviando={enviando || salvando} onEnviar={handleEnviar} />
       )}
     </div>

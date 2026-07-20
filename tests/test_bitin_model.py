@@ -6,6 +6,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts"))
 
+import bitin_document  # noqa: E402
 import bitin_model as bm  # noqa: E402
 import vba_port_export as vpe  # noqa: E402
 
@@ -177,6 +178,19 @@ class MaterialToPlan2RowTest(unittest.TestCase):
         # grupo_mercadorias não foi informado -> deve ficar vazio (convenção vazio)
         self.assertEqual(row[9], "")
 
+    def test_marcacao_eliminar_nivel_centro_e_declarada_pelo_engenheiro(self) -> None:
+        """Achado ao cruzar a colinha de frases-modelo dos engenheiros ("Material marcado
+        para eliminar") com config/vba_mapping.json, 2026-07-17 -- "nível centro" não tem
+        coluna correspondente no export SAP real (diferente de "nível mandante", que tem "de"
+        pré-preenchido), sempre declarado manualmente. Col 71 = "Novo" (ver
+        plan2_column_headers)."""
+        material = make_bitin()["materiais"][0]
+        material["alteracoes"]["dados_basicos"]["marcacao_eliminar_nivel_centro"] = {
+            "de": "", "para": "SIM",
+        }
+        row = bm.material_to_plan2_row(material, self.config)
+        self.assertEqual(row[71], "SIM")
+
 
 class MateriaisSchemaTest(unittest.TestCase):
     """build_materiais_schema é a fonte única de colunas do grid de materiais no frontend
@@ -276,6 +290,99 @@ class WritePlan2XlsxRoundTripTest(unittest.TestCase):
             file_plan3 = vpe.build_plan3_row(file_rows[0], header_values, self.config, {})
 
         self.assertEqual(file_plan3, in_memory_plan3)
+
+
+class SuggestImpactosTest(unittest.TestCase):
+    """2026-07-17, pedido explícito: "coloca os dois, códigos já existentes puxam mas o
+    engenheiro pode mexer, mas tem que preencher automatico sozinho tb". Casos validados
+    contra dados reais (bitin teste 2.xlsm, BITin P0812/26) já documentados em
+    docs/BITIN_MODEL.md -- Grupo Mercadorias SA016 + revisão de desenho alterada sugere
+    Alt="D/P" e DWG_SAT="SALVAR DWG"; sem alteração de desenho sugere Alt="-"."""
+
+    def setUp(self) -> None:
+        self.document_config = bitin_document.load_config(DOCUMENT_CONFIG_PATH)
+
+    def _material(self, **dados_basicos_overrides) -> dict:
+        dados_basicos = {"grupo_mercadorias": {"de": "", "para": ""}}
+        dados_basicos.update(dados_basicos_overrides)
+        return {"alteracoes": {"dados_basicos": dados_basicos}}
+
+    def test_grupo_mercadorias_sa016_com_revisao_sugere_dwg(self) -> None:
+        material = self._material(
+            grupo_mercadorias={"de": "SA016", "para": ""},
+            desenho={"de": "SIM", "para": ""},
+            nivel_revisao={"de": "C", "para": "D"},
+        )
+        sugestoes = bitin_document.suggest_impactos(material, self.document_config)
+        self.assertEqual(sugestoes["alt"], "D/P")
+        self.assertEqual(sugestoes["dwg_sat_acao"], "SALVAR DWG")
+
+    def test_grupo_mercadorias_sa013_sugere_sat(self) -> None:
+        material = self._material(grupo_mercadorias={"de": "SA013", "para": ""})
+        sugestoes = bitin_document.suggest_impactos(material, self.document_config)
+        self.assertEqual(sugestoes["dwg_sat_acao"], "SALVAR SAT")
+
+    def test_sem_desenho_sugere_alt_traco(self) -> None:
+        material = self._material(grupo_mercadorias={"de": "", "para": ""})
+        sugestoes = bitin_document.suggest_impactos(material, self.document_config)
+        self.assertEqual(sugestoes["alt"], "-")
+
+    def test_codigo_sap_desconhecido_nao_sugere_nada(self) -> None:
+        """Catálogo de código SAP não mapeado -- não quebra, só não sugere nada (achado da
+        auditoria de 2026-07-10: código novo/desconhecido não pode travar silenciosamente,
+        ver docs/BITIN_MODEL.md "Alt/Esp declarados pelo engenheiro")."""
+        material = self._material(grupo_mercadorias={"de": "SA999-NUNCA-VISTO", "para": ""})
+        sugestoes = bitin_document.suggest_impactos(material, self.document_config)
+        self.assertIsNone(sugestoes["dwg_sat_acao"])
+
+
+class RevisarRoteiroTest(unittest.TestCase):
+    """Módulo4.bas linhas ~204-209 -- aviso "REVISAR ROTEIRO" quando o Alt DECLARADO PELO
+    ENGENHEIRO (não a sugestão) é "D/P" ou "-/P"."""
+
+    def _material(self, alt: str) -> dict:
+        return {"alteracoes": {"impactos_operacionais": {"alt": alt}}}
+
+    def test_alt_dp_exige_revisar_roteiro(self) -> None:
+        self.assertTrue(bitin_document.revisar_roteiro(self._material("D/P")))
+
+    def test_alt_traco_p_exige_revisar_roteiro(self) -> None:
+        self.assertTrue(bitin_document.revisar_roteiro(self._material("-/P")))
+
+    def test_outros_alts_nao_exigem_revisar_roteiro(self) -> None:
+        for alt in ("D/F", "-/F", "D/-", "-"):
+            self.assertFalse(bitin_document.revisar_roteiro(self._material(alt)))
+
+    def test_material_sem_alt_declarado_nao_exige(self) -> None:
+        self.assertFalse(bitin_document.revisar_roteiro({}))
+
+
+class PrecisaRoteiroTest(unittest.TestCase):
+    """Decisão do setor Cadastro (2026-07-17, pedido explícito): "quando não houver: D/P, D/-
+    ou -/P... se tiver isso na alteração do código é roteiro, quando não tiver não é".
+    Conjunto DIFERENTE de RevisarRoteiroTest acima (inclui "D/-" também) -- ver
+    bitin_document._ALTS_QUE_EXIGEM_ROTEIRO."""
+
+    def _material(self, alt: str) -> dict:
+        return {"alteracoes": {"impactos_operacionais": {"alt": alt}}}
+
+    def _bitin(self, *alts: str) -> dict:
+        return {"materiais": [self._material(alt) for alt in alts]}
+
+    def test_alts_que_exigem_roteiro(self) -> None:
+        for alt in ("D/P", "D/-", "-/P"):
+            self.assertTrue(bitin_document.precisa_roteiro(self._bitin(alt)), alt)
+
+    def test_alts_que_nao_exigem_roteiro(self) -> None:
+        for alt in ("D/F", "-/F", "-"):
+            self.assertFalse(bitin_document.precisa_roteiro(self._bitin(alt)), alt)
+
+    def test_um_material_exigindo_roteiro_basta_pro_bitin_inteiro(self) -> None:
+        bitin = self._bitin("D/F", "-/F", "D/P")
+        self.assertTrue(bitin_document.precisa_roteiro(bitin))
+
+    def test_bitin_sem_materiais_nao_exige_roteiro(self) -> None:
+        self.assertFalse(bitin_document.precisa_roteiro({}))
 
 
 if __name__ == "__main__":

@@ -1,14 +1,18 @@
 import { NavLink } from 'react-router-dom'
 import { version as appVersion } from '../../package.json'
 import { useAuth } from '../hooks/useAuth'
-import { isAdmin } from '../lib/permissions'
-import { HomeIcon, ListIcon, UsersIcon } from './icons'
+import { isAdmin, isCadastro } from '../lib/permissions'
+import { HomeIcon, InboxIcon, ListIcon, UsersIcon } from './icons'
 
 // Lista extensível de propósito -- o próximo item entra aqui sem mexer no resto do componente.
 const NAV_ITEMS = [
   { to: '/', label: 'Início', icon: HomeIcon, end: true },
   { to: '/bitins', label: 'Meus Bitins', icon: ListIcon, end: false },
 ]
+
+// Item pra Cadastro/Admin (2026-07-17) -- fila de trabalho do setor, substitui o e-mail
+// automático que o VBA original disparava ao enviar um BITin. Ver CadastroPage.tsx.
+const NAV_ITEMS_CADASTRO = [{ to: '/cadastro', label: 'Cadastro', icon: InboxIcon, end: true }]
 
 // Item só-admin (2026-07-16, revisado: "gestão de usuários e criar usuário devem ser
 // desvinculadas de Configurações, páginas juntas" -- GestaoUsuarios já renderiza
@@ -23,6 +27,7 @@ export default function Sidebar({ open, onClose }: { open: boolean; onClose: () 
   // exatamente como sempre foi (navy + logo.svg); só Gestor/Cadastro/Usuário mudam, pra branco
   // com a logo colorida. Ver Topbar.tsx (mesmo par cor/logo, pro cabeçalho combinar).
   const admin = isAdmin(user?.permission_level)
+  const cadastro = isCadastro(user?.permission_level)
   const logoSrc = admin ? '/logo.svg' : '/brand/gpt-color.png'
   const surfaceClass = admin ? 'bg-brand-navy' : 'bg-white border-r border-line'
   const textClass = admin ? 'text-white' : 'text-ink'
@@ -69,6 +74,30 @@ export default function Sidebar({ open, onClose }: { open: boolean; onClose: () 
               {label}
             </NavLink>
           ))}
+
+          {cadastro && (
+            <>
+              <div className={`mt-3 border-t ${dividerClass} pt-3 text-xs font-semibold uppercase tracking-wide ${groupLabelClass}`}>
+                Cadastro
+              </div>
+              {NAV_ITEMS_CADASTRO.map(({ to, label, icon: Icon, end }) => (
+                <NavLink
+                  key={to}
+                  to={to}
+                  end={end}
+                  onClick={onClose}
+                  className={({ isActive }) =>
+                    `flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors ${
+                      isActive ? navActiveClass : navInactiveClass
+                    }`
+                  }
+                >
+                  <Icon className="h-4 w-4 shrink-0" />
+                  {label}
+                </NavLink>
+              ))}
+            </>
+          )}
 
           {admin && (
             <>

@@ -11,7 +11,13 @@ from backend.auth.security import validate_password_strength
 # field_validator/model_validator do pydantic geraria.
 # Renomeado de NIVEIS_QUE_EXIGEM_SETOR (2026-07-16) -- mesmo conjunto de valores, só o nome
 # mudou junto com a rename geral Setor -> Subgrupo (ver backend/auth/models.py).
-NIVEIS_QUE_EXIGEM_SUBGRUPO = {66, 77, 88}
+# Cadastro (88) e Processos (89, ver deps.py::NIVEL_PROCESSOS) tirados do conjunto em
+# 2026-07-17 (pedido explícito do usuário) -- os dois são times centrais que recebem BITins
+# de QUALQUER Subgrupo (fila do Cadastro/encaminhado_roteiro), não faz sentido prender o
+# cadastro deles a um Subgrupo específico. `list_bitins` (backend/api/bitins.py) já trata
+# Cadastro sem subgrupo caindo pra "só os próprios" (fallback já existente, não é código
+# novo) -- Processos nunca dependeu de Subgrupo pra começo de conversa.
+NIVEIS_QUE_EXIGEM_SUBGRUPO = {66, 77}
 
 # Valores válidos do NOVO campo Usuario.setor (2026-07-16) -- rótulo descritivo do cargo da
 # pessoa (cadastro/gestor/usuario), CONCEITO DIFERENTE do Subgrupo (Proteína Animal/
@@ -19,7 +25,7 @@ NIVEIS_QUE_EXIGEM_SUBGRUPO = {66, 77, 88}
 # pessoa (2026-07-16, decisão explícita do usuário) -- NÃO controla nenhuma regra de acesso,
 # isso continua sendo só `permission_level`." Validado a nível de aplicação (Pydantic aqui +
 # reforçado em backend/api/users.py), não via CHECK constraint no banco.
-SETORES_VALIDOS = {"cadastro", "gestor", "usuario"}
+SETORES_VALIDOS = {"cadastro", "gestor", "usuario", "processos"}
 
 
 def _valida_setor(v: str) -> str:
@@ -113,6 +119,12 @@ class UserOut(BaseModel):
 
 class UserUpdatePermission(BaseModel):
     permission_level: int
+    # Reconfirmação de senha do PRÓPRIO admin (2026-07-17, pedido explícito: "quando eu trocar
+    # permissão de usuário já cadastrado sempre pedir a minha senha para confirmar") -- mesmo
+    # padrão de AdminUserCreate.senha_admin (create_user_by_admin), verificada contra o hash
+    # de quem está chamando antes de qualquer escrita (backend/api/users.py::
+    # update_user_permission).
+    senha_admin: str
 
 
 class UserUpdateSubgrupos(BaseModel):
@@ -227,15 +239,3 @@ class SubgrupoOut(BaseModel):
         from_attributes = True
 
 
-class CadastroEmailOut(BaseModel):
-    """Resposta de GET /users/cadastro-emails (backend/api/users.py) -- lista mínima (nome +
-    email) de todo usuário com Usuario.setor == 'cadastro', pra qualquer engenheiro autenticado
-    poder escolher pra quem enviar um BITin. De propósito NÃO inclui permission_level,
-    subgrupo_ids ou qualquer outro campo de UserOut -- essa rota é aberta a QUALQUER usuário
-    autenticado (sem check_permission), então só expõe o mínimo necessário."""
-
-    nome: str
-    email: str
-
-    class Config:
-        from_attributes = True

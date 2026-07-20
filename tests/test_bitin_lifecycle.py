@@ -83,5 +83,96 @@ class LifecycleTest(unittest.TestCase):
         self.assertTrue(any("já foi enviado" in e["message"] for e in errors2))
 
 
+class EncaminharRoteiroTest(unittest.TestCase):
+    """Fila do setor Cadastro (2026-07-17, substitui o e-mail automático do Módulo12.bas)."""
+
+    def setUp(self) -> None:
+        self.vba_mapping_config = bm.load_config(VBA_MAPPING_CONFIG_PATH)
+        self.document_config = bd.load_config(DOCUMENT_CONFIG_PATH)
+
+    def test_encaminha_bitin_enviado(self) -> None:
+        bitin = make_valid_bitin()
+        bl.enviar_bitin(bitin, self.vba_mapping_config, self.document_config)
+        bl.encaminhar_para_roteiro(bitin)
+        self.assertTrue(bitin["encaminhado_roteiro"])
+        self.assertIn("data_encaminhado_roteiro", bitin)
+
+    def test_nao_encaminha_bitin_ainda_em_rascunho(self) -> None:
+        bitin = make_valid_bitin()
+        with self.assertRaises(ValueError):
+            bl.encaminhar_para_roteiro(bitin)
+
+    def test_nao_encaminha_duas_vezes(self) -> None:
+        bitin = make_valid_bitin()
+        bl.enviar_bitin(bitin, self.vba_mapping_config, self.document_config)
+        bl.encaminhar_para_roteiro(bitin)
+        with self.assertRaises(ValueError):
+            bl.encaminhar_para_roteiro(bitin)
+
+
+class ConcluirProcessamentoTest(unittest.TestCase):
+    """Setor Processos (2026-07-17) -- fecha a janela de reedição aberta por
+    encaminhar_para_roteiro."""
+
+    def setUp(self) -> None:
+        self.vba_mapping_config = bm.load_config(VBA_MAPPING_CONFIG_PATH)
+        self.document_config = bd.load_config(DOCUMENT_CONFIG_PATH)
+
+    def _bitin_encaminhado(self) -> dict:
+        bitin = make_valid_bitin()
+        bl.enviar_bitin(bitin, self.vba_mapping_config, self.document_config)
+        bl.encaminhar_para_roteiro(bitin)
+        return bitin
+
+    def test_conclui_bitin_encaminhado(self) -> None:
+        bitin = self._bitin_encaminhado()
+        bl.concluir_processamento(bitin)
+        self.assertTrue(bitin["processos_concluido"])
+        self.assertIn("data_processos_concluido", bitin)
+
+    def test_nao_conclui_bitin_ainda_nao_encaminhado(self) -> None:
+        bitin = make_valid_bitin()
+        bl.enviar_bitin(bitin, self.vba_mapping_config, self.document_config)
+        with self.assertRaises(ValueError):
+            bl.concluir_processamento(bitin)
+
+    def test_nao_conclui_duas_vezes(self) -> None:
+        bitin = self._bitin_encaminhado()
+        bl.concluir_processamento(bitin)
+        with self.assertRaises(ValueError):
+            bl.concluir_processamento(bitin)
+
+
+class ConcluirSemRoteiroTest(unittest.TestCase):
+    """Alternativa a encaminhar_para_roteiro quando o BITin não precisa passar pelo Processos
+    (2026-07-17, ver bitin_document.precisa_roteiro)."""
+
+    def setUp(self) -> None:
+        self.vba_mapping_config = bm.load_config(VBA_MAPPING_CONFIG_PATH)
+        self.document_config = bd.load_config(DOCUMENT_CONFIG_PATH)
+
+    def test_conclui_direto_sem_roteiro(self) -> None:
+        bitin = make_valid_bitin()
+        bl.enviar_bitin(bitin, self.vba_mapping_config, self.document_config)
+        bl.concluir_sem_roteiro(bitin)
+        self.assertTrue(bitin["encaminhado_roteiro"])
+        self.assertTrue(bitin["processos_concluido"])
+        self.assertTrue(bitin["sem_necessidade_roteiro"])
+        self.assertIn("data_encaminhado_roteiro", bitin)
+        self.assertIn("data_processos_concluido", bitin)
+
+    def test_nao_conclui_bitin_ainda_em_rascunho(self) -> None:
+        bitin = make_valid_bitin()
+        with self.assertRaises(ValueError):
+            bl.concluir_sem_roteiro(bitin)
+
+    def test_nao_conclui_bitin_ja_encaminhado(self) -> None:
+        bitin = make_valid_bitin()
+        bl.enviar_bitin(bitin, self.vba_mapping_config, self.document_config)
+        bl.encaminhar_para_roteiro(bitin)
+        with self.assertRaises(ValueError):
+            bl.concluir_sem_roteiro(bitin)
+
+
 if __name__ == "__main__":
     unittest.main()

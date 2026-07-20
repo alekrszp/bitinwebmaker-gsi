@@ -159,12 +159,17 @@ DADOS_BASICOS_LABELS = {
     "producao_interna": "Produção Interna",
     "texto_pedidos_compras": "Texto Pedidos Compras",
     "marcacao_eliminar_nivel_mandante": "Marcação eliminar nível mandante",
+    # Sem coluna correspondente no export SAP (Plan1/ZBPP009 real) -- diferente de
+    # "nível mandante" (que tem "de" pré-preenchido pelo SAP, ver plan1_dados_basicos_columns),
+    # "nível centro" é sempre declarado manualmente pelo engenheiro (achado ao cruzar a colinha
+    # de frases-modelo dos engenheiros com config/vba_mapping.json, 2026-07-17).
+    "marcacao_eliminar_nivel_centro": "Marcação eliminar nível centro",
 }
 
 
 def _humanize_label(campo: str) -> str:
     """Fallback só pra campo novo no crosswalk sem entrada em DADOS_BASICOS_LABELS ainda --
-    todos os 30 campos atuais já têm rótulo explícito (com acentuação correta em português,
+    todos os 31 campos atuais já têm rótulo explícito (com acentuação correta em português,
     que um capitalize() ingênuo não reproduz)."""
     return " ".join(palavra.capitalize() for palavra in campo.split("_"))
 

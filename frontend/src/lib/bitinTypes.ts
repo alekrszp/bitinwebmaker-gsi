@@ -40,6 +40,17 @@ export interface ItemListaTecnicaResumo {
   quantidade_para: string
 }
 
+// Sugestão automática (2026-07-17, ver scripts/bitin_document.py::suggest_impactos) --
+// derivada do código de Grupo de Mercadorias, NUNCA autoritativa (o campo que vale é sempre
+// o que o engenheiro declarou em impactos_operacionais). `null` = código SAP desconhecido/
+// não mapeado, não sugere nada -- não é erro. BitinDetail.tsx só aplica a sugestão quando o
+// campo correspondente ainda está em branco ("-"), nunca sobrescreve o que já foi declarado.
+export interface SugestoesImpactos {
+  alt: string | null
+  esp: string | null
+  dwg_sat_acao: string | null
+}
+
 export interface MaterialResumo {
   codigo_material: string
   descricao_material: string
@@ -48,12 +59,23 @@ export interface MaterialResumo {
   impactos_operacionais: Record<string, unknown>
   dados_basicos_alterados: CampoAlterado[]
   lista_tecnica: ItemListaTecnicaResumo[]
+  sugestoes: SugestoesImpactos
+  // Lembrete "REVISAR ROTEIRO" (Módulo4.bas) -- true quando o Alt declarado é "D/P" ou "-/P".
+  // Não afeta checklist/setores, é só um aviso visual pro engenheiro revisar o roteiro de
+  // fabricação (mesmo raciocínio da macro original).
+  revisar_roteiro: boolean
 }
 
 export interface BitinResumo {
   bitin: string
   status: string
   data_envio: string | null
+  // Fila do setor Cadastro (2026-07-17, ver scripts/bitin_lifecycle.py::encaminhar_para_roteiro)
+  encaminhado_roteiro: boolean
+  data_encaminhado_roteiro: string | null
+  // Setor Processos (2026-07-17, ver scripts/bitin_lifecycle.py::concluir_processamento)
+  processos_concluido: boolean
+  data_processos_concluido: string | null
   setor: string
   produto: string
   motivo: string
