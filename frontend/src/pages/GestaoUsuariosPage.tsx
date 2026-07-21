@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import AjudaPopover from '../components/bitin/AjudaPopover'
 import GestaoUsuarios from '../components/settings/GestaoUsuarios'
 import { useAuth } from '../hooks/useAuth'
 import { api } from '../lib/api'
@@ -30,7 +31,16 @@ export default function GestaoUsuariosPage() {
 
   return (
     <div className="mx-auto max-w-6xl">
-      <h1 className="text-2xl font-semibold text-ink">Gestão de usuários</h1>
+      <div className="flex flex-wrap items-center gap-3">
+        <h1 className="text-2xl font-semibold text-ink">Gestão de usuários</h1>
+        <AjudaPopover titulo="Como funciona">
+          <p>
+            <strong>Nível</strong>: 77 Individual, 88 Gestor, 99 Admin. <strong>Setor</strong>:
+            Cadastro, Processos ou Engenharia -- define em qual fila de trabalho a pessoa entra.
+          </p>
+          <p>Editar um usuário existente ou criar um novo usa o mesmo formulário, expandido na lista.</p>
+        </AjudaPopover>
+      </div>
       <div className="mt-4">
         <GestaoUsuarios subgrupos={subgrupos} />
       </div>

@@ -57,7 +57,7 @@ export default function MateriaisSection({
                 onRemove={onRemoveMaterial}
               />
               {revisarRoteiro && (
-                <p className="-mt-4 mb-4 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+                <p className="mb-4 mt-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
                   Revisar roteiro de fabricação: a revisão de desenho mudou sem troca de
                   fornecedor.
                 </p>

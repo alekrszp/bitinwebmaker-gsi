@@ -15,7 +15,7 @@ from sqlalchemy.orm import Session
 from backend.auth import rate_limit
 from backend.auth.deps import (
     NIVEL_ADMIN,
-    NIVEL_USUARIO,
+    NIVEL_INDIVIDUAL,
     get_current_active_user,
     get_current_user,
     oauth2_scheme,
@@ -65,7 +65,7 @@ def register_user(user_in: UserCreate, db: Session = Depends(get_db)) -> UserOut
         subgrupos=subgrupos,
         numero_eng=user_in.numero_eng,
         setor=user_in.setor,
-        permission_level=NIVEL_ADMIN if is_first_user else NIVEL_USUARIO,
+        permission_level=NIVEL_ADMIN if is_first_user else NIVEL_INDIVIDUAL,
         # email_verificado NUNCA vem do cliente -- mesma lição de permission_level acima.
         # Fica False no registro; não há fluxo de verificação de e-mail construído ainda,
         # só a coluna.

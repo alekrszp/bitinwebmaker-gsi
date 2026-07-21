@@ -244,7 +244,7 @@ def _checklist_ids_auto_sugeridos(materiais: list[dict[str, Any]], config: dict[
     sido verificada contra a macro real; o usuário then achou, na prática, que "quando colocado
     no campo nota salvar dwg ele marca sozinho a checklist" -- o que levou a essa reauditoria.
 
-    As 8 regras (linhas 144-202 de Módulo4.bas):
+    As 8 regras herdadas da macro (linhas 144-202 de Módulo4.bas):
     1-5. Alt declarado -> id via `config['alt_to_checklist_id']` (D/- =1, D/P=2, D/F=3, -/P=4,
          -/F=5).
     6. Nota livre em dados_basicos igual (exato, case-sensitive, como a comparação VBA
@@ -259,9 +259,20 @@ def _checklist_ids_auto_sugeridos(materiais: list[dict[str, Any]], config: dict[
     11. OC fora de {"", "-"} -> id 10 ("Ordem de cliente").
     12. OF fora de {"", "-"} -> id 17 ("Atualizar ordem de fabricação").
 
-    Confirmado ao ler a macro pessoalmente: ids 6 ("Especificações técnicas") e 7 ("Alteração
-    lista técnica") NUNCA são automáticos, nem na macro real -- continuam 100%
-    `checklist_overrides`-only, sem sugestão automática nenhuma."""
+    +2 regras NOVAS (2026-07-20, pedido explícito do usuário: "pegue a regra de negócio, e
+    você mesmo coloque automático oq puder por com oq vc tem" -- iam além do que a macro
+    original fazia, mas usam campo que já existe no schema, sem inventar heurística nova):
+    13. Esp == "X" -> id 6 ("Especificações técnicas"). `impactos_operacionais.esp` já existe
+        (ANEXO A do POP, valores {"X","-"}) e nunca tinha sido usado pra acionar checklist.
+    14. `material.alteracoes.lista_tecnica` não vazia -> id 7 ("Alteração lista técnica"): a
+        própria existência de itens na lista técnica do material já É o sinal de que ela foi
+        alterada, não precisa de campo extra.
+
+    As outras 8 etapas manuais (9, 11-16, 21) continuam SEM automação -- não existe nenhum
+    campo no schema do BITin que sinalize DPO-PAN/BITex/manual/instrução de montagem/
+    Elétrica/Estamparia/Madeira-Plástico/Atualizar custos; inventar uma regra sem lastro em
+    dado real violaria o princípio já registrado no projeto (preferir regra robusta a
+    heurística acoplada a algo instável, ver requirements.md)."""
     alt_to_id = config.get("alt_to_checklist_id", {})
     auto: set[str] = set()
     for material in materiais:
@@ -287,6 +298,10 @@ def _checklist_ids_auto_sugeridos(materiais: list[dict[str, Any]], config: dict[
             auto.add("10")
         if impactos["of"] not in ("", "-"):
             auto.add("17")
+        if impactos["esp"] == "X":
+            auto.add("6")
+        if material.get("alteracoes", {}).get("lista_tecnica"):
+            auto.add("7")
     return auto
 
 

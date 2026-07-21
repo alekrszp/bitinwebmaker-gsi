@@ -65,12 +65,12 @@ class Usuario(Base):
     # backend/api/users.py e backend/api/bitins.py. Renomeado de Setor/setores -> Subgrupo/
     # subgrupos (2026-07-16), ver comentário na classe Subgrupo acima.
     subgrupos = relationship("Subgrupo", secondary=usuario_subgrupos, backref="usuarios")
-    # Rótulo descritivo do CARGO da pessoa -- 'cadastro'/'gestor'/'usuario'/'processos'
-    # (2026-07-16). "`setor` é só um rótulo descritivo do cargo da pessoa, NÃO controla
-    # nenhuma regra de acesso, isso continua sendo só `permission_level`" -- todo controle de
-    # acesso (check_permission, NIVEL_*) usa exclusivamente permission_level; este campo é só
-    # exibição no frontend (Gestão de usuários). Validado em backend/auth/schemas.py contra
-    # SETORES_VALIDOS a nível de aplicação, não via CHECK constraint no banco.
+    # Domínio de trabalho da pessoa -- 'cadastro'/'processos'/'engenharia' (2026-07-20, 2ª
+    # revisão do modelo de permissões -- ANTES era só um rótulo de cargo sem função de
+    # acesso; agora controla acesso de verdade, cruzado com `permission_level`
+    # (NIVEL_INDIVIDUAL/NIVEL_GESTOR/NIVEL_ADMIN, ver backend/auth/deps.py::check_setor/
+    # eh_do_setor). Validado em backend/auth/schemas.py contra SETORES_VALIDOS a nível de
+    # aplicação, não via CHECK constraint no banco.
     setor = Column(String, nullable=False)
     # Só relevante pra contas de engenheiro (diagram: "Apenas engenheiros") -- outros papéis
     # deixam nulo, não é obrigatório pro sistema todo.

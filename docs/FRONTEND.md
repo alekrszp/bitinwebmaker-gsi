@@ -103,9 +103,8 @@ fundo branco sólido, não transparente) e na tela de login (`Login.jsx`).
 
 ## Estrutura
 
-Atualizada em 2026-07-15 (a árvore abaixo estava desatualizada desde antes do reconstrução da
-aba de Bitins — não listava nem `BitinDetail.tsx`/`MeusBitins.tsx`, que já existiam há duas
-rodadas):
+Atualizada em 2026-07-21 (Cadastro/Processos reformulados, Painel geral, aba "Bitins
+Concluídos" em Configurações, componentização — ver seção própria abaixo):
 
 ```text
 frontend/
@@ -116,9 +115,17 @@ frontend/
       bitinTypes.ts            - tipos do domínio BITin (BitinResumo, ChecklistItem, MaterialResumo, ...)
       bitinDefaults.ts         - materialVazio(), normalizarMaterial() (defensivo contra material
                                   salvo antes de um campo novo existir no schema)
+      bitinEtapa.ts             - Status x Etapa (fonte única, ver PainelGeral.tsx/BITIN_MODEL.md)
       format.ts                - formatarDataEnvio() (DD.MM.YYYY)
+      permissions.ts            - NIVEL_*/SETOR_*, isAdmin/isGestor/ehDoSetor/isCadastro/isProcessos
+      criarBitin.ts             - criarRascunhoENavegar() (cria rascunho + navega, sem tela em branco)
       useEnviarBitin.ts        - hook compartilhado pelo fluxo de envio (BitinDetail/CodigosSapPage/
                                   ListaTecnicaPage chamam a mesma lógica de envio + erros)
+    hooks/
+      useAuth.ts                - contexto de autenticação
+      useAvisoSairSemSalvar.ts  - modal "sair sem salvar" (BitinDetail)
+      useDebouncedValue.ts      - debounce genérico (busca em CadastroPage/ProcessosPage/MeusBitins)
+      useVoltar.ts              - "voltar" pra tela de origem (navigate(-1) com fallback)
     context/
       AuthContext.tsx          - login/logout/estado do usuário (Context API, sem lib externa)
       ThemeContext.tsx         - tema claro/escuro, padrão claro, persiste em localStorage
@@ -129,26 +136,41 @@ frontend/
       Topbar.tsx                 - menu mobile, tema, configurações, usuário, sair
       ThemeToggle.tsx            - botão sol/lua (reaproveitado no login e no topbar)
       icons.tsx                  - ícones SVG inline compartilhados (Home/Configurações/Sair/Menu)
-      Card.tsx                   - card com título, base visual de toda a aba de BITin
+      Card.tsx                   - card com título (aceita string ou JSX), base visual de várias telas
       DetailField.tsx            - par rótulo/valor só-leitura (Settings, visualização de BITin)
       bitin/
-        AjudaPopover.tsx         - ícone "?" com tutorial em popover (ZBPP009/BITin/Lista Técnica)
+        AjudaPopover.tsx         - ícone "?" com tutorial em popover (uma por tela principal)
+        BitinTableSection.tsx    - tabela de listagem de BITins compartilhada (Cadastro/Processos/
+                                    Meus Bitins/Bitins Concluídos)
+        bitinColunas.tsx          - tipo BitinColuna + COLUNAS_PADRAO_BITIN (Número/Motivo/
+                                    Solicitante/Status)
+        FiltroEtapaToolbar.tsx    - select de etapa + busca compartilhado (Cadastro/Processos)
         ChecklistTable.tsx       - checklist 100% manual, grade responsiva (1-3 colunas)
         DadosGeraisCard.tsx      - card "Dados gerais" (produto/motivo/solicitante/setor + checklist)
         MaterialEditorCard.tsx   - bloco editável de um material na aba BITin
         MateriaisSection.tsx     - lista de MaterialEditorCard + "+ Novo material"
         AlteracaoTable.tsx       - visualização só-leitura de um material (BITin enviado)
         DadosBasicosTable.tsx    - tabela De/Para de um material (dados básicos SAP)
-        OrdemClienteSection.tsx  - bloco de ordem_cliente[] (POP Nota 10)
+        OrdemClienteSection.tsx / OrdemClienteEditor.tsx - bloco de ordem_cliente[] (POP Nota 10)
         SetorBadge.tsx / StatusBadge.tsx / SetoresBanner.tsx - badges/banners de status e setor
         EdicaoBottomBar.tsx      - barra fixa (BITin/ZBPP009/Lista Técnica + Enviar)
         ErrosEnvioBanner.tsx     - lista de erros de validação ao tentar enviar
+        AvisoSairModal.tsx       - modal "sair sem salvar"
+      settings/
+        CriarUsuarioForm.tsx / GestaoUsuarios.tsx / TrocarSenhaForm.tsx
     pages/
       Login.tsx                  - tela de login (design completo, ver seção própria abaixo)
       Login.test.tsx              - smoke test (Vitest + Testing Library, ver "Testes" abaixo)
-      Home.tsx                   - boas-vindas + cartões de resumo pessoal (rascunhos/enviados)
-      Settings.tsx                - Minha conta (+ troca de senha) e Gestão de usuários (admin)
-      MeusBitins.tsx               - listagem escopada por usuário + excluir rascunho
+      Home.tsx                   - boas-vindas + resumo (fila do setor ou próprios BITins) + recentes
+      Settings.tsx                - Minha conta (+ troca de senha); admin ganha aba "Bitins
+                                     Concluídos" (lista travada, "Voltar bitin" reverte o Windchill)
+      GestaoUsuariosPage.tsx      - só super-admin (ver `security.py::CONTAS_SUPER_ADMIN`)
+      MeusBitins.tsx               - listagem escopada por permissão (próprio/setor/sistema) +
+                                       excluir rascunho (ou enviado, se admin)
+      CadastroPage.tsx             - fila do setor Cadastro (etapas Aguardando cadastro/
+                                       Pendência de envio, ver BITIN_MODEL.md)
+      ProcessosPage.tsx            - fila do setor Processos (etapas Pendente/Revisado)
+      PainelGeral.tsx              - visão de leitura pra Gestor/Admin (Status x Etapa, sem ações)
       BitinDetail.tsx               - aba "BITin": mesma estrutura de edição e de visualização
                                        enviada, só trava os campos quando não é mais editável
       CodigosSapPage.tsx            - aba "ZBPP009": grade estilo planilha, cola/digita direto
@@ -482,20 +504,24 @@ em `docs/BITIN_MODEL.md`/`docs/BACKEND.md` — aqui só o que muda na UI.
   intercepta navegação (troca de rota ou fechar aba) com alteração pendente em `BitinDetail`,
   oferece Salvar e sair / Sair sem salvar / Cancelar.
 - **Fila do setor Cadastro** (`CadastroPage.tsx`, rota `/cadastro`) — substitui de vez o
-  e-mail/PDF manual que existia antes (removido: botão "Enviar e-mail" de `MeusBitins.tsx`,
-  endpoint `GET /users/cadastro-emails`). Três abas: "Recebidos" (recém-enviado, com botão
-  condicional — "Encaminhar para roteiro" ou "Não precisa de roteiro", dependendo da regra
-  automática `precisa_roteiro`), "Enviados para roteiros" (aguardando o Processos) e
-  "Retornados de roteiro" (estado final, com "Baixar PDF" pra registro externo).
-- **Setor Processos** (nível `89`, `isProcessos()`/`NIVEL_PROCESSOS` em `lib/permissions.ts`):
-  recebe da fila do Cadastro (`encaminhado_roteiro=true`), reedita um BITin já `"enviado"`
-  (única exceção do sistema a "enviado é travado pra sempre") e conclui
-  ("Concluir processamento" em `BitinDetail.tsx`). Não cria BITin — "+ Novo BITin" some pra
-  esse nível em `MeusBitins.tsx`/`Home.tsx` (o backend também recusa com 403). `MeusBitins.tsx`
-  ganha uma coluna "Processamento" (Pendente/Concluído) só pra esse nível.
-- **Gestão de usuários**: `CriarUsuarioForm.tsx`/`GestaoUsuarios.tsx` ganham as opções
-  `89`/`"processos"` nos seletores de permissão/setor. Nem Cadastro nem Processos exigem
-  Subgrupo mais (tirados de `NIVEIS_QUE_EXIGEM_SUBGRUPO` no backend).
+  e-mail/PDF manual que existia antes. Roteamento automático (`enviar_bitin` já decide
+  sozinho se precisa de roteiro): Cadastro só vê o BITin nas etapas "Aguardando cadastro"
+  (liberar no SAP, botão "Concluir BITIN") e "Pendência de envio" (botão "Baixar PDF", que
+  baixa o PDF e chama `enviar-windchill` na mesma ação, com confirmação antes). BITins
+  concluídos (Status="Concluído") saem desta tela — vivem só na aba "Bitins Concluídos" de
+  `Settings.tsx`.
+- **Setor Processos** (`ProcessosPage.tsx`, rota `/processos`, `isProcessos()` em
+  `lib/permissions.ts`): recebe da fila do Cadastro (`encaminhado_roteiro=true`), reedita um
+  BITin já `"enviado"` (única exceção do sistema a "enviado é travado pra sempre") e conclui
+  ("Concluir" em `BitinDetail.tsx`). Não cria BITin. Etapas "Pendente"/"Revisado" — BITins que
+  nunca precisaram de roteiro (`sem_necessidade_roteiro=true`) são excluídos das duas, porque
+  Processos nunca teve contato real com eles.
+- **Painel geral** (`PainelGeral.tsx`, rota `/painel-geral`, Gestor/Admin): visão de leitura
+  sem ações, todo BITin com Status/Etapa (`lib/bitinEtapa.ts`) + com quem está, filtros de
+  Setor/Usuário/Status/Etapa + export CSV.
+- **Gestão de usuários**: `CriarUsuarioForm.tsx`/`GestaoUsuarios.tsx` usam os seletores de
+  Nível (77/88/99) e Setor (Cadastro/Processos/Engenharia) do modelo atual — só Engenharia
+  exige Subgrupo.
 - **Performance** (pedido explícito, "usa como base o frontend antigo que tinha uma
   otimização feita"): `React.memo` + padrão de estado local/commit-on-blur em
   `MaterialEditorCard.tsx`, ids estáveis por material (`crypto.randomUUID()` client-side em

@@ -12,13 +12,14 @@ import backend.scripts_path as scripts_path  # noqa: F401  (garante sys.path ant
 from backend.api.users import _usuarios_do_mesmo_subgrupo_query
 from backend.auth.deps import (
     NIVEL_ADMIN,
-    NIVEL_CADASTRO,
     NIVEL_GESTOR,
-    NIVEL_PROCESSOS,
     check_permission,
+    check_setor,
+    eh_do_setor,
     get_current_active_user,
 )
 from backend.auth.models import Usuario
+from backend.auth.schemas import SETOR_CADASTRO, SETOR_ENGENHARIA, SETOR_PROCESSOS
 from backend.bitin_number import SetorInvalido, gerar_e_salvar_bitin_sql
 from backend.db.mongodb import get_mongo_db
 from backend.db.session import get_db
@@ -92,6 +93,13 @@ class BitinResponse(BaseModel):
     # se algum material tem Alt em {"D/P","D/-","-/P"}. Decide se a CadastroPage.tsx mostra
     # "Encaminhar para roteiro" ou "Não precisa de roteiro" na aba "Recebidos".
     precisa_roteiro: bool = False
+    # Penúltimo passo (2026-07-20) -- ver bitin_lifecycle.concluir_bitin. Só depois disso o
+    # PDF fica disponível na aba "Pendência de envio" de CadastroPage.tsx.
+    bitin_cadastrado: bool = False
+    data_cadastrado: str | None = None
+    # Último passo de todos (2026-07-20) -- ver bitin_lifecycle.enviar_windchill.
+    windchill_enviado: bool = False
+    data_windchill_enviado: str | None = None
 
 
 class EnviarResponse(BaseModel):
@@ -106,7 +114,7 @@ def _bitin_liberado_para_processos(doc: dict[str, Any], current_user: Usuario) -
     (`encaminhado_roteiro=True`) e ainda não tiver sido concluído
     (`processos_concluido`). Ver bitin_lifecycle.concluir_processamento."""
     return (
-        current_user.permission_level in (NIVEL_PROCESSOS, NIVEL_ADMIN)
+        (eh_do_setor(current_user, SETOR_PROCESSOS) or current_user.permission_level >= NIVEL_ADMIN)
         and doc.get("encaminhado_roteiro", False)
         and not doc.get("processos_concluido", False)
     )
@@ -143,6 +151,10 @@ def _doc_to_response(doc: dict[str, Any], current_user: Usuario) -> BitinRespons
         data_processos_concluido=doc.get("data_processos_concluido"),
         sem_necessidade_roteiro=doc.get("sem_necessidade_roteiro", False),
         precisa_roteiro=bitin_document.precisa_roteiro(doc.get("content", {})),
+        bitin_cadastrado=doc.get("bitin_cadastrado", False),
+        data_cadastrado=doc.get("data_cadastrado"),
+        windchill_enviado=doc.get("windchill_enviado", False),
+        data_windchill_enviado=doc.get("data_windchill_enviado"),
     )
 
 
@@ -178,6 +190,95 @@ async def get_resumo_usuario(
         {"criado_por": current_user.email, "status": STATUS_ENVIADO}
     )
     return ResumoUsuarioResponse(rascunhos=rascunhos, enviados=enviados)
+
+
+class ResumoPainelResponse(BaseModel):
+    cadastro_aguardando: int
+    cadastro_cadastrados: int
+    processos_pendentes: int
+    processos_concluidos: int
+    geral_rascunhos: int
+    geral_enviados: int
+
+
+@router.get("/resumo-painel", response_model=ResumoPainelResponse)
+async def get_resumo_painel(
+    current_user: Usuario = Depends(get_current_active_user),
+    db: Session = Depends(get_db),
+    mongo_db=Depends(get_mongo_db),
+):
+    """Contadores do dashboard (Home.tsx) num ÚNICO round-trip ao Mongo, via `$facet`
+    (2026-07-20, pedido explícito: "otimiza velocidade de carregamento... tá muito lento") --
+    antes, Home.tsx buscava até 7 listas COMPLETAS de BITins (`GET /bitins?limit=200/500` x7,
+    incluindo `content` inteiro de cada um só pra contar `.length` no cliente) em paralelo.
+    Além de 7 round-trips simultâneos, cada resposta carregava dados que nunca eram usados
+    (motivo, materiais, checklist...) só pra virar um número. `$facet` roda os 6 `count`
+    dentro do banco, numa passada só, devolvendo só os números -- mesmo escopo de
+    visibilidade de sempre (ver _condicoes_escopo, definida mais abaixo -- lookup só
+    acontece na hora da chamada, ordem de definição no arquivo não importa aqui).
+
+    Registrada ANTES de GET /{mongo_id} de propósito (mesmo motivo de /resumo-usuario,
+    /schema/*, /parse-sap-paste acima) -- rotas estáticas precisam vir antes da rota
+    dinâmica /{mongo_id}, senão o FastAPI tentaria casar "resumo-painel" como um mongo_id."""
+    collection = mongo_db["bitin_contents"]
+    escopo = _condicoes_escopo(current_user, db)
+
+    def com_escopo(*extra: dict[str, Any]) -> dict[str, Any]:
+        condicoes = [*escopo, *extra]
+        return {"$and": condicoes} if condicoes else {}
+
+    pipeline = [
+        {
+            "$facet": {
+                "cadastro_aguardando": [
+                    {"$match": com_escopo({"status": STATUS_ENVIADO}, {"processos_concluido": True}, {"bitin_cadastrado": {"$ne": True}})},
+                    {"$count": "n"},
+                ],
+                "cadastro_cadastrados": [
+                    # Exclui quem já foi mandado pro Windchill (2026-07-20, nova etapa final)
+                    # -- mesmo filtro da aba "Pendência de envio" de CadastroPage.tsx, que também não
+                    # inclui mais quem já virou "Concluído".
+                    {"$match": com_escopo({"status": STATUS_ENVIADO}, {"bitin_cadastrado": True}, {"windchill_enviado": {"$ne": True}})},
+                    {"$count": "n"},
+                ],
+                "processos_pendentes": [
+                    {"$match": com_escopo(
+                        {"status": STATUS_ENVIADO}, {"encaminhado_roteiro": True},
+                        {"processos_concluido": {"$ne": True}}, {"sem_necessidade_roteiro": {"$ne": True}},
+                    )},
+                    {"$count": "n"},
+                ],
+                "processos_concluidos": [
+                    # Exclui quem nunca passou pelo Processos de verdade (2026-07-21, achado
+                    # ao investigar BITins de troca de fornecedor -/F aparecendo aqui --
+                    # concluir_sem_roteiro também seta processos_concluido=True como atalho,
+                    # ver ProcessosPage.tsx e bitin_lifecycle.py::concluir_sem_roteiro).
+                    {"$match": com_escopo(
+                        {"status": STATUS_ENVIADO}, {"processos_concluido": True},
+                        {"sem_necessidade_roteiro": {"$ne": True}},
+                    )},
+                    {"$count": "n"},
+                ],
+                "geral_rascunhos": [
+                    {"$match": com_escopo({"status": STATUS_RASCUNHO})},
+                    {"$count": "n"},
+                ],
+                "geral_enviados": [
+                    {"$match": com_escopo({"status": STATUS_ENVIADO})},
+                    {"$count": "n"},
+                ],
+            }
+        }
+    ]
+    resultado = await collection.aggregate(pipeline).to_list(length=1)
+    fatos = resultado[0] if resultado else {}
+    return ResumoPainelResponse(**{
+        chave: (fatos.get(chave, [{"n": 0}]) or [{"n": 0}])[0].get("n", 0)
+        for chave in (
+            "cadastro_aguardando", "cadastro_cadastrados", "processos_pendentes",
+            "processos_concluidos", "geral_rascunhos", "geral_enviados",
+        )
+    })
 
 
 @router.get("/schema/materiais")
@@ -218,6 +319,22 @@ async def create_or_update_draft(
     collection = mongo_db["bitin_contents"]
     now = datetime.now().isoformat()
 
+    # Cadastro e Processos não usam esta rota (2026-07-20, pedido explícito: "usuário de
+    # cadastro tem somente a tela cadastro, igual processos. não pode criar novo bitin nem
+    # alterá-lo") -- os dois trabalham só pelas rotas dedicadas de cada fila
+    # (encaminhar-roteiro/concluir-sem-roteiro/concluir-bitin pro Cadastro,
+    # atualizar-processos/concluir-processos pro Processos), nunca por aqui. Bloqueia tanto
+    # criar (sem mongo_id) quanto atualizar (com mongo_id) -- diferente do bloqueio anterior
+    # do Processos, que só cobria criação. Admin continua liberado (não é nível operacional
+    # restrito, mesmo padrão dos outros gates). Checado por SETOR agora (2026-07-20, 2ª
+    # revisão do modelo de permissões), não mais por nível fixo -- vale pra Gestor de
+    # Cadastro/Processos igual pra membro comum, só Engenharia (qualquer rank) cria BITin.
+    if eh_do_setor(current_user, SETOR_CADASTRO, SETOR_PROCESSOS):
+        raise HTTPException(
+            status_code=403,
+            detail="Este setor não cria nem edita BITins pelo rascunho -- só pela fila própria.",
+        )
+
     if draft_in.mongo_id:
         existing = await collection.find_one({"_id": draft_in.mongo_id})
         if not existing:
@@ -236,15 +353,6 @@ async def create_or_update_draft(
         # frontend, que qualquer requisição manual poderia contornar.
         solicitante = existing.get("content", {}).get("solicitante")
     else:
-        # Processos (2026-07-17, pedido explícito: "processos não pode fazer bitin, só fazer
-        # a parte da revisão de roteiro") -- só reedita BITins que chegaram na fila
-        # (draft_in.mongo_id preenchido, bloco acima), nunca cria um do zero. Admin continua
-        # liberado (não é um nível operacional restrito, mesmo padrão dos outros gates).
-        if current_user.permission_level == NIVEL_PROCESSOS:
-            raise HTTPException(
-                status_code=403,
-                detail="O setor Processos não cria BITins -- só revisa os encaminhados pelo Cadastro.",
-            )
         mongo_id = str(uuid.uuid4())
         created_at = now
         criado_por = current_user.email
@@ -313,6 +421,41 @@ TERMO_CAMPO_MONGO = {
 }
 
 
+def _condicoes_escopo(current_user: Usuario, db: Session) -> list[dict[str, Any]]:
+    """Escopo por (rank, setor) -- 2ª revisão do modelo de permissões (2026-07-20): Cadastro/
+    Processos/Engenharia não são mais níveis fixos, são valores de `Usuario.setor`, cruzados
+    com o rank (NIVEL_INDIVIDUAL/NIVEL_GESTOR/NIVEL_ADMIN, ver backend/auth/deps.py).
+    - setor=cadastro (INDIVIDUAL ou GESTOR): time central que recebe TODO BITin enviado por
+      QUALQUER pessoa, de qualquer Subgrupo. Vê também os PRÓPRIOS BITins em qualquer status
+      (incl. rascunho) -- só rascunho ALHEIO continua privado. Gestor de Cadastro NÃO tem
+      escopo mais amplo que um Cadastro comum aqui de propósito (2026-07-20, pedido
+      explícito: "só ganha o painel de oversight, fila de trabalho continua igual").
+    - setor=processos (INDIVIDUAL ou GESTOR): mesmo raciocínio de "time central", mas pela
+      fila encaminhada (encaminhado_roteiro=True) em vez de "todo enviado".
+    - setor=engenharia + GESTOR: BITins de qualquer um que compartilhe ao menos um Subgrupo
+      com ele (mesma consulta SQL de backend/api/users.py::
+      _usuarios_do_mesmo_subgrupo_query). Gestor sem subgrupo nenhum não ganha acesso a mais
+      ninguém -- cai pra "só os próprios".
+    - setor=engenharia + INDIVIDUAL: só os próprios BITins (criado_por == e-mail).
+    - Admin (99): sem restrição nenhuma -- vê o sistema inteiro, independente do setor.
+
+    Extraído de list_bitins (2026-07-20) pra ser reaproveitado por GET /bitins/resumo-painel
+    (contadores do dashboard, ver Home.tsx) sem duplicar a regra de visibilidade."""
+    if current_user.permission_level >= NIVEL_ADMIN:
+        return []  # sem restrição -- nenhuma condição de escopo
+    if eh_do_setor(current_user, SETOR_CADASTRO):
+        return [{"$or": [{"criado_por": current_user.email}, {"status": STATUS_ENVIADO}]}]
+    if eh_do_setor(current_user, SETOR_PROCESSOS):
+        return [{"$or": [{"criado_por": current_user.email}, {"encaminhado_roteiro": True}]}]
+    if eh_do_setor(current_user, SETOR_ENGENHARIA) and current_user.permission_level >= NIVEL_GESTOR:
+        colegas = _usuarios_do_mesmo_subgrupo_query(db, current_user).all()
+        emails = [u.email for u in colegas]
+        if emails:
+            return [{"criado_por": {"$in": emails}}]
+        return [{"criado_por": current_user.email}]
+    return [{"criado_por": current_user.email}]
+
+
 @router.get("", response_model=list[BitinResponse])
 async def list_bitins(
     status: str | None = None,
@@ -320,6 +463,9 @@ async def list_bitins(
     campo: str | None = None,
     encaminhado_roteiro: bool | None = None,
     processos_concluido: bool | None = None,
+    bitin_cadastrado: bool | None = None,
+    windchill_enviado: bool | None = None,
+    sem_necessidade_roteiro: bool | None = None,
     limit: int = 20,
     skip: int = 0,
     current_user: Usuario = Depends(get_current_active_user),
@@ -327,68 +473,11 @@ async def list_bitins(
     mongo_db=Depends(get_mongo_db),
 ):
     collection = mongo_db["bitin_contents"]
-    # Escopo por nível (revisto em 2026-07-16, revisão do modelo de permissões -- 4 níveis
-    # agora: Usuário/Gestor/Cadastro/Admin):
-    # - Usuário (66): só os próprios BITins (criado_por == e-mail), como sempre foi.
-    # - Gestor (77): BITins de qualquer um que compartilhe ao menos um Subgrupo com ele (mesma
-    #   consulta SQL de backend/api/users.py::_usuarios_do_mesmo_subgrupo_query, "quem o gestor
-    #   gerencia"), draft+enviado. Gestor sem subgrupo nenhum não ganha acesso a mais ninguém --
-    #   cai pra "só os próprios", pra não perder o acesso ao próprio trabalho (mesmo raciocínio
-    #   de list_users, mas aqui a consequência de "não vê nada" seria pior: perderia os
-    #   rascunhos que ele mesmo criou).
-    # - Cadastro (88): time central que recebe TODO BITin enviado por QUALQUER pessoa, de
-    #   qualquer Subgrupo (é literalmente o trabalho do setor -- "Recebidos"/"Enviados para
-    #   roteiros"/"Retornados de roteiro" em CadastroPage.tsx cobrem o sistema inteiro, não só
-    #   um Subgrupo). Vê também os PRÓPRIOS BITins em qualquer status (incl. rascunho, igual
-    #   usuário comum) -- só rascunho ALHEIO continua privado. Corrigido em 2026-07-20: até
-    #   aqui a regra ainda escopava "enviados de colega" por Subgrupo em comum (herdada de
-    #   2026-07-16, de antes do Cadastro virar um hub de roteamento) -- um teste de ponta a
-    #   ponta (tests/test_bitin_workflow_e2e.py) pegou um BITin de um engenheiro sem Subgrupo
-    #   em comum com o Cadastro sumindo da fila "Recebidos", que é exatamente o cenário real
-    #   que este nível existe pra cobrir.
-    # - Processos (89, NOVO 2026-07-17): mesmo raciocínio de "time central" -- ver o `elif`
-    #   dedicado logo abaixo, não cai nesta lista porque teria que vir ANTES do `>= NIVEL_GESTOR`.
-    # - Admin (99): sem restrição nenhuma -- vê o sistema inteiro (decisão de 2026-07-15:
-    #   antes admin também ficava preso a "só os meus" aqui; usuário confirmou "Admin vê tudo").
-    #
     # Construído como uma lista de condições combinadas com $and (em vez de ir setando chaves
-    # direto num dict só) porque o nível Cadastro E o filtro de termo (abaixo) precisam cada um
-    # do seu próprio "$or" -- setar os dois na mesma chave "$or" faria o segundo sobrescrever o
-    # primeiro (achado ao implementar o nível Cadastro).
-    condicoes: list[dict[str, Any]] = []
-    if current_user.permission_level >= NIVEL_ADMIN:
-        pass  # sem restrição -- nenhuma condição de escopo
-    elif current_user.permission_level == NIVEL_CADASTRO:
-        # Global de propósito (2026-07-20, ver comentário acima) -- qualquer BITin enviado,
-        # de qualquer autor/Subgrupo, mais os próprios em qualquer status (rascunho incluso).
-        condicoes.append({
-            "$or": [
-                {"criado_por": current_user.email},
-                {"status": STATUS_ENVIADO},
-            ]
-        })
-    elif current_user.permission_level == NIVEL_PROCESSOS:
-        # Time central (não escopado por Subgrupo, ver NIVEL_PROCESSOS em backend/auth/deps.py)
-        # -- vê os PRÓPRIOS BITins em qualquer status, mais TODA a fila encaminhada pelo
-        # Cadastro (concluída ou não, pra "aparecer os que devem ir ou não pra processo").
-        # Checado ANTES de `>= NIVEL_GESTOR` de propósito: 89 também seria capturado por esse
-        # `>=` (é maior que 77), o que daria a Processos o escopo errado (colegas de Subgrupo)
-        # em vez do escopo certo (fila global).
-        condicoes.append({
-            "$or": [
-                {"criado_por": current_user.email},
-                {"encaminhado_roteiro": True},
-            ]
-        })
-    elif current_user.permission_level >= NIVEL_GESTOR:
-        colegas = _usuarios_do_mesmo_subgrupo_query(db, current_user).all()
-        emails = [u.email for u in colegas]
-        if emails:
-            condicoes.append({"criado_por": {"$in": emails}})
-        else:
-            condicoes.append({"criado_por": current_user.email})
-    else:
-        condicoes.append({"criado_por": current_user.email})
+    # direto num dict só) porque o escopo de Cadastro/Processos E o filtro de termo (abaixo)
+    # precisam cada um do seu próprio "$or" -- setar os dois na mesma chave "$or" faria o
+    # segundo sobrescrever o primeiro.
+    condicoes: list[dict[str, Any]] = _condicoes_escopo(current_user, db)
     if status:
         condicoes.append({"status": status})
     if encaminhado_roteiro is not None:
@@ -402,10 +491,31 @@ async def list_bitins(
             "encaminhado_roteiro": {"$ne": True} if not encaminhado_roteiro else True
         })
     if processos_concluido is not None:
-        # Mesmo raciocínio de encaminhado_roteiro acima -- alimenta a 3ª aba da CadastroPage
-        # ("Pronto para cadastro", 2026-07-17): Processos concluiu e devolveu pro Cadastro.
+        # Mesmo raciocínio de encaminhado_roteiro acima -- alimenta a aba "Aguardando
+        # cadastro" da CadastroPage (2026-07-17): Processos concluiu (ou o Cadastro decidiu
+        # que não precisava de roteiro) e devolveu pro Cadastro.
         condicoes.append({
             "processos_concluido": {"$ne": True} if not processos_concluido else True
+        })
+    if bitin_cadastrado is not None:
+        # Mesmo raciocínio -- alimenta a aba "Pendência de envio" (2026-07-20, penúltimo passo do
+        # fluxo, ver bitin_lifecycle.concluir_bitin): só depois disso o PDF é liberado.
+        condicoes.append({
+            "bitin_cadastrado": {"$ne": True} if not bitin_cadastrado else True
+        })
+    if windchill_enviado is not None:
+        # Mesmo raciocínio -- alimenta a aba "Concluídos" (2026-07-20, último passo de todos,
+        # ver bitin_lifecycle.enviar_windchill).
+        condicoes.append({
+            "windchill_enviado": {"$ne": True} if not windchill_enviado else True
+        })
+    if sem_necessidade_roteiro is not None:
+        # 2026-07-21 -- ProcessosPage.tsx usa `sem_necessidade_roteiro: False` pra excluir da
+        # fila do Processos os BITins que nunca passaram por lá de verdade (concluídos direto
+        # via concluir_sem_roteiro, ver bitin_lifecycle.py). `processos_concluido=True`
+        # sozinho não distingue os dois caminhos.
+        condicoes.append({
+            "sem_necessidade_roteiro": {"$ne": True} if not sem_necessidade_roteiro else True
         })
     if termo:
         # re.escape antes de virar $regex do Mongo -- sem isso, metacaracteres de regex
@@ -551,16 +661,27 @@ async def enviar_bitin_endpoint(
 
     content["bitin"] = bitin_sql.codigo
     now = datetime.now().isoformat()
+    campos_topo: dict[str, Any] = {
+        "status": STATUS_ENVIADO,
+        "content": content,
+        "sql_ref_id": bitin_sql.id,
+        "updated_at": now,
+    }
+    # Roteamento automático (2026-07-20, ver bitin_lifecycle.enviar_bitin) -- o envio já
+    # decide sozinho se precisa de roteiro (encaminhar_para_roteiro) ou não
+    # (concluir_sem_roteiro), mutando `content` com os campos de cada um. Espelha pro
+    # TOP-LEVEL do doc (mesmo padrão dual usado em todo o resto deste arquivo) -- é o que
+    # _doc_to_response/list_bitins realmente leem, não o `content` aninhado.
+    if "encaminhado_roteiro" in content:
+        campos_topo["encaminhado_roteiro"] = content["encaminhado_roteiro"]
+        campos_topo["data_encaminhado_roteiro"] = content["data_encaminhado_roteiro"]
+    if "processos_concluido" in content:
+        campos_topo["processos_concluido"] = content["processos_concluido"]
+        campos_topo["data_processos_concluido"] = content["data_processos_concluido"]
+    if "sem_necessidade_roteiro" in content:
+        campos_topo["sem_necessidade_roteiro"] = content["sem_necessidade_roteiro"]
     try:
-        await collection.update_one(
-            {"_id": mongo_id},
-            {"$set": {
-                "status": STATUS_ENVIADO,
-                "content": content,
-                "sql_ref_id": bitin_sql.id,
-                "updated_at": now,
-            }},
-        )
+        await collection.update_one({"_id": mongo_id}, {"$set": campos_topo})
     except Exception:
         # Postgres já commitou o número (bitin_sql), mas o Mongo não gravou "enviado" --
         # sem uma transação real cobrindo os 2 bancos, desfaz o lado Postgres (best-effort)
@@ -589,7 +710,7 @@ async def enviar_bitin_endpoint(
 @router.post("/{mongo_id}/encaminhar-roteiro", response_model=BitinResponse)
 async def encaminhar_roteiro_endpoint(
     mongo_id: str,
-    current_user: Usuario = Depends(check_permission(NIVEL_CADASTRO, NIVEL_ADMIN)),
+    current_user: Usuario = Depends(check_setor(SETOR_CADASTRO)),
     mongo_db=Depends(get_mongo_db),
 ):
     """Substitui o e-mail automático do Módulo12.bas: quem é do Cadastro (ou admin) marca
@@ -622,7 +743,7 @@ async def encaminhar_roteiro_endpoint(
 @router.post("/{mongo_id}/concluir-sem-roteiro", response_model=BitinResponse)
 async def concluir_sem_roteiro_endpoint(
     mongo_id: str,
-    current_user: Usuario = Depends(check_permission(NIVEL_CADASTRO, NIVEL_ADMIN)),
+    current_user: Usuario = Depends(check_setor(SETOR_CADASTRO)),
     mongo_db=Depends(get_mongo_db),
 ):
     """Alternativa a /encaminhar-roteiro quando o BITin não precisa passar pelo Processos
@@ -666,7 +787,7 @@ async def concluir_sem_roteiro_endpoint(
 async def atualizar_processos_endpoint(
     mongo_id: str,
     payload: AtualizarProcessosRequest,
-    current_user: Usuario = Depends(check_permission(NIVEL_PROCESSOS, NIVEL_ADMIN)),
+    current_user: Usuario = Depends(check_setor(SETOR_PROCESSOS)),
     mongo_db=Depends(get_mongo_db),
 ):
     """Única forma de editar um BITin já enviado -- NÃO reaproveita POST /draft de propósito:
@@ -714,7 +835,7 @@ async def atualizar_processos_endpoint(
 @router.post("/{mongo_id}/concluir-processos", response_model=BitinResponse)
 async def concluir_processos_endpoint(
     mongo_id: str,
-    current_user: Usuario = Depends(check_permission(NIVEL_PROCESSOS, NIVEL_ADMIN)),
+    current_user: Usuario = Depends(check_setor(SETOR_PROCESSOS)),
     mongo_db=Depends(get_mongo_db),
 ):
     """Fecha a janela de reedição aberta por /encaminhar-roteiro -- depois disso o BITin
@@ -737,6 +858,111 @@ async def concluir_processos_endpoint(
             "content": content,
             "processos_concluido": True,
             "data_processos_concluido": content["data_processos_concluido"],
+            "updated_at": datetime.now().isoformat(),
+        }},
+    )
+    updated_doc = await collection.find_one({"_id": mongo_id})
+    return _doc_to_response(updated_doc, current_user)
+
+
+@router.post("/{mongo_id}/concluir-bitin", response_model=BitinResponse)
+async def concluir_bitin_endpoint(
+    mongo_id: str,
+    current_user: Usuario = Depends(check_setor(SETOR_CADASTRO)),
+    mongo_db=Depends(get_mongo_db),
+):
+    """Penúltimo passo do fluxo (2026-07-20): o Cadastro marca aqui que já fez o
+    cadastro/liberação de verdade no SAP -- move o BITin da aba "Aguardando cadastro" pra
+    "Cadastrados" em CadastroPage.tsx, e só a partir daqui o PDF fica disponível pra baixar.
+    Ver bitin_lifecycle.concluir_bitin."""
+    collection = mongo_db["bitin_contents"]
+    doc = await collection.find_one({"_id": mongo_id})
+    if not doc:
+        raise HTTPException(status_code=404, detail="BITin não encontrado")
+
+    content = doc.get("content", {})
+    try:
+        bitin_lifecycle.concluir_bitin(content)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    await collection.update_one(
+        {"_id": mongo_id},
+        {"$set": {
+            "content": content,
+            "bitin_cadastrado": True,
+            "data_cadastrado": content["data_cadastrado"],
+            "updated_at": datetime.now().isoformat(),
+        }},
+    )
+    updated_doc = await collection.find_one({"_id": mongo_id})
+    return _doc_to_response(updated_doc, current_user)
+
+
+@router.post("/{mongo_id}/enviar-windchill", response_model=BitinResponse)
+async def enviar_windchill_endpoint(
+    mongo_id: str,
+    current_user: Usuario = Depends(check_setor(SETOR_CADASTRO)),
+    mongo_db=Depends(get_mongo_db),
+):
+    """Última etapa de todas (2026-07-20, pedido explícito: "coloca uma ultima etapa na
+    parte de cadastro que é: enviado pro windchill") -- o Cadastro confirma que já baixou o
+    PDF (liberado por /concluir-bitin) e mandou pro Windchill de verdade. Move da aba
+    "Cadastrados" pra "Concluídos" em CadastroPage.tsx. Ver bitin_lifecycle.enviar_windchill."""
+    collection = mongo_db["bitin_contents"]
+    doc = await collection.find_one({"_id": mongo_id})
+    if not doc:
+        raise HTTPException(status_code=404, detail="BITin não encontrado")
+
+    content = doc.get("content", {})
+    try:
+        bitin_lifecycle.enviar_windchill(content)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    await collection.update_one(
+        {"_id": mongo_id},
+        {"$set": {
+            "content": content,
+            "windchill_enviado": True,
+            "data_windchill_enviado": content["data_windchill_enviado"],
+            "updated_at": datetime.now().isoformat(),
+        }},
+    )
+    updated_doc = await collection.find_one({"_id": mongo_id})
+    return _doc_to_response(updated_doc, current_user)
+
+
+@router.post("/{mongo_id}/reverter-windchill", response_model=BitinResponse)
+async def reverter_windchill_endpoint(
+    mongo_id: str,
+    current_user: Usuario = Depends(check_permission(NIVEL_ADMIN)),
+    mongo_db=Depends(get_mongo_db),
+):
+    """"Voltar BITin" (2026-07-20, pedido explícito: "faz isso numa aba lá em configurações
+    só do admin... lista dos bitins concluidos com opções de voltar bitin etc.") -- desfaz
+    /enviar-windchill, único jeito de sair da pasta de Bitins Concluídos (ver
+    scripts/bitin_lifecycle.py::reverter_windchill). `check_permission(NIVEL_ADMIN)` de
+    propósito -- não `check_setor`, nem Cadastro (Individual ou Gestor) chama isso, só admin
+    de verdade (mesmo espírito de "essa pasta vai ficar exposta só para o admin" de antes,
+    agora estendido pra reversão também)."""
+    collection = mongo_db["bitin_contents"]
+    doc = await collection.find_one({"_id": mongo_id})
+    if not doc:
+        raise HTTPException(status_code=404, detail="BITin não encontrado")
+
+    content = doc.get("content", {})
+    try:
+        bitin_lifecycle.reverter_windchill(content)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    await collection.update_one(
+        {"_id": mongo_id},
+        {"$set": {
+            "content": content,
+            "windchill_enviado": False,
+            "data_windchill_enviado": None,
             "updated_at": datetime.now().isoformat(),
         }},
     )

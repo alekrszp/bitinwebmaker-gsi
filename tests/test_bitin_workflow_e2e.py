@@ -37,11 +37,12 @@ from backend.db.session import Base, get_db  # noqa: E402
 from backend.main import app  # noqa: E402
 
 # Níveis (espelha backend/auth/deps.py) -- nomeados aqui pra cada teste ficar legível sem
-# precisar ir consultar o arquivo de permissões toda hora.
-NIVEL_USUARIO = 66
-NIVEL_GESTOR = 77
-NIVEL_CADASTRO = 88
-NIVEL_PROCESSOS = 89
+# precisar ir consultar o arquivo de permissões toda hora. 2ª revisão do modelo de permissões
+# (2026-07-20): Cadastro/Processos deixaram de ser níveis próprios, agora são
+# Usuario.setor="cadastro"/"processos" cruzado com NIVEL_INDIVIDUAL/NIVEL_GESTOR -- ver
+# setUp abaixo, onde cada _criar_usuario já passa o setor certo.
+NIVEL_INDIVIDUAL = 77
+NIVEL_GESTOR = 88
 NIVEL_ADMIN = 99
 
 # Alts que exigem passar pelo setor Processos (bitin_document._ALTS_QUE_EXIGEM_ROTEIRO) --
@@ -116,11 +117,11 @@ class BitinWorkflowTestBase(unittest.TestCase):
         self.client = TestClient(app)
 
         self._next_user_id = 1
-        self.engenheiro = self._criar_usuario(NIVEL_USUARIO, setor="usuario", nome="Engenheiro")
-        self.outro_engenheiro = self._criar_usuario(NIVEL_USUARIO, setor="usuario", nome="Outro Engenheiro")
-        self.cadastro = self._criar_usuario(NIVEL_CADASTRO, setor="cadastro", nome="Cadastro")
-        self.processos = self._criar_usuario(NIVEL_PROCESSOS, setor="processos", nome="Processos")
-        self.admin = self._criar_usuario(NIVEL_ADMIN, setor="usuario", nome="Admin")
+        self.engenheiro = self._criar_usuario(NIVEL_INDIVIDUAL, setor="engenharia", nome="Engenheiro")
+        self.outro_engenheiro = self._criar_usuario(NIVEL_INDIVIDUAL, setor="engenharia", nome="Outro Engenheiro")
+        self.cadastro = self._criar_usuario(NIVEL_INDIVIDUAL, setor="cadastro", nome="Cadastro")
+        self.processos = self._criar_usuario(NIVEL_INDIVIDUAL, setor="processos", nome="Processos")
+        self.admin = self._criar_usuario(NIVEL_ADMIN, setor="engenharia", nome="Admin")
 
     def tearDown(self) -> None:
         app.dependency_overrides.clear()
@@ -172,8 +173,15 @@ class BitinWorkflowTestBase(unittest.TestCase):
 
 class ComRoteiroWorkflowTest(BitinWorkflowTestBase):
     """BITin com Alt que EXIGE passar pelo setor Processos (D/P, D/-, -/P) -- história
-    completa: Engenheiro -> Cadastro (Recebidos) -> Processos (revisão) -> Cadastro
-    (Retornados, PDF pronto)."""
+    completa: Engenheiro -> Processos (revisão, DIRETO, ver comentário abaixo) -> Cadastro
+    (Aguardando cadastro, PDF pronto).
+
+    Roteamento automático (2026-07-20, pedido explícito: "se for pra processo vai DIRETO pra
+    processo... não precisa da tela de recebidos do cadastro e enviados para roteiro") -- o
+    próprio envio já encaminha sozinho quando a Alt exige roteiro (ver
+    scripts/bitin_lifecycle.py::enviar_bitin). Não existe mais um estado intermediário
+    "recebido, aguardando triagem do Cadastro" -- o Cadastro só volta a ver o BITin quando o
+    Processos concluir."""
 
     def test_fluxo_completo_alt_dp(self) -> None:
         self._roda_fluxo_completo("D/P")
@@ -185,54 +193,32 @@ class ComRoteiroWorkflowTest(BitinWorkflowTestBase):
         self._roda_fluxo_completo("-/P")
 
     def _roda_fluxo_completo(self, alt: str) -> None:
-        # 1) Engenheiro cria e envia.
+        # 1) Engenheiro cria e envia -- JÁ sai encaminhado pro Processos, sem passo manual.
         mongo_id = self._enviar_bitin(self.engenheiro, alt=alt)
 
         detalhe = self.client.get(f"/api/v1/bitins/{mongo_id}", headers=self._auth(self.engenheiro))
         self.assertEqual(detalhe.status_code, 200)
         self.assertEqual(detalhe.json()["status"], "enviado")
         self.assertTrue(detalhe.json()["precisa_roteiro"], f"Alt {alt} deveria exigir roteiro")
-        self.assertFalse(detalhe.json()["encaminhado_roteiro"])
+        self.assertTrue(detalhe.json()["encaminhado_roteiro"])  # roteamento automático
         self.assertFalse(detalhe.json()["pode_editar"])  # travado assim que enviado
 
         # 2) Isolamento: outro engenheiro (sem relação nenhuma) não vê este BITin.
         self.assertNotIn(mongo_id, self._bitins_visiveis_para(self.outro_engenheiro))
-        # Processos ainda não vê -- só entra na fila depois de encaminhado.
-        self.assertNotIn(mongo_id, self._bitins_visiveis_para(self.processos))
 
-        # 3) Cadastro enxerga na aba "Recebidos" (encaminhado_roteiro=false).
-        recebidos = self._bitins_visiveis_para(
-            self.cadastro, status="enviado", encaminhado_roteiro=False,
-        )
-        self.assertIn(mongo_id, recebidos)
-
-        # 4) Só Cadastro/admin podem encaminhar -- engenheiro comum toma 403.
-        negado = self.client.post(
-            f"/api/v1/bitins/{mongo_id}/encaminhar-roteiro", headers=self._auth(self.engenheiro),
-        )
-        self.assertEqual(negado.status_code, 403)
-
-        encaminhar = self.client.post(
-            f"/api/v1/bitins/{mongo_id}/encaminhar-roteiro", headers=self._auth(self.cadastro),
-        )
-        self.assertEqual(encaminhar.status_code, 200, encaminhar.text)
-        self.assertTrue(encaminhar.json()["encaminhado_roteiro"])
-
-        # 5) Some de "Recebidos", aparece em "Enviados para roteiros" pro Cadastro.
+        # 3) Cadastro NÃO vê mais na fila própria enquanto está com o Processos (não existe
+        # mais aba "Recebidos"/"Enviados para roteiros") -- só volta a ver quando concluído.
         self.assertNotIn(mongo_id, self._bitins_visiveis_para(
-            self.cadastro, status="enviado", encaminhado_roteiro=False,
-        ))
-        self.assertIn(mongo_id, self._bitins_visiveis_para(
-            self.cadastro, status="enviado", encaminhado_roteiro=True, processos_concluido=False,
+            self.cadastro, status="enviado", processos_concluido=True,
         ))
 
-        # 6) Agora Processos enxerga (fila global) e PODE editar -- única exceção ao "enviado
-        # é travado pra sempre" no sistema inteiro.
+        # 4) Processos já enxerga na hora (fila global) e PODE editar -- única exceção ao
+        # "enviado é travado pra sempre" no sistema inteiro.
         self.assertIn(mongo_id, self._bitins_visiveis_para(self.processos))
         detalhe_processos = self.client.get(f"/api/v1/bitins/{mongo_id}", headers=self._auth(self.processos))
         self.assertTrue(detalhe_processos.json()["pode_editar"])
 
-        # 7) Engenheiro comum não pode editar via /atualizar-processos (só Processos/admin).
+        # 5) Engenheiro comum não pode editar via /atualizar-processos (só Processos/admin).
         negado_edicao = self.client.post(
             f"/api/v1/bitins/{mongo_id}/atualizar-processos",
             json={"content": make_bitin_content(alt=alt, motivo="Tentativa indevida")},
@@ -240,7 +226,7 @@ class ComRoteiroWorkflowTest(BitinWorkflowTestBase):
         )
         self.assertEqual(negado_edicao.status_code, 403)
 
-        # 8) Processos edita de verdade -- status/número continuam intactos.
+        # 6) Processos edita de verdade -- status/número continuam intactos.
         editar = self.client.post(
             f"/api/v1/bitins/{mongo_id}/atualizar-processos",
             json={"content": make_bitin_content(alt=alt, motivo="Roteiro revisado pelo Processos")},
@@ -251,7 +237,7 @@ class ComRoteiroWorkflowTest(BitinWorkflowTestBase):
         self.assertEqual(editar.json()["content"]["motivo"], "Roteiro revisado pelo Processos")
         self.assertEqual(editar.json()["codigo"], detalhe.json()["codigo"])
 
-        # 9) Só Processos/admin concluem -- Cadastro (que só encaminha) toma 403.
+        # 7) Só Processos/admin concluem -- Cadastro toma 403 (não participa mais dessa etapa).
         negado_conclusao = self.client.post(
             f"/api/v1/bitins/{mongo_id}/concluir-processos", headers=self._auth(self.cadastro),
         )
@@ -264,7 +250,7 @@ class ComRoteiroWorkflowTest(BitinWorkflowTestBase):
         self.assertTrue(concluir.json()["processos_concluido"])
         self.assertFalse(concluir.json()["sem_necessidade_roteiro"])  # passou pelo Processos de verdade
 
-        # 10) Trava de novo -- nem o próprio Processos edita mais.
+        # 8) Trava de novo -- nem o próprio Processos edita mais.
         detalhe_final_processos = self.client.get(f"/api/v1/bitins/{mongo_id}", headers=self._auth(self.processos))
         self.assertFalse(detalhe_final_processos.json()["pode_editar"])
         reedicao_negada = self.client.post(
@@ -274,15 +260,12 @@ class ComRoteiroWorkflowTest(BitinWorkflowTestBase):
         )
         self.assertEqual(reedicao_negada.status_code, 400)
 
-        # 11) Some de "Enviados para roteiros", aparece em "Retornados de roteiro" pro Cadastro.
-        self.assertNotIn(mongo_id, self._bitins_visiveis_para(
-            self.cadastro, status="enviado", encaminhado_roteiro=True, processos_concluido=False,
-        ))
+        # 9) Volta a aparecer pro Cadastro, agora em "Aguardando cadastro".
         self.assertIn(mongo_id, self._bitins_visiveis_para(
             self.cadastro, status="enviado", processos_concluido=True,
         ))
 
-        # 12) PDF pronto pra registro externo -- qualquer autenticado baixa (mesma regra de
+        # 10) PDF pronto pra registro externo -- qualquer autenticado baixa (mesma regra de
         # GET /{id}/pdf), sem autenticação nenhuma toma 401.
         pdf = self.client.get(f"/api/v1/bitins/{mongo_id}/pdf", headers=self._auth(self.cadastro))
         self.assertEqual(pdf.status_code, 200)
@@ -302,35 +285,19 @@ class SemRoteiroWorkflowTest(BitinWorkflowTestBase):
                 self._roda_fluxo_sem_roteiro(alt)
 
     def _roda_fluxo_sem_roteiro(self, alt: str) -> None:
+        # Roteamento automático (2026-07-20) -- o envio já chama concluir_sem_roteiro sozinho,
+        # nenhum passo manual do Cadastro no meio (ver bitin_lifecycle.enviar_bitin).
         mongo_id = self._enviar_bitin(self.engenheiro, alt=alt)
 
         detalhe = self.client.get(f"/api/v1/bitins/{mongo_id}", headers=self._auth(self.engenheiro))
         self.assertFalse(detalhe.json()["precisa_roteiro"], f"Alt {alt} não deveria exigir roteiro")
-
-        # Aparece pro Cadastro em "Recebidos", igual qualquer outro.
-        self.assertIn(mongo_id, self._bitins_visiveis_para(
-            self.cadastro, status="enviado", encaminhado_roteiro=False,
-        ))
-
-        # Engenheiro comum não pode concluir sem roteiro (só Cadastro/admin).
-        negado = self.client.post(
-            f"/api/v1/bitins/{mongo_id}/concluir-sem-roteiro", headers=self._auth(self.engenheiro),
-        )
-        self.assertEqual(negado.status_code, 403)
-
-        concluir = self.client.post(
-            f"/api/v1/bitins/{mongo_id}/concluir-sem-roteiro", headers=self._auth(self.cadastro),
-        )
-        self.assertEqual(concluir.status_code, 200, concluir.text)
-        body = concluir.json()
+        body = detalhe.json()
         self.assertTrue(body["encaminhado_roteiro"])
         self.assertTrue(body["processos_concluido"])
         self.assertTrue(body["sem_necessidade_roteiro"])  # pulou o Processos
 
-        # Nunca passa pela aba "Enviados para roteiros" -- vai direto pra "Retornados".
-        self.assertNotIn(mongo_id, self._bitins_visiveis_para(
-            self.cadastro, status="enviado", encaminhado_roteiro=True, processos_concluido=False,
-        ))
+        # Já aparece direto pro Cadastro em "Aguardando cadastro" -- nunca passa por um
+        # estado intermediário de espera.
         self.assertIn(mongo_id, self._bitins_visiveis_para(
             self.cadastro, status="enviado", processos_concluido=True,
         ))
@@ -346,9 +313,11 @@ class SemRoteiroWorkflowTest(BitinWorkflowTestBase):
         self.assertEqual(pdf.status_code, 200)
         self.assertTrue(pdf.content.startswith(b"%PDF"))
 
-    def test_concluir_sem_roteiro_rejeitado_se_alt_exige_roteiro(self) -> None:
-        """Reforço no servidor -- Cadastro não consegue pular o Processos só porque quis,
-        se a regra automática diz que precisa (não confia só no frontend esconder o botão)."""
+    def test_concluir_sem_roteiro_manual_rejeitado_apos_roteamento_automatico(self) -> None:
+        """Escape hatch defensivo (POST /concluir-sem-roteiro ainda existe, mas o roteamento
+        automático já resolveu tudo no envio) -- chamar de novo manualmente sempre esbarra em
+        "já foi encaminhado", não em "precisa de roteiro" (a checagem de precisa_roteiro nem
+        chega a rodar, o already-encaminhado bloqueia primeiro)."""
         mongo_id = self._enviar_bitin(self.engenheiro, alt="D/P")
         resp = self.client.post(
             f"/api/v1/bitins/{mongo_id}/concluir-sem-roteiro", headers=self._auth(self.cadastro),
@@ -363,39 +332,43 @@ class VisibilidadePorPapelTest(BitinWorkflowTestBase):
     def setUp(self) -> None:
         super().setUp()
         # Um BITin de cada "dono" possível, em estágios diferentes -- cenário fixo reutilizado
-        # por todos os testes desta classe.
+        # por todos os testes desta classe. Roteamento automático (2026-07-20) -- qualquer
+        # Alt que exige roteiro já sai ENCAMINHADO direto do envio (ver
+        # bitin_lifecycle.enviar_bitin), não existe mais um estado "enviado, aguardando
+        # triagem do Cadastro" pra Alt que precisa de roteiro.
         self.rascunho_engenheiro = self.client.post(
             "/api/v1/bitins/draft",
             json={"content": make_bitin_content(alt="D/P")},
             headers=self._auth(self.engenheiro),
         ).json()["mongo_id"]
         self.enviado_engenheiro = self._enviar_bitin(self.engenheiro, alt="D/P")
-        self.encaminhado = self._enviar_bitin(self.outro_engenheiro, alt="D/P")
-        self.client.post(f"/api/v1/bitins/{self.encaminhado}/encaminhar-roteiro", headers=self._auth(self.cadastro))
+        self.com_processos = self._enviar_bitin(self.outro_engenheiro, alt="D/P")
 
     def test_usuario_comum_so_ve_os_proprios(self) -> None:
         vistos = self._bitins_visiveis_para(self.engenheiro)
         self.assertIn(self.rascunho_engenheiro, vistos)
         self.assertIn(self.enviado_engenheiro, vistos)
-        self.assertNotIn(self.encaminhado, vistos)  # é do outro_engenheiro
+        self.assertNotIn(self.com_processos, vistos)  # é do outro_engenheiro
 
     def test_cadastro_nao_ve_rascunho_alheio_mas_ve_enviados(self) -> None:
         vistos = self._bitins_visiveis_para(self.cadastro)
         self.assertNotIn(self.rascunho_engenheiro, vistos)  # rascunho de outra pessoa: privado
         self.assertIn(self.enviado_engenheiro, vistos)
-        self.assertIn(self.encaminhado, vistos)
+        self.assertIn(self.com_processos, vistos)
 
     def test_processos_so_ve_a_fila_encaminhada(self) -> None:
+        """Ambos os enviados (Alt=D/P) já saem encaminhados DIRETO do envio (roteamento
+        automático, 2026-07-20) -- Processos vê os dois na hora, só o rascunho fica de fora."""
         vistos = self._bitins_visiveis_para(self.processos)
         self.assertNotIn(self.rascunho_engenheiro, vistos)
-        self.assertNotIn(self.enviado_engenheiro, vistos)  # ainda não foi encaminhado
-        self.assertIn(self.encaminhado, vistos)
+        self.assertIn(self.enviado_engenheiro, vistos)
+        self.assertIn(self.com_processos, vistos)
 
     def test_admin_ve_tudo(self) -> None:
         vistos = self._bitins_visiveis_para(self.admin)
         self.assertIn(self.rascunho_engenheiro, vistos)
         self.assertIn(self.enviado_engenheiro, vistos)
-        self.assertIn(self.encaminhado, vistos)
+        self.assertIn(self.com_processos, vistos)
 
     def test_processos_nao_cria_bitin_mas_admin_sim(self) -> None:
         negado = self.client.post(

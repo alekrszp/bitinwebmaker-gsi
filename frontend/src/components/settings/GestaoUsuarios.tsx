@@ -8,18 +8,20 @@ import { extrairErro } from '../../lib/errors'
 import { montarMailtoSenhaTemporaria } from '../../lib/senhaTemporaria'
 import type { AdminUserCreateResponse, Subgrupo, User } from '../../lib/types'
 
-// Espelha backend/auth/schemas.py::NIVEIS_QUE_EXIGEM_SUBGRUPO (2026-07-16) -- só Admin (99)
-// pode ficar sem subgrupo. Checagem no cliente é só UX (mesmo espírito de CriarUsuarioForm.tsx);
-// o backend (PATCH /users/{id}/subgrupos) continua sendo quem de fato garante a regra.
-const NIVEIS_QUE_EXIGEM_SUBGRUPO = new Set([66, 77, 88])
+// Espelha backend/auth/schemas.py::exige_subgrupo (2026-07-20, 2ª revisão do modelo de
+// permissões) -- só Engenharia exige subgrupo, Admin nunca exige. Checagem no cliente é só
+// UX (mesmo espírito de CriarUsuarioForm.tsx); o backend (PATCH /users/{id}/subgrupos)
+// continua sendo quem de fato garante a regra.
+function exigeSubgrupo(setor: string, permissionLevel: number): boolean {
+  return setor === 'engenharia' && permissionLevel !== 99
+}
 
-// Opções do rótulo de papel "Setor" (2026-07-16, NOVO) -- mesmas de CriarUsuarioForm.tsx,
-// independente de Permissão e de Subgrupo.
+// Opções de Setor (2026-07-20) -- mesmas de CriarUsuarioForm.tsx, agora CONTROLA acesso de
+// verdade, cruzado com Permissão (não mais um rótulo puramente descritivo).
 const OPCOES_SETOR: { value: string; label: string }[] = [
   { value: 'cadastro', label: 'Cadastro' },
   { value: 'processos', label: 'Processos' },
-  { value: 'gestor', label: 'Gestor' },
-  { value: 'usuario', label: 'Usuário' },
+  { value: 'engenharia', label: 'Engenharia' },
 ]
 
 export default function GestaoUsuarios({ subgrupos }: { subgrupos: Subgrupo[] }) {
@@ -342,7 +344,7 @@ export default function GestaoUsuarios({ subgrupos }: { subgrupos: Subgrupo[] })
                                 const novos = e.target.checked
                                   ? [...u.subgrupo_ids, s.id]
                                   : u.subgrupo_ids.filter((id) => id !== s.id)
-                                if (NIVEIS_QUE_EXIGEM_SUBGRUPO.has(u.permission_level) && novos.length === 0) {
+                                if (exigeSubgrupo(u.setor, u.permission_level) && novos.length === 0) {
                                   setError('Este nível de permissão exige ao menos um subgrupo.')
                                   return
                                 }
@@ -381,12 +383,11 @@ export default function GestaoUsuarios({ subgrupos }: { subgrupos: Subgrupo[] })
                         className="rounded border border-line bg-surface px-2 py-1 text-sm text-ink disabled:opacity-50"
                       >
                         {/* Só o número no UI (2026-07-17, pedido explícito) -- mesmo padrão
-                            de CriarUsuarioForm.tsx. */}
+                            de CriarUsuarioForm.tsx. 2ª revisão do modelo de permissões
+                            (2026-07-20): só 77/88/99 existem mais. */}
                         <option value={99}>99</option>
-                        <option value={89}>89</option>
                         <option value={88}>88</option>
                         <option value={77}>77</option>
-                        <option value={66}>66</option>
                       </select>
                     </td>
                     <td className="whitespace-nowrap px-3 py-2 text-right">

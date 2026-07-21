@@ -26,7 +26,7 @@ const DescricaoInput = memo(function DescricaoInput({
       onBlur={() => {
         if (local !== valor) onCommit(local)
       }}
-      placeholder="Anotação (ex.: centro de custo, conta razão)..."
+      placeholder="Anotações..."
       className="mt-1.5 w-full rounded border border-line bg-surface px-2 py-1 text-xs text-ink placeholder:text-ink-faint focus:border-brand-navy focus:outline-none"
     />
   )

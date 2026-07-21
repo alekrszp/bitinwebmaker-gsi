@@ -19,10 +19,10 @@ export default function CriarUsuarioForm({ subgrupos, onCriado }: { subgrupos: S
   // Vários subgrupos marcáveis (2026-07-15, era um <select> de escolha única -- "um usuário
   // poder ser tanto armazenagem tanto quanto proteina").
   const [subgrupoIds, setSubgrupoIds] = useState<number[]>([])
-  const [permissionLevel, setPermissionLevel] = useState(66)
-  // Rótulo de papel (2026-07-16, NOVO) -- separado de Permissão e de Subgrupo, sem vínculo
-  // automático entre os três (admin escolhe cada um independentemente).
-  const [setor, setSetor] = useState('usuario')
+  const [permissionLevel, setPermissionLevel] = useState(77)
+  // Domínio de trabalho (2026-07-20, 2ª revisão do modelo de permissões) -- agora CONTROLA
+  // acesso de verdade, cruzado com Permissão (ver backend/auth/deps.py::eh_do_setor).
+  const [setor, setSetor] = useState('engenharia')
   // Reconfirmação de senha do PRÓPRIO admin (2026-07-16, pedido explícito: reconfirmar
   // identidade antes de criar conta) -- nunca a senha do usuário novo, essa continua sendo
   // gerada no servidor (ver comentário acima). Enviada como senha_admin, verificada em
@@ -47,10 +47,10 @@ export default function CriarUsuarioForm({ subgrupos, onCriado }: { subgrupos: S
     }
   }
 
-  // Espelha backend/auth/schemas.py::NIVEIS_QUE_EXIGEM_SUBGRUPO (2026-07-16, revisão do modelo
-  // de permissões) -- só Admin (99) pode ficar sem subgrupo. Checagem no cliente é só UX (evita
-  // um round-trip pra descobrir o 400); o backend continua sendo quem de fato garante a regra.
-  const exigeSubgrupo = permissionLevel !== 99
+  // Espelha backend/auth/schemas.py::exige_subgrupo (2026-07-20, 2ª revisão do modelo de
+  // permissões) -- só Engenharia exige subgrupo, Admin nunca exige. Checagem no cliente é só
+  // UX (evita um round-trip pra descobrir o 400); o backend continua garantindo a regra.
+  const exigeSubgrupo = setor === 'engenharia' && permissionLevel !== 99
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -88,8 +88,8 @@ export default function CriarUsuarioForm({ subgrupos, onCriado }: { subgrupos: S
       setNome('')
       setNumeroEng('')
       setSubgrupoIds([])
-      setPermissionLevel(66)
-      setSetor('usuario')
+      setPermissionLevel(77)
+      setSetor('engenharia')
       setSenhaAdmin('')
     } catch (err) {
       setErro(extrairErro(err, 'Não foi possível cadastrar o usuário.'))
@@ -192,17 +192,18 @@ export default function CriarUsuarioForm({ subgrupos, onCriado }: { subgrupos: S
             className="w-full rounded-lg border border-line bg-surface px-3 py-2 text-sm text-ink focus:border-brand-navy focus:outline-none focus:ring-2 focus:ring-brand-navy/20"
           >
             {/* Permissão É o número (permission_level) -- só o número no UI (2026-07-17,
-                pedido explícito), sem rótulo textual ao lado. */}
+                pedido explícito), sem rótulo textual ao lado. 2ª revisão do modelo de
+                permissões (2026-07-20): só 77 (individual), 88 (Gestor) e 99 (Admin) --
+                Cadastro/Processos deixaram de ser níveis próprios, viraram Setor (ver
+                dropdown abaixo). */}
             <option value={99}>99</option>
-            <option value={89}>89</option>
             <option value={88}>88</option>
             <option value={77}>77</option>
-            <option value={66}>66</option>
           </select>
         </div>
         <div>
-          {/* Rótulo de papel (2026-07-16, NOVO) -- controle separado de Permissão (nível de
-              acesso) e de Subgrupo (Proteína/Armazenagem); sem vínculo automático entre eles. */}
+          {/* Domínio de trabalho (2026-07-20) -- agora CONTROLA acesso de verdade, cruzado
+              com Permissão acima (ver backend/auth/deps.py::eh_do_setor/check_setor). */}
           <FormLabel htmlFor="novo-setor">Setor</FormLabel>
           <select
             id="novo-setor"
@@ -213,8 +214,7 @@ export default function CriarUsuarioForm({ subgrupos, onCriado }: { subgrupos: S
           >
             <option value="cadastro">Cadastro</option>
             <option value="processos">Processos</option>
-            <option value="gestor">Gestor</option>
-            <option value="usuario">Usuário</option>
+            <option value="engenharia">Engenharia</option>
           </select>
         </div>
         <div>

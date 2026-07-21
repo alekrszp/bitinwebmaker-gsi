@@ -2,30 +2,47 @@ from datetime import datetime
 
 from pydantic import BaseModel, EmailStr, field_validator
 
-from backend.auth.security import validate_password_strength
+from backend.auth.security import eh_super_admin_email, validate_password_strength
 
-# Níveis que exigem ao menos um Subgrupo (2026-07-16, revisão do modelo de permissões) -- só
-# Admin (99) pode ficar sem subgrupo. A checagem em si fica em
-# backend/api/users.py::create_user_by_admin (não aqui via pydantic validator) pra devolver
-# 400 com a mesma "voz" de erro de _resolve_subgrupos, em vez do 422 genérico que um
-# field_validator/model_validator do pydantic geraria.
-# Renomeado de NIVEIS_QUE_EXIGEM_SETOR (2026-07-16) -- mesmo conjunto de valores, só o nome
-# mudou junto com a rename geral Setor -> Subgrupo (ver backend/auth/models.py).
-# Cadastro (88) e Processos (89, ver deps.py::NIVEL_PROCESSOS) tirados do conjunto em
-# 2026-07-17 (pedido explícito do usuário) -- os dois são times centrais que recebem BITins
-# de QUALQUER Subgrupo (fila do Cadastro/encaminhado_roteiro), não faz sentido prender o
-# cadastro deles a um Subgrupo específico. `list_bitins` (backend/api/bitins.py) já trata
-# Cadastro sem subgrupo caindo pra "só os próprios" (fallback já existente, não é código
-# novo) -- Processos nunca dependeu de Subgrupo pra começo de conversa.
-NIVEIS_QUE_EXIGEM_SUBGRUPO = {66, 77}
+# Valores válidos do campo Usuario.setor (2026-07-20, 2ª revisão do modelo de permissões --
+# `setor` DEIXOU de ser um rótulo puramente descritivo: agora é o domínio de trabalho da
+# pessoa, cruzado com o rank em permission_level (ver backend/auth/deps.py::NIVEL_INDIVIDUAL/
+# NIVEL_GESTOR/NIVEL_ADMIN). Pedido explícito: "77 = cadastro, processos, engenheiro" / "88 =
+# GESTOR: pode existir gestor de cadastro, processos e engenharia" -- ou seja, TODO usuário
+# 77/88 tem um setor entre esses 3; admin (99) também tem um (decide qual aba de trabalho
+# própria ele vê, ver Sidebar.tsx/Home.tsx no frontend, "como eu sou de cadastro vou ter a
+# tela de cadastro normal"). Substitui os antigos valores "gestor"/"usuario" (eram só rótulo,
+# sem função) -- SETOR_ENGENHARIA cobre os dois papéis antigos (Usuário 66 e Gestor 77 velhos
+# viram, respectivamente, NIVEL_INDIVIDUAL/NIVEL_GESTOR com setor=SETOR_ENGENHARIA).
+SETOR_CADASTRO = "cadastro"
+SETOR_PROCESSOS = "processos"
+SETOR_ENGENHARIA = "engenharia"
+SETORES_VALIDOS = {SETOR_CADASTRO, SETOR_PROCESSOS, SETOR_ENGENHARIA}
 
-# Valores válidos do NOVO campo Usuario.setor (2026-07-16) -- rótulo descritivo do cargo da
-# pessoa (cadastro/gestor/usuario), CONCEITO DIFERENTE do Subgrupo (Proteína Animal/
-# Armazenagem de Grãos) renomeado acima. "`setor` é só um rótulo descritivo do cargo da
-# pessoa (2026-07-16, decisão explícita do usuário) -- NÃO controla nenhuma regra de acesso,
-# isso continua sendo só `permission_level`." Validado a nível de aplicação (Pydantic aqui +
-# reforçado em backend/api/users.py), não via CHECK constraint no banco.
-SETORES_VALIDOS = {"cadastro", "gestor", "usuario", "processos"}
+# Subgrupo (Proteína Animal/Armazenagem de Grãos) só faz sentido pra quem é de Engenharia
+# (2026-07-20, pedido explícito: "apenas engenheiros devem ter subgrupos") -- Cadastro e
+# Processos são times centrais (recebem BITins de QUALQUER subgrupo, não fazem sentido presos
+# a um subgrupo específico, mesmo raciocínio de antes só que agora pelo setor em vez do nível
+# numérico). Admin (99) nunca precisou, mesmo quando setor="engenharia". Usado em
+# backend/api/users.py::create_user_by_admin/update_user_subgrupos.
+def exige_subgrupo(setor: str, permission_level: int) -> bool:
+    from backend.auth.deps import NIVEL_ADMIN  # import local -- evita ciclo (deps.py <- schemas.py)
+
+    return setor == SETOR_ENGENHARIA and permission_level != NIVEL_ADMIN
+
+
+# Só existem 3 ranks válidos agora (2026-07-20, ver backend/auth/deps.py) -- validado aqui
+# (não só documentado) porque `permission_level` chega direto do corpo em AdminUserCreate/
+# UserUpdatePermission (admin escolhe o número), diferente de UserCreate (auto-registro, nunca
+# vem do cliente). 77/88/99 hardcoded em vez de importar as constantes de deps.py de propósito
+# -- mesmo motivo do import local em exige_subgrupo acima (evita ciclo deps.py <- schemas.py).
+NIVEIS_VALIDOS = {77, 88, 99}
+
+
+def _valida_permission_level(v: int) -> int:
+    if v not in NIVEIS_VALIDOS:
+        raise ValueError(f"Nível de permissão inválido: {v}. Valores aceitos: {sorted(NIVEIS_VALIDOS)}.")
+    return v
 
 
 def _valida_setor(v: str) -> str:
@@ -91,6 +108,12 @@ class UserOut(BaseModel):
     # frontend (GET /users/me, AuthContext.tsx) saber quando precisa forçar a rota
     # /definir-senha antes de liberar o resto do app (RequireAuth.tsx).
     senha_temporaria: bool
+    # Sinal pro frontend esconder "Gestão de usuários" pra quem é admin (99) mas não é a conta
+    # fixa (2026-07-20, pedido explícito: "GESTÃO DE USUÁRIOS SÓ PARA ADMIN TOTAL (EU)") --
+    # ver backend/auth/security.py::CONTAS_SUPER_ADMIN. Só informativo, a checagem real fica
+    # no backend (backend/api/users.py::_exigir_super_admin), este campo não protege nada
+    # sozinho.
+    eh_super_admin: bool = False
 
     class Config:
         from_attributes = True
@@ -113,6 +136,7 @@ class UserOut(BaseModel):
             "setor": user.setor,
             "created_at": user.created_at,
             "senha_temporaria": user.senha_temporaria,
+            "eh_super_admin": eh_super_admin_email(user.email),
         }
         return cls.model_validate(data)
 
@@ -125,6 +149,11 @@ class UserUpdatePermission(BaseModel):
     # de quem está chamando antes de qualquer escrita (backend/api/users.py::
     # update_user_permission).
     senha_admin: str
+
+    @field_validator("permission_level")
+    @classmethod
+    def _permission_level_valido(cls, v: int) -> int:
+        return _valida_permission_level(v)
 
 
 class UserUpdateSubgrupos(BaseModel):
@@ -191,6 +220,11 @@ class AdminUserCreate(BaseModel):
     @classmethod
     def _valida_setor_campo(cls, v: str) -> str:
         return _valida_setor(v)
+
+    @field_validator("permission_level")
+    @classmethod
+    def _permission_level_valido(cls, v: int) -> int:
+        return _valida_permission_level(v)
 
 
 class AdminUserCreateOut(UserOut):

@@ -87,7 +87,8 @@ class BitinApiTest(unittest.TestCase):
         self.engine.dispose()
 
     def _create_user(
-        self, user_id: int, email: str | None = None, permission_level: int = 66, nome: str | None = None,
+        self, user_id: int, email: str | None = None, permission_level: int = 77,
+        nome: str | None = None, setor: str = "engenharia",
     ) -> Usuario:
         db = self.SessionLocal()
         user = Usuario(
@@ -96,13 +97,13 @@ class BitinApiTest(unittest.TestCase):
             nome=nome or f"Usuário {user_id}",
             hashed_password=get_password_hash("senha123"),
             permission_level=permission_level,
-            # setor é só um rótulo descritivo do cargo da pessoa (2026-07-16, decisão explícita
-            # do usuário) -- NÃO controla nenhuma regra de acesso, isso continua sendo só
-            # permission_level. Valor fixo aqui só pra satisfazer o NOT NULL da coluna; estes
-            # testes não exercitam esse campo (é conceito totalmente diferente do "setor" de
-            # make_bitin_content acima, que é campo de CONTEÚDO do BITin -- Proteína Animal/
-            # Armazenagem de Grãos -- não tem nada a ver com Usuario.setor).
-            setor="usuario",
+            # setor agora CONTROLA acesso pra rank 77/88 (2026-07-20, 2ª revisão do modelo de
+            # permissões -- ver backend/auth/deps.py::eh_do_setor/check_setor). Default
+            # "engenharia" cobre a maioria dos testes (individual/gestor de engenharia,
+            # escopados por Subgrupo); testes de Cadastro/Processos passam setor= explícito.
+            # Conceito totalmente diferente do "setor" de make_bitin_content acima (campo de
+            # CONTEÚDO do BITin -- Proteína Animal/Armazenagem de Grãos).
+            setor=setor,
         )
         db.add(user)
         db.commit()
@@ -202,7 +203,7 @@ class BitinApiTest(unittest.TestCase):
         registrada em docs/FRONTEND.md)."""
         self.client.post("/api/v1/bitins/draft", json={"content": make_bitin_content()})
 
-        outro_usuario = self._create_user(2, permission_level=66)
+        outro_usuario = self._create_user(2, permission_level=77)
         resp = self.client.get(
             "/api/v1/bitins/resumo-usuario",
             headers={"Authorization": f"Bearer {self._token_for(outro_usuario)}"},
@@ -493,7 +494,7 @@ class BitinApiTest(unittest.TestCase):
         continua isolado ao próprio e-mail."""
         self.client.post("/api/v1/bitins/draft", json={"content": make_bitin_content()})
 
-        outro_usuario_comum = self._create_user(2, permission_level=66)
+        outro_usuario_comum = self._create_user(2, permission_level=77)
         resp = self.client.get(
             "/api/v1/bitins",
             headers={"Authorization": f"Bearer {self._token_for(outro_usuario_comum)}"},
@@ -532,9 +533,9 @@ class BitinApiTest(unittest.TestCase):
         db.refresh(subgrupo_a)
         db.refresh(subgrupo_b)
 
-        gestor = self._create_user(2, permission_level=77)
-        colega = self._create_user(3, permission_level=66)
-        de_fora = self._create_user(4, permission_level=66)
+        gestor = self._create_user(2, permission_level=88, setor="engenharia")
+        colega = self._create_user(3, permission_level=77)
+        de_fora = self._create_user(4, permission_level=77)
 
         db_gestor = db.query(Usuario).filter(Usuario.id == gestor.id).first()
         db_colega = db.query(Usuario).filter(Usuario.id == colega.id).first()
@@ -631,7 +632,7 @@ class BitinApiTest(unittest.TestCase):
         create_resp = self.client.post("/api/v1/bitins/draft", json={"content": make_bitin_content()})
         mongo_id = create_resp.json()["mongo_id"]
 
-        outro_usuario = self._create_user(2, permission_level=66)
+        outro_usuario = self._create_user(2, permission_level=77)
         update_resp = self.client.post(
             "/api/v1/bitins/draft",
             json={"mongo_id": mongo_id, "content": make_bitin_content(motivo="Tentando editar")},
@@ -654,7 +655,7 @@ class BitinApiTest(unittest.TestCase):
         create_resp = self.client.post("/api/v1/bitins/draft", json={"content": make_bitin_content()})
         mongo_id = create_resp.json()["mongo_id"]
 
-        outro_usuario = self._create_user(2, permission_level=66)
+        outro_usuario = self._create_user(2, permission_level=77)
         get_resp = self.client.get(
             f"/api/v1/bitins/{mongo_id}",
             headers={"Authorization": f"Bearer {self._token_for(outro_usuario)}"},
@@ -718,7 +719,7 @@ class BitinApiTest(unittest.TestCase):
         create_resp = self.client.post("/api/v1/bitins/draft", json={"content": make_bitin_content()})
         mongo_id = create_resp.json()["mongo_id"]
 
-        outro_usuario = self._create_user(2, permission_level=66)
+        outro_usuario = self._create_user(2, permission_level=77)
         del_resp = self.client.delete(
             f"/api/v1/bitins/{mongo_id}",
             headers={"Authorization": f"Bearer {self._token_for(outro_usuario)}"},
@@ -821,30 +822,15 @@ class BitinApiTest(unittest.TestCase):
         self.assertEqual(resp.status_code, 200)
         self.assertEqual(resp.json()["materiais"], [])
 
-    def test_listar_cadastro_ve_enviados_de_colega_mas_nao_rascunho_e_ve_proprio_rascunho(self) -> None:
-        """Nível Cadastro (88, NOVO 2026-07-16 -- "recebe os bitins para baixar e fazer o
-        processo por fora"): vê os ENVIADOS de quem compartilha Subgrupo, mas não os rascunhos
-        alheios (trabalho em andamento de outra pessoa); os próprios BITins (rascunho ou
-        enviado) continuam visíveis normalmente, igual usuário comum."""
-        db = self.SessionLocal()
-        from backend.auth.models import Subgrupo
+    def test_listar_cadastro_ve_enviados_de_colega_mas_nao_rascunho(self) -> None:
+        """Nível Cadastro (88): vê TODO BITin enviado (visibilidade global, ver
+        backend/api/bitins.py::list_bitins), mas não rascunho alheio (trabalho em andamento de
+        outra pessoa). Cadastro não cria/edita BITin próprio nenhum desde 2026-07-20 (pedido
+        explícito: "usuário de cadastro tem somente a tela cadastro... não pode criar novo
+        bitin nem alterá-lo") -- só trabalha pelas rotas dedicadas da fila."""
+        cadastro = self._create_user(2, permission_level=77, setor="cadastro")
+        colega = self._create_user(3, permission_level=77)
 
-        subgrupo_a = Subgrupo(nome="Proteína Animal")
-        db.add(subgrupo_a)
-        db.commit()
-        db.refresh(subgrupo_a)
-
-        cadastro = self._create_user(2, permission_level=88)
-        colega = self._create_user(3, permission_level=66)
-
-        db_cadastro = db.query(Usuario).filter(Usuario.id == cadastro.id).first()
-        db_colega = db.query(Usuario).filter(Usuario.id == colega.id).first()
-        db_cadastro.subgrupos = [subgrupo_a]
-        db_colega.subgrupos = [subgrupo_a]
-        db.commit()
-        db.close()
-
-        # colega cria um rascunho e um BITin enviado
         rascunho_colega = self.client.post(
             "/api/v1/bitins/draft",
             json={"content": make_bitin_content()},
@@ -860,13 +846,6 @@ class BitinApiTest(unittest.TestCase):
             headers={"Authorization": f"Bearer {self._token_for(colega)}"},
         )
 
-        # o próprio cadastro também tem um rascunho
-        rascunho_proprio = self.client.post(
-            "/api/v1/bitins/draft",
-            json={"content": make_bitin_content()},
-            headers={"Authorization": f"Bearer {self._token_for(cadastro)}"},
-        )
-
         resp = self.client.get(
             "/api/v1/bitins",
             headers={"Authorization": f"Bearer {self._token_for(cadastro)}"},
@@ -874,13 +853,21 @@ class BitinApiTest(unittest.TestCase):
         self.assertEqual(resp.status_code, 200, resp.text)
         mongo_ids = {b["mongo_id"] for b in resp.json()}
 
-        self.assertIn(enviado_colega_resp.json()["mongo_id"], mongo_ids)  # enviado do colega: vê
-        self.assertNotIn(rascunho_colega.json()["mongo_id"], mongo_ids)  # rascunho do colega: não vê
-        self.assertIn(rascunho_proprio.json()["mongo_id"], mongo_ids)  # próprio rascunho: vê
+        self.assertIn(enviado_colega_resp.json()["mongo_id"], mongo_ids)  # enviado: vê
+        self.assertNotIn(rascunho_colega.json()["mongo_id"], mongo_ids)  # rascunho alheio: não vê
 
-    def test_listar_cadastro_sem_setor_ve_so_os_proprios(self) -> None:
-        cadastro = self._create_user(2, permission_level=88)
-        outro = self._create_user(3, permission_level=66)
+    def test_cadastro_nao_pode_criar_bitin(self) -> None:
+        cadastro = self._create_user(2, permission_level=77, setor="cadastro")
+        resp = self.client.post(
+            "/api/v1/bitins/draft",
+            json={"content": make_bitin_content()},
+            headers={"Authorization": f"Bearer {self._token_for(cadastro)}"},
+        )
+        self.assertEqual(resp.status_code, 403)
+
+    def test_listar_cadastro_nao_ve_rascunho_alheio(self) -> None:
+        cadastro = self._create_user(2, permission_level=77, setor="cadastro")
+        outro = self._create_user(3, permission_level=77)
         self.client.post(
             "/api/v1/bitins/draft",
             json={"content": make_bitin_content()},
@@ -951,23 +938,22 @@ class BitinApiTest(unittest.TestCase):
             self.skipTest(f"Setor de teste não gerou envio válido: {body['errors']}")
         return mongo_id
 
-    def test_cadastro_encaminha_bitin_enviado_para_roteiro(self) -> None:
-        """Substitui o e-mail automático do Módulo12.bas -- quem é do Cadastro marca aqui
-        quando termina de processar, alimentando a fila em CadastroPage.tsx."""
-        cadastro = self._create_user(2, permission_level=88)
+    def test_envio_encaminha_automaticamente_quando_precisa_roteiro(self) -> None:
+        """Roteamento automático (2026-07-20, pedido explícito: "se for pra processo vai
+        DIRETO pra processo") -- substitui a triagem manual do Cadastro (POST
+        /encaminhar-roteiro, ainda existe como escape hatch mas não é mais chamado no fluxo
+        normal, ver bitin_lifecycle.enviar_bitin). make_bitin_content() usa alt="-/P" por
+        padrão, que exige roteiro."""
         mongo_id = self._criar_e_enviar(self.default_user)
 
-        resp = self.client.post(
-            f"/api/v1/bitins/{mongo_id}/encaminhar-roteiro",
-            headers={"Authorization": f"Bearer {self._token_for(cadastro)}"},
-        )
-        self.assertEqual(resp.status_code, 200, resp.text)
+        resp = self.client.get(f"/api/v1/bitins/{mongo_id}")
         body = resp.json()
         self.assertTrue(body["encaminhado_roteiro"])
         self.assertIsNotNone(body["data_encaminhado_roteiro"])
+        self.assertFalse(body["processos_concluido"])
 
     def test_usuario_comum_nao_pode_encaminhar_para_roteiro(self) -> None:
-        outro_usuario = self._create_user(2, permission_level=66)
+        outro_usuario = self._create_user(2, permission_level=77)
         mongo_id = self._criar_e_enviar(self.default_user)
 
         resp = self.client.post(
@@ -977,7 +963,7 @@ class BitinApiTest(unittest.TestCase):
         self.assertEqual(resp.status_code, 403)
 
     def test_nao_encaminha_rascunho_para_roteiro(self) -> None:
-        cadastro = self._create_user(2, permission_level=88)
+        cadastro = self._create_user(2, permission_level=77, setor="cadastro")
         draft_resp = self.client.post("/api/v1/bitins/draft", json={"content": make_bitin_content()})
         mongo_id = draft_resp.json()["mongo_id"]
 
@@ -987,14 +973,12 @@ class BitinApiTest(unittest.TestCase):
         )
         self.assertEqual(resp.status_code, 400)
 
-    def test_filtro_encaminhado_roteiro_separa_a_fila_do_cadastro(self) -> None:
-        cadastro = self._create_user(2, permission_level=88)
-        mongo_id_pendente = self._criar_e_enviar(self.default_user)
+    def test_filtro_encaminhado_roteiro_nunca_fica_pendente_apos_envio(self) -> None:
+        """Não existe mais estado "enviado mas ainda não encaminhado" alcançável pelo fluxo
+        normal (2026-07-20, roteamento automático) -- o filtro encaminhado_roteiro=False
+        continua existindo no backend (usado por outras combinações, ver list_bitins), mas
+        pra qualquer BITin recém-enviado o resultado é sempre vazio."""
         mongo_id_encaminhado = self._criar_e_enviar(self.default_user)
-        self.client.post(
-            f"/api/v1/bitins/{mongo_id_encaminhado}/encaminhar-roteiro",
-            headers={"Authorization": f"Bearer {self._token_for(cadastro)}"},
-        )
 
         pendentes = self.client.get(
             "/api/v1/bitins", params={"status": "enviado", "encaminhado_roteiro": False},
@@ -1002,22 +986,22 @@ class BitinApiTest(unittest.TestCase):
         encaminhados = self.client.get(
             "/api/v1/bitins", params={"status": "enviado", "encaminhado_roteiro": True},
         )
-        self.assertEqual({b["mongo_id"] for b in pendentes.json()}, {mongo_id_pendente})
-        self.assertEqual({b["mongo_id"] for b in encaminhados.json()}, {mongo_id_encaminhado})
+        self.assertNotIn(mongo_id_encaminhado, {b["mongo_id"] for b in pendentes.json()})
+        self.assertIn(mongo_id_encaminhado, {b["mongo_id"] for b in encaminhados.json()})
 
     def _criar_enviar_e_encaminhar(self, autor: Usuario, cadastro: Usuario) -> str:
-        mongo_id = self._criar_e_enviar(autor)
-        self.client.post(
-            f"/api/v1/bitins/{mongo_id}/encaminhar-roteiro",
-            headers={"Authorization": f"Bearer {self._token_for(cadastro)}"},
-        )
-        return mongo_id
+        """Nome mantido por compatibilidade com o resto da suíte, mas o envio SOZINHO já
+        encaminha pro roteiro quando precisa (2026-07-20, roteamento automático) -- `cadastro`
+        não é mais usado pra nenhuma chamada manual, fica só pra não precisar tocar em cada
+        call site."""
+        del cadastro  # não usado -- ver docstring acima
+        return self._criar_e_enviar(autor)
 
     def test_processos_edita_bitin_enviado_e_encaminhado(self) -> None:
         """Única exceção real à regra "enviado é travado pra sempre" -- Processos pode
         reeditar um BITin enquanto ele estiver na fila do Cadastro."""
-        cadastro = self._create_user(2, permission_level=88)
-        processos = self._create_user(3, permission_level=89)
+        cadastro = self._create_user(2, permission_level=77, setor="cadastro")
+        processos = self._create_user(3, permission_level=77, setor="processos")
         mongo_id = self._criar_enviar_e_encaminhar(self.default_user, cadastro)
 
         novo_conteudo = make_bitin_content(motivo="Atualizado pelo Processos")
@@ -1032,8 +1016,8 @@ class BitinApiTest(unittest.TestCase):
         self.assertEqual(body["content"]["motivo"], "Atualizado pelo Processos")
 
     def test_atualizar_processos_preserva_status_e_numero(self) -> None:
-        cadastro = self._create_user(2, permission_level=88)
-        processos = self._create_user(3, permission_level=89)
+        cadastro = self._create_user(2, permission_level=77, setor="cadastro")
+        processos = self._create_user(3, permission_level=77, setor="processos")
         mongo_id = self._criar_enviar_e_encaminhar(self.default_user, cadastro)
         antes = self.client.get(f"/api/v1/bitins/{mongo_id}").json()
 
@@ -1053,8 +1037,8 @@ class BitinApiTest(unittest.TestCase):
         vir de `...conteudoExistente`, como o frontend real sempre faz) apagava esse espelho
         e quebrava /concluir-processos logo em seguida com "ainda não foi encaminhado",
         mesmo o BITin estando de fato encaminhado."""
-        cadastro = self._create_user(2, permission_level=88)
-        processos = self._create_user(3, permission_level=89)
+        cadastro = self._create_user(2, permission_level=77, setor="cadastro")
+        processos = self._create_user(3, permission_level=77, setor="processos")
         mongo_id = self._criar_enviar_e_encaminhar(self.default_user, cadastro)
 
         # payload "do zero" de propósito -- não inclui encaminhado_roteiro nenhum.
@@ -1075,8 +1059,8 @@ class BitinApiTest(unittest.TestCase):
         self.assertEqual(conclui.status_code, 200, conclui.text)
 
     def test_usuario_comum_nao_pode_atualizar_processos(self) -> None:
-        outro = self._create_user(2, permission_level=66)
-        cadastro = self._create_user(3, permission_level=88)
+        outro = self._create_user(2, permission_level=77)
+        cadastro = self._create_user(3, permission_level=77, setor="cadastro")
         mongo_id = self._criar_enviar_e_encaminhar(self.default_user, cadastro)
 
         resp = self.client.post(
@@ -1086,9 +1070,13 @@ class BitinApiTest(unittest.TestCase):
         )
         self.assertEqual(resp.status_code, 403)
 
-    def test_processos_nao_edita_bitin_ainda_nao_encaminhado(self) -> None:
-        processos = self._create_user(2, permission_level=89)
-        mongo_id = self._criar_e_enviar(self.default_user)
+    def test_processos_nao_edita_bitin_que_nao_precisou_de_roteiro(self) -> None:
+        """Um BITin que não precisou de roteiro (2026-07-20, roteamento automático) já chega
+        com processos_concluido=True -- a janela de reedição do Processos nunca abre pra ele
+        (ver _bitin_liberado_para_processos, exige encaminhado_roteiro E NÃO
+        processos_concluido)."""
+        processos = self._create_user(2, permission_level=77, setor="processos")
+        mongo_id = self._criar_e_enviar_sem_precisar_roteiro(self.default_user)
 
         resp = self.client.post(
             f"/api/v1/bitins/{mongo_id}/atualizar-processos",
@@ -1098,8 +1086,8 @@ class BitinApiTest(unittest.TestCase):
         self.assertEqual(resp.status_code, 400)
 
     def test_processos_conclui_e_tranca_de_novo(self) -> None:
-        cadastro = self._create_user(2, permission_level=88)
-        processos = self._create_user(3, permission_level=89)
+        cadastro = self._create_user(2, permission_level=77, setor="cadastro")
+        processos = self._create_user(3, permission_level=77, setor="processos")
         mongo_id = self._criar_enviar_e_encaminhar(self.default_user, cadastro)
 
         resp = self.client.post(
@@ -1127,9 +1115,9 @@ class BitinApiTest(unittest.TestCase):
         """Processos não tem "próprios" BITins (não cria nenhum, ver
         test_processos_nao_pode_criar_rascunho_novo) -- só enxerga a fila encaminhada pelo
         Cadastro, de qualquer autor."""
-        cadastro = self._create_user(2, permission_level=88)
-        processos = self._create_user(3, permission_level=89)
-        outro = self._create_user(4, permission_level=66)
+        cadastro = self._create_user(2, permission_level=77, setor="cadastro")
+        processos = self._create_user(3, permission_level=77, setor="processos")
+        outro = self._create_user(4, permission_level=77)
 
         mongo_id_fila = self._criar_enviar_e_encaminhar(outro, cadastro)
 
@@ -1145,10 +1133,10 @@ class BitinApiTest(unittest.TestCase):
         envia de volta pra cadastro, e cadastro recebe o bitin 'Pronto para cadastro'"
         (2026-07-17) -- visibilidade global (processos_concluido=True), não presa a Subgrupo,
         já que Processos é um time central."""
-        autor = self._create_user(2, permission_level=66)
-        cadastro_que_encaminhou = self._create_user(3, permission_level=88)
-        outro_cadastro = self._create_user(4, permission_level=88)  # sem Subgrupo em comum
-        processos = self._create_user(5, permission_level=89)
+        autor = self._create_user(2, permission_level=77)
+        cadastro_que_encaminhou = self._create_user(3, permission_level=77, setor="cadastro")
+        outro_cadastro = self._create_user(4, permission_level=77, setor="cadastro")  # sem Subgrupo em comum
+        processos = self._create_user(5, permission_level=77, setor="processos")
 
         mongo_id = self._criar_enviar_e_encaminhar(autor, cadastro_que_encaminhou)
         self.client.post(
@@ -1165,8 +1153,8 @@ class BitinApiTest(unittest.TestCase):
         self.assertIn(mongo_id, {b["mongo_id"] for b in resp.json()})
 
     def test_aba_enviado_roteiro_nao_mostra_os_ja_concluidos_pelo_processos(self) -> None:
-        cadastro = self._create_user(2, permission_level=88)
-        processos = self._create_user(3, permission_level=89)
+        cadastro = self._create_user(2, permission_level=77, setor="cadastro")
+        processos = self._create_user(3, permission_level=77, setor="processos")
         mongo_id = self._criar_enviar_e_encaminhar(self.default_user, cadastro)
         self.client.post(
             f"/api/v1/bitins/{mongo_id}/concluir-processos",
@@ -1207,19 +1195,17 @@ class BitinApiTest(unittest.TestCase):
             self.skipTest(f"Setor de teste não gerou envio válido: {body['errors']}")
         return mongo_id
 
-    def test_cadastro_conclui_sem_roteiro_quando_nao_precisa(self) -> None:
-        cadastro = self._create_user(2, permission_level=88)
+    def test_envio_conclui_sem_roteiro_automaticamente_quando_nao_precisa(self) -> None:
+        """Roteamento automático (2026-07-20, pedido explícito: "se não for necessário o
+        pessoal de processo vai direto para aguardando cadastro") -- o PRÓPRIO envio já chama
+        concluir_sem_roteiro sozinho, sem precisar do Cadastro clicar em nada (POST
+        /concluir-sem-roteiro ainda existe como escape hatch, ver bitin_lifecycle.
+        enviar_bitin)."""
         mongo_id = self._criar_e_enviar_sem_precisar_roteiro(self.default_user)
 
         resp = self.client.get(f"/api/v1/bitins/{mongo_id}")
         self.assertFalse(resp.json()["precisa_roteiro"])
-
-        conclui = self.client.post(
-            f"/api/v1/bitins/{mongo_id}/concluir-sem-roteiro",
-            headers={"Authorization": f"Bearer {self._token_for(cadastro)}"},
-        )
-        self.assertEqual(conclui.status_code, 200, conclui.text)
-        body = conclui.json()
+        body = resp.json()
         self.assertTrue(body["encaminhado_roteiro"])
         self.assertTrue(body["processos_concluido"])
         self.assertTrue(body["sem_necessidade_roteiro"])
@@ -1231,9 +1217,22 @@ class BitinApiTest(unittest.TestCase):
         )
         self.assertIn(mongo_id, {b["mongo_id"] for b in pronto.json()})
 
-    def test_concluir_sem_roteiro_rejeitado_quando_precisa_roteiro(self) -> None:
-        """Reforço no servidor -- não confia só no frontend esconder o botão errado."""
-        cadastro = self._create_user(2, permission_level=88)
+        # mas NÃO aparece na fila do Processos (2026-07-21, achado ao investigar "porque tem
+        # bitins de troca de fornecedor (-/F) aparecendo como revisado nos processos") -- esse
+        # BITin nunca passou pelo Processos de verdade, ver ProcessosPage.tsx.
+        revisados_processos = self.client.get(
+            "/api/v1/bitins",
+            params={"status": "enviado", "processos_concluido": True, "sem_necessidade_roteiro": False},
+        )
+        self.assertNotIn(mongo_id, {b["mongo_id"] for b in revisados_processos.json()})
+
+    def test_concluir_sem_roteiro_manual_rejeitado_apos_roteamento_automatico(self) -> None:
+        """Escape hatch defensivo -- desde o roteamento automático (2026-07-20), QUALQUER
+        BITin enviado com sucesso já sai de `enviar_bitin` com encaminhado_roteiro=True (seja
+        via encaminhar_para_roteiro OU concluir_sem_roteiro), então chamar
+        /concluir-sem-roteiro manualmente depois disso sempre esbarra em "já foi
+        encaminhado", reforçando que o botão não existe mais na UI por um bom motivo."""
+        cadastro = self._create_user(2, permission_level=77, setor="cadastro")
         mongo_id = self._criar_e_enviar(self.default_user)  # alt="-/P" por padrão, precisa
 
         resp = self.client.post(
@@ -1243,7 +1242,7 @@ class BitinApiTest(unittest.TestCase):
         self.assertEqual(resp.status_code, 400)
 
     def test_usuario_comum_nao_pode_concluir_sem_roteiro(self) -> None:
-        outro = self._create_user(2, permission_level=66)
+        outro = self._create_user(2, permission_level=77)
         mongo_id = self._criar_e_enviar_sem_precisar_roteiro(self.default_user)
 
         resp = self.client.post(
@@ -1256,7 +1255,7 @@ class BitinApiTest(unittest.TestCase):
     # bitin, só fazer a parte da revisão de roteiro").
 
     def test_processos_nao_pode_criar_rascunho_novo(self) -> None:
-        processos = self._create_user(2, permission_level=89)
+        processos = self._create_user(2, permission_level=77, setor="processos")
         resp = self.client.post(
             "/api/v1/bitins/draft",
             json={"content": make_bitin_content()},
@@ -1267,8 +1266,8 @@ class BitinApiTest(unittest.TestCase):
     def test_processos_pode_atualizar_rascunho_existente_encaminhado(self) -> None:
         """A restrição é só pra CRIAR um BITin do zero -- reeditar um já encaminhado (via
         /atualizar-processos, não /draft) continua liberado, ver AtualizarProcessosTest."""
-        cadastro = self._create_user(2, permission_level=88)
-        processos = self._create_user(3, permission_level=89)
+        cadastro = self._create_user(2, permission_level=77, setor="cadastro")
+        processos = self._create_user(3, permission_level=77, setor="processos")
         mongo_id = self._criar_enviar_e_encaminhar(self.default_user, cadastro)
 
         resp = self.client.post(
@@ -1286,6 +1285,206 @@ class BitinApiTest(unittest.TestCase):
             headers={"Authorization": f"Bearer {self._token_for(admin)}"},
         )
         self.assertEqual(resp.status_code, 200, resp.text)
+
+    # "Concluir BITIN" (2026-07-20, último passo do fluxo, pedido explícito) -- move da aba
+    # "Aguardando cadastro" pra "Cadastrados"; só a partir daqui o PDF fica disponível.
+
+    def test_cadastro_conclui_bitin_apos_processos(self) -> None:
+        cadastro = self._create_user(2, permission_level=77, setor="cadastro")
+        processos = self._create_user(3, permission_level=77, setor="processos")
+        mongo_id = self._criar_enviar_e_encaminhar(self.default_user, cadastro)
+        self.client.post(
+            f"/api/v1/bitins/{mongo_id}/concluir-processos",
+            headers={"Authorization": f"Bearer {self._token_for(processos)}"},
+        )
+
+        resp = self.client.post(
+            f"/api/v1/bitins/{mongo_id}/concluir-bitin",
+            headers={"Authorization": f"Bearer {self._token_for(cadastro)}"},
+        )
+        self.assertEqual(resp.status_code, 200, resp.text)
+        body = resp.json()
+        self.assertTrue(body["bitin_cadastrado"])
+        self.assertIsNotNone(body["data_cadastrado"])
+
+        # aparece na aba "Cadastrados" (bitin_cadastrado=true) e some de "Aguardando cadastro".
+        cadastrados = self.client.get(
+            "/api/v1/bitins", params={"status": "enviado", "bitin_cadastrado": True},
+        )
+        self.assertIn(mongo_id, {b["mongo_id"] for b in cadastrados.json()})
+        aguardando = self.client.get(
+            "/api/v1/bitins",
+            params={"status": "enviado", "processos_concluido": True, "bitin_cadastrado": False},
+        )
+        self.assertNotIn(mongo_id, {b["mongo_id"] for b in aguardando.json()})
+
+    def test_cadastro_conclui_bitin_que_pulou_roteiro(self) -> None:
+        cadastro = self._create_user(2, permission_level=77, setor="cadastro")
+        # Já chega em "aguardando cadastro" sozinho (roteamento automático, 2026-07-20) --
+        # não precisa de nenhuma chamada manual antes de "Concluir BITIN".
+        mongo_id = self._criar_e_enviar_sem_precisar_roteiro(self.default_user)
+
+        resp = self.client.post(
+            f"/api/v1/bitins/{mongo_id}/concluir-bitin",
+            headers={"Authorization": f"Bearer {self._token_for(cadastro)}"},
+        )
+        self.assertEqual(resp.status_code, 200, resp.text)
+        self.assertTrue(resp.json()["bitin_cadastrado"])
+
+    def test_nao_conclui_bitin_antes_de_passar_pelo_roteiro(self) -> None:
+        cadastro = self._create_user(2, permission_level=77, setor="cadastro")
+        mongo_id = self._criar_e_enviar(self.default_user)
+
+        resp = self.client.post(
+            f"/api/v1/bitins/{mongo_id}/concluir-bitin",
+            headers={"Authorization": f"Bearer {self._token_for(cadastro)}"},
+        )
+        self.assertEqual(resp.status_code, 400)
+
+    def test_usuario_comum_nao_pode_concluir_bitin(self) -> None:
+        outro = self._create_user(2, permission_level=77)
+        # Já chega em "aguardando cadastro" sozinho (roteamento automático, 2026-07-20).
+        mongo_id = self._criar_e_enviar_sem_precisar_roteiro(self.default_user)
+
+        resp = self.client.post(
+            f"/api/v1/bitins/{mongo_id}/concluir-bitin",
+            headers={"Authorization": f"Bearer {self._token_for(outro)}"},
+        )
+        self.assertEqual(resp.status_code, 403)
+
+    # "Enviar pro Windchill" (2026-07-20, pedido explícito) -- última etapa de todas.
+
+    def test_cadastro_envia_windchill_apos_concluir_bitin(self) -> None:
+        cadastro = self._create_user(2, permission_level=77, setor="cadastro")
+        mongo_id = self._criar_e_enviar_sem_precisar_roteiro(self.default_user)
+        self.client.post(
+            f"/api/v1/bitins/{mongo_id}/concluir-bitin",
+            headers={"Authorization": f"Bearer {self._token_for(cadastro)}"},
+        )
+
+        resp = self.client.post(
+            f"/api/v1/bitins/{mongo_id}/enviar-windchill",
+            headers={"Authorization": f"Bearer {self._token_for(cadastro)}"},
+        )
+        self.assertEqual(resp.status_code, 200, resp.text)
+        body = resp.json()
+        self.assertTrue(body["windchill_enviado"])
+        self.assertIsNotNone(body["data_windchill_enviado"])
+        self.assertEqual(body["status"], "enviado")  # status bruto não muda, ver bitin_lifecycle.enviar_windchill
+
+        concluidos = self.client.get(
+            "/api/v1/bitins", params={"status": "enviado", "windchill_enviado": True},
+        )
+        self.assertIn(mongo_id, {b["mongo_id"] for b in concluidos.json()})
+
+    def test_nao_envia_windchill_antes_de_concluir_bitin(self) -> None:
+        cadastro = self._create_user(2, permission_level=77, setor="cadastro")
+        mongo_id = self._criar_e_enviar_sem_precisar_roteiro(self.default_user)
+
+        resp = self.client.post(
+            f"/api/v1/bitins/{mongo_id}/enviar-windchill",
+            headers={"Authorization": f"Bearer {self._token_for(cadastro)}"},
+        )
+        self.assertEqual(resp.status_code, 400)
+
+    def test_usuario_comum_nao_pode_enviar_windchill(self) -> None:
+        outro = self._create_user(2, permission_level=77)
+        cadastro = self._create_user(3, permission_level=77, setor="cadastro")
+        mongo_id = self._criar_e_enviar_sem_precisar_roteiro(self.default_user)
+        self.client.post(
+            f"/api/v1/bitins/{mongo_id}/concluir-bitin",
+            headers={"Authorization": f"Bearer {self._token_for(cadastro)}"},
+        )
+
+        resp = self.client.post(
+            f"/api/v1/bitins/{mongo_id}/enviar-windchill",
+            headers={"Authorization": f"Bearer {self._token_for(outro)}"},
+        )
+        self.assertEqual(resp.status_code, 403)
+
+    # "Voltar BITin" (2026-07-20, pedido explícito: "lista dos bitins concluidos com opções
+    # de voltar bitin etc.") -- desfaz enviar-windchill, admin-only.
+
+    def test_admin_reverte_windchill(self) -> None:
+        cadastro = self._create_user(2, permission_level=77, setor="cadastro")
+        admin = self._create_user(3, permission_level=99)
+        mongo_id = self._criar_e_enviar_sem_precisar_roteiro(self.default_user)
+        self.client.post(
+            f"/api/v1/bitins/{mongo_id}/concluir-bitin",
+            headers={"Authorization": f"Bearer {self._token_for(cadastro)}"},
+        )
+        self.client.post(
+            f"/api/v1/bitins/{mongo_id}/enviar-windchill",
+            headers={"Authorization": f"Bearer {self._token_for(cadastro)}"},
+        )
+
+        resp = self.client.post(
+            f"/api/v1/bitins/{mongo_id}/reverter-windchill",
+            headers={"Authorization": f"Bearer {self._token_for(admin)}"},
+        )
+        self.assertEqual(resp.status_code, 200, resp.text)
+        body = resp.json()
+        self.assertFalse(body["windchill_enviado"])
+        self.assertIsNone(body["data_windchill_enviado"])
+
+    def test_nao_reverte_windchill_antes_de_enviar(self) -> None:
+        admin = self._create_user(2, permission_level=99)
+        mongo_id = self._criar_e_enviar_sem_precisar_roteiro(self.default_user)
+
+        resp = self.client.post(
+            f"/api/v1/bitins/{mongo_id}/reverter-windchill",
+            headers={"Authorization": f"Bearer {self._token_for(admin)}"},
+        )
+        self.assertEqual(resp.status_code, 400)
+
+    def test_cadastro_nao_pode_reverter_windchill(self) -> None:
+        cadastro = self._create_user(2, permission_level=77, setor="cadastro")
+        mongo_id = self._criar_e_enviar_sem_precisar_roteiro(self.default_user)
+        self.client.post(
+            f"/api/v1/bitins/{mongo_id}/concluir-bitin",
+            headers={"Authorization": f"Bearer {self._token_for(cadastro)}"},
+        )
+        self.client.post(
+            f"/api/v1/bitins/{mongo_id}/enviar-windchill",
+            headers={"Authorization": f"Bearer {self._token_for(cadastro)}"},
+        )
+
+        resp = self.client.post(
+            f"/api/v1/bitins/{mongo_id}/reverter-windchill",
+            headers={"Authorization": f"Bearer {self._token_for(cadastro)}"},
+        )
+        self.assertEqual(resp.status_code, 403)
+
+    # GET /bitins/resumo-painel (2026-07-20, pedido explícito: "otimiza velocidade de
+    # carregamento") -- contadores do dashboard num round-trip só, via $facet, mesmo escopo
+    # de visibilidade de list_bitins (ver _condicoes_escopo).
+
+    def test_resumo_painel_admin_ve_contagem_do_sistema(self) -> None:
+        admin = self._create_user(2, permission_level=99)
+        self._criar_e_enviar_sem_precisar_roteiro(self.default_user)  # vira "aguardando cadastro"
+        self.client.post("/api/v1/bitins/draft", json={"content": make_bitin_content()})  # rascunho
+
+        resp = self.client.get(
+            "/api/v1/bitins/resumo-painel",
+            headers={"Authorization": f"Bearer {self._token_for(admin)}"},
+        )
+        self.assertEqual(resp.status_code, 200, resp.text)
+        body = resp.json()
+        self.assertGreaterEqual(body["cadastro_aguardando"], 1)
+        self.assertGreaterEqual(body["geral_rascunhos"], 1)
+        self.assertGreaterEqual(body["geral_enviados"], 1)
+
+    def test_resumo_painel_engenheiro_so_ve_os_proprios(self) -> None:
+        outro = self._create_user(2, permission_level=77)
+        self.client.post(
+            "/api/v1/bitins/draft",
+            json={"content": make_bitin_content()},
+            headers={"Authorization": f"Bearer {self._token_for(outro)}"},
+        )  # rascunho de outro usuário -- não deve contar pro default_user
+
+        resp = self.client.get("/api/v1/bitins/resumo-painel")  # default_user (headers globais do setUp)
+        self.assertEqual(resp.status_code, 200, resp.text)
+        self.assertEqual(resp.json()["geral_rascunhos"], 0)
 
 
 if __name__ == "__main__":

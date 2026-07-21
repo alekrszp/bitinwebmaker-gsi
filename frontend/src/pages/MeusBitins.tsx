@@ -1,11 +1,14 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Link, useNavigate, useSearchParams } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import { ChevronDownIcon, SearchIcon } from '../components/icons'
-import StatusBadge from '../components/bitin/StatusBadge'
+import AjudaPopover from '../components/bitin/AjudaPopover'
+import BitinTableSection from '../components/bitin/BitinTableSection'
+import { COLUNAS_PADRAO_BITIN } from '../components/bitin/bitinColunas'
 import { useAuth } from '../hooks/useAuth'
+import { useDebouncedValue } from '../hooks/useDebouncedValue'
 import { api } from '../lib/api'
 import { criarRascunhoENavegar } from '../lib/criarBitin'
-import { NIVEL_PROCESSOS, isAdmin, isProcessos } from '../lib/permissions'
+import { SETOR_CADASTRO, SETOR_PROCESSOS, ehDoSetor, isAdmin, isGestor } from '../lib/permissions'
 import type { Bitin } from '../lib/types'
 
 // Escopo desta rodada (decidido com o usuário, ver docs/FRONTEND.md): listagem + clique na
@@ -13,14 +16,6 @@ import type { Bitin } from '../lib/types'
 // nível no backend (2026-07-15, ver backend/api/bitins.py::list_bitins): usuário comum só os
 // próprios, gestor os de quem compartilha setor, admin o sistema inteiro -- por isso o título
 // e o rótulo de busca abaixo não presumem mais "só os meus" pra todo mundo.
-// GESTOR_LEVEL = 77 (2026-07-17, achado de auditoria -- era 1, sobra do esquema antigo
-// 0/1/99). Com a revisão de permissões de 2026-07-16 (66/77/88/99), `>= 1` virou sempre
-// verdadeiro pra QUALQUER usuário logado (66 já satisfaz), então usuário comum também via a
-// opção de busca por "Solicitante" -- deveria ser só gestor/admin, como o comentário acima
-// sempre disse que era a intenção. Sem risco de segurança (GET /bitins já é escopado certo
-// no servidor, isso só controlava um campo de busca a mais na UI), mas era um bug real de UI.
-const GESTOR_LEVEL = 77
-
 type Aba = 'todos' | 'rascunho' | 'enviado'
 type CampoBusca = 'todos' | 'codigo' | 'motivo' | 'solicitante'
 
@@ -42,25 +37,32 @@ export default function MeusBitins() {
   )
   const [campoBusca, setCampoBusca] = useState<CampoBusca>('todos')
   const [busca, setBusca] = useState('')
-  const [termo, setTermo] = useState('')
+  const termo = useDebouncedValue(busca.trim())
   const [bitins, setBitins] = useState<Bitin[] | null>(null)
   const [erro, setErro] = useState<string | null>(null)
 
   // "Solicitante" como opção de busca só faz sentido pra quem lida com BITins de várias
-  // pessoas -- um engenheiro comum normalmente é o próprio solicitante dos seus BITins
-  // (decisão do usuário, 2026-07-14). Gestor passou a ver BITins de colegas de setor
-  // (2026-07-15), então ganha a mesma opção que já existia só pra admin.
-  const ehGestorOuAdmin = (user?.permission_level ?? 0) >= GESTOR_LEVEL
+  // pessoas -- um engenheiro individual (77, engenharia) normalmente é o próprio solicitante
+  // dos seus BITins (decisão do usuário, 2026-07-14). Gestor (qualquer setor), Cadastro e
+  // Processos (times centrais) e Admin ganham a opção -- 2ª revisão do modelo de permissões
+  // (2026-07-20): antes era um threshold numérico (`>= GESTOR_LEVEL`), que parou de fazer
+  // sentido com o esquema novo (77 virou o rank MAIS BAIXO, não mais Gestor).
   const ehAdmin = isAdmin(user?.permission_level)
-  // Setor Processos (2026-07-17) -- ganha uma coluna extra mostrando quais BITins da fila
-  // (encaminhados pelo Cadastro) ainda precisam de atenção vs já foram concluídos, já que
-  // GET /bitins devolve os dois juntos pra esse nível (ver backend/api/bitins.py::list_bitins).
-  const ehProcessos = isProcessos(user?.permission_level)
-  // Diferente de `ehProcessos` acima (que inclui admin, pra permissão de UI genérica) --
-  // aqui precisa ser EXATAMENTE o nível Processos, porque admin continua podendo criar BITin
-  // normalmente (2026-07-17, pedido explícito: "processos não pode fazer bitin, só fazer a
-  // parte da revisão de roteiro").
-  const ehSoProcessos = user?.permission_level === NIVEL_PROCESSOS
+  const ehGestorOuAdmin =
+    ehAdmin ||
+    isGestor(user?.permission_level) ||
+    ehDoSetor(user?.permission_level, user?.setor, SETOR_CADASTRO, SETOR_PROCESSOS)
+  // Processos ganhou tela própria em 2026-07-20 (ProcessosPage.tsx, rota /processos) --
+  // não aterrissa mais aqui pelo menu (Sidebar.tsx), então a coluna "Processamento" que
+  // existia nesta tela saiu (redundante com a tela dedicada). `ehSoProcessos` continua só
+  // como rede de segurança: se alguém digitar /bitins na URL diretamente, "+ Novo BITin"
+  // continua escondido (2026-07-17, pedido explícito: "processos não pode fazer bitin, só
+  // fazer a parte da revisão de roteiro") -- mesma checagem EXATA (não admin) de sempre.
+  const ehSoProcessos = ehDoSetor(user?.permission_level, user?.setor, SETOR_PROCESSOS)
+  // Cadastro também não cria/edita BITin próprio (2026-07-20, pedido explícito: "usuário de
+  // cadastro tem somente a tela cadastro... não pode criar novo bitin nem alterá-lo") --
+  // mesma checagem exata (não `isCadastro`, que inclui admin), backend também recusa 403.
+  const ehSoCadastro = ehDoSetor(user?.permission_level, user?.setor, SETOR_CADASTRO)
   const camposBusca = useMemo(() => {
     const base: { value: CampoBusca; label: string }[] = [
       { value: 'todos', label: 'Tudo' },
@@ -72,14 +74,6 @@ export default function MeusBitins() {
     }
     return base
   }, [ehGestorOuAdmin])
-
-  // Debounce -- espera parar de digitar antes de bater na API (GET /bitins?termo=&campo=, já
-  // suportado no backend: busca em motivo/solicitante/número, tudo junto ou um campo só, ver
-  // bitins.py).
-  useEffect(() => {
-    const id = setTimeout(() => setTermo(busca.trim()), 300)
-    return () => clearTimeout(id)
-  }, [busca])
 
   function carregar() {
     let cancelado = false
@@ -104,7 +98,7 @@ export default function MeusBitins() {
     }
   }
 
-  useEffect(carregar, [aba, termo, campoBusca])
+  useEffect(carregar, [aba, termo, campoBusca, searchParams])
 
   // Excluir BITin já enviado (2026-07-16, admin-only) é mais grave que excluir rascunho --
   // libera o número sequencial -- por isso o texto de confirmação muda pro caso "enviado"
@@ -140,7 +134,22 @@ export default function MeusBitins() {
       <div className="flex flex-wrap items-center justify-between gap-4">
         {/* Rota/menu continua "Meus Bitins" (Sidebar.tsx) -- só o título aqui dentro muda pra
             não soar enganoso pra quem vê BITins de outras pessoas (gestor/admin, 2026-07-15). */}
-        <h1 className="text-2xl font-semibold text-ink">{ehGestorOuAdmin ? 'BITins' : 'Meus Bitins'}</h1>
+        <div className="flex flex-wrap items-center gap-3">
+          <h1 className="text-2xl font-semibold text-ink">{ehGestorOuAdmin ? 'BITins' : 'Meus Bitins'}</h1>
+          <AjudaPopover titulo="Como funciona esta tela">
+            <p>
+              Abas <strong>Todos/Rascunhos/Enviados</strong> filtram por Status. Rascunho é livre
+              pra editar; depois de Enviado, o BITin fica travado (só volta a mudar de mãos pelos
+              fluxos de Cadastro/Processos).
+            </p>
+            <p>A busca aceita motivo, número ou solicitante -- escolha o campo no seletor ao lado da lupa.</p>
+            <p>
+              O "×" na última coluna só aparece pra quem pode excluir: o próprio autor de um
+              rascunho, ou quando o BITin já foi enviado (libera o número sequencial -- ação
+              irreversível).
+            </p>
+          </AjudaPopover>
+        </div>
 
         <div className="flex items-center gap-3">
           <div className="flex w-full max-w-lg items-center rounded-lg border border-line bg-surface focus-within:ring-2 focus-within:ring-brand-navy/30">
@@ -173,10 +182,10 @@ export default function MeusBitins() {
               <ChevronDownIcon className="pointer-events-none absolute right-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-ink-faint" />
             </div>
           </div>
-          {/* Processos não cria BITin, só revisa os encaminhados pelo Cadastro (2026-07-17,
-              pedido explícito) -- backend também recusa (403) se essa checagem de UI for
-              contornada, ver POST /bitins/draft::create_or_update_draft. */}
-          {!ehSoProcessos && (
+          {/* Nem Processos nem Cadastro criam BITin (2026-07-17/20, pedido explícito) --
+              backend também recusa (403) se essa checagem de UI for contornada, ver
+              POST /bitins/draft::create_or_update_draft. */}
+          {!ehSoProcessos && !ehSoCadastro && (
             <button
               type="button"
               onClick={novoBitin}
@@ -205,95 +214,27 @@ export default function MeusBitins() {
         ))}
       </div>
 
-      {erro && <p className="mt-4 text-sm text-red-600">{erro}</p>}
-      {!bitins && !erro && <p className="mt-4 text-sm text-ink-muted">Carregando...</p>}
-      {bitins && bitins.length === 0 && !erro && (
-        <p className="mt-4 text-sm text-ink-muted">Nenhum BITin encontrado.</p>
-      )}
-
-      {bitins && bitins.length > 0 && (
-        <div className="mt-4 overflow-hidden rounded-lg border border-line">
-          <table className="w-full text-left text-sm">
-            <thead>
-              <tr className="bg-surface-alt text-xs uppercase tracking-wide text-ink-muted">
-                <th className="px-4 py-2 font-medium">Número</th>
-                <th className="px-4 py-2 font-medium">Motivo</th>
-                <th className="px-4 py-2 font-medium">Solicitante</th>
-                <th className="px-4 py-2 font-medium">Status</th>
-                {ehProcessos && <th className="px-4 py-2 font-medium">Processamento</th>}
-                <th className="w-10" />
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-line bg-surface">
-              {bitins.map((b) => (
-                <tr key={b.mongo_id} className="hover:bg-surface-alt">
-                  <td className="px-4 py-2">
-                    <Link to={`/bitins/${b.mongo_id}`} className="block text-ink hover:underline">
-                      {b.codigo ?? '—'}
-                    </Link>
-                  </td>
-                  <td className="px-4 py-2 text-ink-muted">
-                    <Link to={`/bitins/${b.mongo_id}`} className="block">
-                      {String(b.content?.motivo ?? '—')}
-                    </Link>
-                  </td>
-                  <td className="px-4 py-2 text-ink-muted">
-                    <Link to={`/bitins/${b.mongo_id}`} className="block">
-                      {String(b.content?.solicitante ?? '—')}
-                    </Link>
-                  </td>
-                  <td className="px-4 py-2">
-                    <Link to={`/bitins/${b.mongo_id}`} className="block">
-                      <StatusBadge status={b.status} />
-                    </Link>
-                  </td>
-                  {ehProcessos && (
-                    <td className="px-4 py-2">
-                      {b.encaminhado_roteiro ? (
-                        <span
-                          className={`whitespace-nowrap rounded-full px-2 py-0.5 text-xs font-medium ${
-                            b.processos_concluido
-                              ? 'bg-green-100 text-green-700'
-                              : 'bg-amber-100 text-amber-800'
-                          }`}
-                        >
-                          {b.processos_concluido ? 'Concluído' : 'Pendente'}
-                        </span>
-                      ) : (
-                        <span className="text-xs text-ink-faint">—</span>
-                      )}
-                    </td>
-                  )}
-                  <td className="px-4 py-2 text-center">
-                    {b.status === 'rascunho' && b.pode_editar && (
-                      <button
-                        type="button"
-                        onClick={() => excluir(b)}
-                        className="text-ink-faint hover:text-red-600"
-                        aria-label="Excluir rascunho"
-                        title="Excluir rascunho"
-                      >
-                        ×
-                      </button>
-                    )}
-                    {b.status === 'enviado' && ehAdmin && (
-                      <button
-                        type="button"
-                        onClick={() => excluir(b)}
-                        className="text-ink-faint hover:text-red-600"
-                        aria-label="Excluir BITin enviado"
-                        title="Excluir BITin enviado"
-                      >
-                        ×
-                      </button>
-                    )}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
+      <BitinTableSection
+        bitins={bitins}
+        erro={erro}
+        colunas={COLUNAS_PADRAO_BITIN}
+        acoes={(b) => {
+          const podeExcluir = (b.status === 'rascunho' && b.pode_editar) || (b.status === 'enviado' && ehAdmin)
+          if (!podeExcluir) return null
+          return (
+            <button
+              type="button"
+              onClick={() => excluir(b)}
+              className="text-ink-faint hover:text-red-600"
+              aria-label={b.status === 'rascunho' ? 'Excluir rascunho' : 'Excluir BITin enviado'}
+              title={b.status === 'rascunho' ? 'Excluir rascunho' : 'Excluir BITin enviado'}
+            >
+              ×
+            </button>
+          )
+        }}
+        mensagemVazia="Nenhum BITin encontrado."
+      />
     </div>
   )
 }

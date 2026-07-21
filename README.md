@@ -105,12 +105,14 @@ os testes automatizados rodam sem bancos reais (SQLite + mongomock-motor).
 TypeScript + Vite + Tailwind + react-router-dom, sem lib de estado global. Ver
 `docs/FRONTEND.md` para arquitetura completa e o histórico de decisões de cada tela.
 
-Telas hoje: Login, Home (resumo pessoal + recentes), Meus Bitins (listagem escopada por
-permissão), edição completa de BITin (aba BITin / Códigos SAP (ZBPP009) / Lista Técnica —
-cadastro de material do zero, colar do SAP, checklist com sugestão automática, validação de
-regras de negócio no envio), Configurações (conta própria + Gestão de usuários pra admin), e
-a fila do setor Cadastro (`/cadastro`, recebe todo BITin enviado e decide se precisa de
-revisão de roteiro pelo setor Processos).
+Telas hoje: Login, Home (resumo pessoal ou da fila do setor + recentes), Meus Bitins
+(listagem escopada por permissão), edição completa de BITin (aba BITin / Códigos SAP (ZBPP009)
+/ Lista Técnica — cadastro de material do zero, colar do SAP, checklist com sugestão
+automática, validação de regras de negócio no envio), Configurações (conta própria + aba
+"Bitins Concluídos" pra admin), Gestão de usuários (super-admin), Painel geral (Gestor/Admin —
+todo BITin visível, Status x Etapa, sem ações), fila do setor Cadastro (`/cadastro` — decide
+se precisa de revisão de roteiro, conclui e manda pro Windchill) e fila do setor Processos
+(`/processos` — revisa roteiro).
 
 ```powershell
 cd frontend
@@ -125,6 +127,10 @@ npm run dev
 Releases são criadas manualmente no GitHub, usando `docs/RELEASE_vX.Y.Z.md` como corpo de
 cada release. O processo não é automatizado — a publicação é feita pelo GitHub web interface.
 
+- v0.10.0 — etapa final "Concluído" (Windchill, reversível só por admin), 2ª revisão do
+  modelo de permissões (Cadastro/Processos viram `setor`, não mais níveis fixos), Painel
+  geral, Cadastro/Processos reformulados, componentização/performance do frontend:
+  `docs/RELEASE_v0.10.0.md` — <https://github.com/alekrszp/bitinwebmaker-gsi/releases/tag/v0.10.0>
 - v0.9.0 — fila do setor Cadastro + setor Processos (substitui o e-mail automático do VBA
   original), decisão automática de "precisa de roteiro", auditoria completa das automações do
   VBA, suíte de testes de ponta a ponta:
@@ -169,7 +175,7 @@ cada release. O processo não é automatizado — a publicação é feita pelo G
 - v0.1.0 — PoC inicial: `docs/RELEASE_v0.1.0.md` — <https://github.com/alekrszp/bitinwebmaker-gsi/releases/tag/v0.1.0>
 
 Veja também `docs/CHANGELOG.md` para as notas de release completas (inclui v0.7.2 → v0.8.0 →
-v0.9.0 sem pular nenhuma).
+v0.9.0 → v0.10.0 sem pular nenhuma).
 
 ## Arquivos principais
 

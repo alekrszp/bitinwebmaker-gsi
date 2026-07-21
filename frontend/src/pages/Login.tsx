@@ -2,6 +2,7 @@ import { useState, type FormEvent, type SVGProps } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import ThemeToggle from '../components/ThemeToggle'
 import { useAuth } from '../hooks/useAuth'
+import { extrairErro } from '../lib/errors'
 import { version as appVersion } from '../../package.json'
 
 export default function Login() {
@@ -47,12 +48,14 @@ export default function Login() {
       const from = (location.state as { from?: Location })?.from?.pathname || '/'
       navigate(from, { replace: true })
     } catch (err) {
-      // Duck-typed em vez de axios.isAxiosError -- o teste (Login.test.tsx) mocka a API com um
-      // objeto de erro simples, sem a marca isAxiosError; e o formato {response:{data:{detail}}}
-      // já é a única forma de erro que este catch precisa tratar (erro de rede/CORS cai no
-      // fallback genérico do lado direito do `||`, igual antes).
-      const detail = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail
-      setError(detail || 'Não foi possível entrar. Confira e-mail e senha.')
+      // extrairErro (2026-07-20, achado real ao testar) -- antes fazia duck-typing manual
+      // assumindo `detail` sempre string; um 422 de verdade (erro de validação do Pydantic,
+      // ex.: e-mail em formato inválido) devolve `detail` como ARRAY de objetos
+      // ({type, loc, msg, input}), não string -- setError guardava o array inteiro e o React
+      // quebrava a tela inteira tentando renderizar objeto como texto ("Objects are not valid
+      // as a React child"). extrairErro já trata os dois formatos (mesmo helper usado em
+      // Settings.tsx/DefinirSenha.tsx).
+      setError(extrairErro(err, 'Não foi possível entrar. Confira e-mail e senha.'))
     } finally {
       setSubmitting(false)
     }

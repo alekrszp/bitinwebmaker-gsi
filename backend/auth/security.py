@@ -17,6 +17,17 @@ from backend.config import settings
 
 pwd_context = CryptContext(schemes=["pbkdf2_sha256"], deprecated="auto")
 
+# Contas de super-admin fixas em código (2026-07-17, ver backend/auth/deps.py::eh_super_admin
+# -- movido pra cá em 2026-07-20 pra poder ser usado também em UserOut.from_usuario sem
+# import circular: schemas.py <- deps.py, então deps.py não pode ser importado de volta por
+# schemas.py). Checa por e-mail, não por Usuario inteiro, justamente pra não puxar
+# backend.auth.models aqui.
+CONTAS_SUPER_ADMIN = {"alessandro.pereiradarosafilho@grainproteintech.com"}
+
+
+def eh_super_admin_email(email: str) -> bool:
+    return email in CONTAS_SUPER_ADMIN
+
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
     return pwd_context.verify(plain_password, hashed_password)

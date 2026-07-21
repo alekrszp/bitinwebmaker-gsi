@@ -144,18 +144,17 @@ export default function ListaTecnicaInline({
   // eco do que este componente acabou de mandar. Gerar um `_id` NOVO a cada render a partir de
   // `itens` (useMemo com `itens` como dep) quebraria a memoização de LinhaItem -- toda linha
   // ganharia um id novo (e um remount) a cada commit, mesmo as não tocadas.
-  const [linhas, setLinhas] = useState<LinhaComId[]>(() => {
-    const base = itens.length > 0 ? [...itens, linhaVazia()] : [linhaVazia()]
-    return base.map((l) => ({ ...l, _id: crypto.randomUUID() }))
-  })
+  const [linhas, setLinhas] = useState<LinhaComId[]>(() =>
+    itens.map((l) => ({ ...l, _id: crypto.randomUUID() })),
+  )
 
-  // Mantém a invariante "sempre 1 linha em branco no final" localmente (2026-07-17) -- ids das
-  // linhas preenchidas não tocadas são preservados (vêm do `.map` dos chamadores abaixo), só a
-  // linha em branco final ganha `_id` novo a cada commit (ela nunca tem conteúdo pra perder
-  // foco/cursor, então o remount é inofensivo).
+  // SEM linha em branco automática (removido em 2026-07-20 -- bug real: a linha em branco do
+  // final era recriada a cada commit, então clicar "×" nela não tinha efeito nenhum visível,
+  // parecia "impossível excluir"). Agora só existe a linha que o próprio engenheiro pediu
+  // ("+ Nova linha", abaixo) -- excluir remove de verdade.
   function commit(novasLinhas: LinhaComId[]) {
+    setLinhas(novasLinhas)
     const semVazias = novasLinhas.filter((l) => l.codigo_filho.trim() !== '')
-    setLinhas([...semVazias, { ...linhaVazia(), _id: crypto.randomUUID() }])
     // Operação derivada aqui (2026-07-17, campo removido da UI) -- ver derivarOperacao.
     onChange(semVazias.map(({ _id, ...resto }) => ({ ...resto, operacao: derivarOperacao(resto) })))
   }
@@ -166,6 +165,10 @@ export default function ListaTecnicaInline({
 
   function removerLinha(id: string) {
     commit(linhas.filter((l) => l._id !== id))
+  }
+
+  function adicionarLinha() {
+    setLinhas([...linhas, { ...linhaVazia(), _id: crypto.randomUUID() }])
   }
 
   if (!editavel) {
@@ -211,6 +214,13 @@ export default function ListaTecnicaInline({
           ))}
         </tbody>
       </table>
+      <button
+        type="button"
+        onClick={adicionarLinha}
+        className="w-full border-t border-line px-3 py-1.5 text-left text-xs font-medium text-ink-muted hover:bg-surface-alt"
+      >
+        + Nova linha
+      </button>
     </div>
   )
 }

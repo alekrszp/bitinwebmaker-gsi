@@ -1,21 +1,23 @@
 import { useCallback, useEffect, useState } from 'react'
-import { Link, useNavigate, useParams } from 'react-router-dom'
+import { useNavigate, useParams } from 'react-router-dom'
 import AjudaPopover from '../components/bitin/AjudaPopover'
 import AvisoSairModal from '../components/bitin/AvisoSairModal'
 import DadosGeraisCard from '../components/bitin/DadosGeraisCard'
 import EdicaoBottomBar from '../components/bitin/EdicaoBottomBar'
 import ErrosEnvioBanner from '../components/bitin/ErrosEnvioBanner'
 import MateriaisSection from '../components/bitin/MateriaisSection'
+import OrdemClienteEditor from '../components/bitin/OrdemClienteEditor'
 import OrdemClienteSection from '../components/bitin/OrdemClienteSection'
 import StatusBadge from '../components/bitin/StatusBadge'
 import { useAuth } from '../hooks/useAuth'
 import { useAvisoSairSemSalvar } from '../hooks/useAvisoSairSemSalvar'
+import { useVoltar } from '../hooks/useVoltar'
 import { api } from '../lib/api'
 import { materialVazio, normalizarMaterial } from '../lib/bitinDefaults'
 import type { BitinResumo } from '../lib/bitinTypes'
 import { isAdmin } from '../lib/permissions'
 import { useEnviarBitin } from '../lib/useEnviarBitin'
-import type { Bitin, MateriaisSchema, MaterialEditavel, Subgrupo } from '../lib/types'
+import type { Bitin, MateriaisSchema, MaterialEditavel, OrdemClienteEditavel, Subgrupo } from '../lib/types'
 
 // Visualização e edição são a mesma tela (decisão do usuário, 2026-07-14): "clicar num BITin
 // em rascunho já abre editável, não é mais só visualização". Um BITin enviado usa a mesma
@@ -56,6 +58,10 @@ type MaterialComId = MaterialEditavel & { _id: string }
 export default function BitinDetail() {
   const { mongoId } = useParams<{ mongoId: string }>()
   const navigate = useNavigate()
+  // "Voltar" volta pra tela de onde o usuário realmente veio (CadastroPage, ProcessosPage,
+  // PainelGeral, Settings "Bitins Concluídos", MeusBitins...) em vez de sempre cair em
+  // "/bitins" fixo (2026-07-21, revisão de navegação -- ver hooks/useVoltar.ts).
+  const voltar = useVoltar('/bitins')
   const { user } = useAuth()
   const { enviando, errosEnvio, bitinEnviado, enviar } = useEnviarBitin(mongoId)
   // Aviso de alterações não salvas (2026-07-17, pedido explícito) -- ver
@@ -82,6 +88,7 @@ export default function BitinDetail() {
     setSujo(true)
   }
   const [materiais, setMateriais] = useState<MaterialComId[]>([])
+  const [ordemCliente, setOrdemCliente] = useState<OrdemClienteEditavel[]>([])
   const [checklistOverrides, setChecklistOverrides] = useState<Record<string, boolean>>({})
   const [checklistDescricoes, setChecklistDescricoes] = useState<Record<string, string>>({})
   const [conteudoExistente, setConteudoExistente] = useState<Record<string, unknown>>({})
@@ -90,6 +97,9 @@ export default function BitinDetail() {
 
   // Estado do documento (o que veio do backend).
   const [status, setStatus] = useState('rascunho')
+  // Status "Concluído" (2026-07-20, ver lib/bitinEtapa.ts::statusDoBitin) -- StatusBadge
+  // precisa disso além de `status` bruto pra distinguir Enviado de Concluído.
+  const [windchillEnviado, setWindchillEnviado] = useState(false)
   const [podeEditar, setPodeEditar] = useState(true)
   const [codigo, setCodigo] = useState<string | null>(null)
   const [resumo, setResumo] = useState<BitinResumo | null>(null)
@@ -110,8 +120,15 @@ export default function BitinDetail() {
   const ehAdmin = isAdmin(user?.permission_level)
   // BITin "enviado" mas ainda editável só acontece no cenário Processos (ou admin fazendo a
   // mesma coisa) -- usado pra rotear salvar()/alternarChecklist() pra /atualizar-processos em
-  // vez de /draft, e pra mostrar o botão "Concluir processamento".
+  // vez de /draft, e pra mostrar o botão "Concluir" (rótulo simplificado 2026-07-20, pedido
+  // explícito: "em um bitin aberto coloca a parte de concluir processamento só concluir").
   const editandoComoProcessos = status === 'enviado' && editavel
+  // "Ordem de cliente" só aparece quando faz sentido (2026-07-20, pedido explícito: "só
+  // aparece quando coloca oc = x no código, se não tiver ativado essa aba não aparece") --
+  // OU já existe alguma entrada preenchida (não esconde dado que já foi digitado se o
+  // engenheiro voltar o OC pra "-" depois).
+  const precisaOrdemCliente =
+    materiais.some((m) => m.alteracoes.impactos_operacionais.oc === 'X') || ordemCliente.length > 0
 
   useEffect(() => {
     let cancelado = false
@@ -125,6 +142,7 @@ export default function BitinDetail() {
           return
         }
         setStatus(b.status)
+        setWindchillEnviado(b.windchill_enviado)
         setPodeEditar(b.pode_editar)
         setCodigo(b.codigo)
         const content = b.content
@@ -142,6 +160,7 @@ export default function BitinDetail() {
         )
         setChecklistOverrides((content.checklist_overrides as Record<string, boolean> | undefined) ?? {})
         setChecklistDescricoes((content.checklist_descricoes as Record<string, string> | undefined) ?? {})
+        setOrdemCliente((content.ordem_cliente as OrdemClienteEditavel[] | undefined) ?? [])
         setConteudoExistente(content)
       })
       .catch(() => setErro('Não foi possível carregar este BITin.'))
@@ -271,6 +290,7 @@ export default function BitinDetail() {
   useEffect(() => {
     if (!bitinEnviado) return
     setStatus(bitinEnviado.status)
+    setWindchillEnviado(bitinEnviado.windchill_enviado)
     setPodeEditar(bitinEnviado.pode_editar)
     setCodigo(bitinEnviado.codigo)
     setConteudoExistente(bitinEnviado.content)
@@ -319,6 +339,16 @@ export default function BitinDetail() {
     const materiaisPreenchidos = materiais
       .filter((m) => m.codigo_material.trim() !== '')
       .map(({ _id, ...resto }) => resto)
+    // Mesmo raciocínio de materiaisPreenchidos acima -- uma entrada sem código ainda não vira
+    // "ordem_cliente fantasma" no payload; dentro de cada entrada com código, itens sem
+    // codigo_material (linha em branco clicada mas não preenchida) também não vão.
+    const ordemClientePreenchida = ordemCliente
+      .filter((oc) => oc.codigo.trim() !== '')
+      .map((oc) => ({
+        ...oc,
+        acrescentar_no_pedido: oc.acrescentar_no_pedido.filter((it) => it.codigo_material.trim() !== ''),
+        retira_do_pedido: oc.retira_do_pedido.filter((it) => it.codigo_material.trim() !== ''),
+      }))
     return {
       ...conteudoExistente,
       produto,
@@ -326,6 +356,7 @@ export default function BitinDetail() {
       solicitante,
       setor,
       materiais: materiaisPreenchidos,
+      ordem_cliente: ordemClientePreenchida,
       checklist_overrides: checklistOverrides,
       checklist_descricoes: checklistDescricoes,
       ...extra,
@@ -453,9 +484,13 @@ export default function BitinDetail() {
         <p className="text-sm text-ink-muted">
           Este BITin já foi enviado ou você não tem permissão pra editá-lo.
         </p>
-        <Link to="/bitins" className="mt-2 inline-block text-sm text-ink-muted hover:text-ink hover:underline">
-          Voltar pra Meus Bitins
-        </Link>
+        <button
+          type="button"
+          onClick={voltar}
+          className="mt-2 inline-block text-sm text-ink-muted hover:text-ink hover:underline"
+        >
+          ← Voltar
+        </button>
       </div>
     )
   }
@@ -468,44 +503,41 @@ export default function BitinDetail() {
       <button
         type="button"
         onClick={() => {
-          if (tentarSair()) navigate('/bitins')
+          if (tentarSair()) voltar()
         }}
         className="text-sm text-ink-muted hover:text-ink hover:underline"
       >
-        ← Voltar pra Meus Bitins
+        ← Voltar
       </button>
 
       {mostrarModal && (
         <AvisoSairModal
           salvando={salvando}
           onCancelar={() => setMostrarModal(false)}
-          onSairSemSalvar={() => navigate('/bitins')}
+          onSairSemSalvar={voltar}
           onSalvarESair={async () => {
             const ok = await salvar()
-            if (ok) navigate('/bitins')
+            if (ok) voltar()
           }}
         />
       )}
 
       <div className="mt-3 flex flex-wrap items-center gap-3">
         <h1 className="text-2xl font-semibold text-ink">{codigo || 'Rascunho sem código'}</h1>
-        <StatusBadge status={status} />
+        <StatusBadge status={status} windchillEnviado={windchillEnviado} />
         {editavel && (
           <AjudaPopover titulo="Como usar a aba BITin">
             <p>
-              A checklist tem sugestão automática pra alguns itens, verificada contra a macro
-              original: Alt (Desenho/Processo/Fornecedor), Est/LP/Pré/OC/OF preenchidos, e uma
-              nota igual a "SALVAR DWG" ou "SALVAR SAT" (Atualizar DWG/SAT). O resto continua
-              100% manual. Clicar num item sempre vence a sugestão, nos dois sentidos. Um
-              material pode ser cadastrado inteiramente aqui ("+ Novo material") ou importado
-              da tela ZBPP009; as duas telas operam sobre os mesmos dados e nenhuma depende da
-              outra.
+              Preencha os dados gerais e, por material, marque os itens da checklist que se
+              aplicam. Clicar num item sempre vale, mesmo que já venha marcado.
             </p>
             <p>
-              Lembretes de envio: qualquer item da checklist marcado "Sim" que exija descrição
-              precisa dela preenchida (Nota 8). Aprovação de desenho técnico e de NCM não são
-              verificadas pelo sistema -- é responsabilidade do engenheiro confirmar antes de
-              enviar.
+              Um material pode ser cadastrado inteiramente aqui ("+ Novo material") ou importado
+              da tela ZBPP009.
+            </p>
+            <p>
+              Se algum item da checklist exigir descrição, preencha-a antes de enviar. Confirme
+              também a aprovação de desenho técnico e de NCM antes de enviar.
             </p>
           </AjudaPopover>
         )}
@@ -556,7 +588,7 @@ export default function BitinDetail() {
             disabled={salvando || enviando}
             className="rounded-lg bg-brand-navy px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-brand-navy-dark disabled:cursor-not-allowed disabled:opacity-60"
           >
-            {salvando ? 'Salvando...' : 'Concluir processamento'}
+            {salvando ? 'Salvando...' : 'Concluir'}
           </button>
         )}
       </div>
@@ -580,7 +612,18 @@ export default function BitinDetail() {
         onChecklistDescricaoChange={alternarDescricaoChecklist}
       />
 
-      {resumo && <OrdemClienteSection itens={resumo.ordem_cliente} />}
+      {editavel
+        ? precisaOrdemCliente && (
+            <OrdemClienteEditor
+              itens={ordemCliente}
+              editavel={editavel}
+              onChange={(itens) => {
+                setOrdemCliente(itens)
+                setSujo(true)
+              }}
+            />
+          )
+        : resumo && <OrdemClienteSection itens={resumo.ordem_cliente} />}
 
       <MateriaisSection
         editavel={editavel}

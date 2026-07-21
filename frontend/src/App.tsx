@@ -21,7 +21,9 @@ const ListaTecnicaPage = lazy(() => import('./pages/ListaTecnicaPage'))
 const Settings = lazy(() => import('./pages/Settings'))
 const GestaoUsuariosPage = lazy(() => import('./pages/GestaoUsuariosPage'))
 const CadastroPage = lazy(() => import('./pages/CadastroPage'))
+const ProcessosPage = lazy(() => import('./pages/ProcessosPage'))
 const DefinirSenha = lazy(() => import('./pages/DefinirSenha'))
+const PainelGeral = lazy(() => import('./pages/PainelGeral'))
 
 function CarregandoRota() {
   return <p className="p-6 text-sm text-ink-muted">Carregando...</p>
@@ -116,6 +118,27 @@ function App() {
           element={
             <Suspense fallback={<CarregandoRota />}>
               <CadastroPage />
+            </Suspense>
+          }
+        />
+        {/* Processos (2026-07-20) -- rota própria, antes reaproveitava /bitins
+            (MeusBitins.tsx). ProcessosPage.tsx faz sua própria checagem de isProcessos. */}
+        <Route
+          path="/processos"
+          element={
+            <Suspense fallback={<CarregandoRota />}>
+              <ProcessosPage />
+            </Suspense>
+          }
+        />
+        {/* Painel geral (2026-07-20) -- visão de leitura pra qualquer admin (99), separada de
+            /usuarios (agora só o super-admin, ver Sidebar.tsx). PainelGeral.tsx faz sua
+            própria checagem de isAdmin, mesmo padrão de CadastroPage.tsx. */}
+        <Route
+          path="/painel-geral"
+          element={
+            <Suspense fallback={<CarregandoRota />}>
+              <PainelGeral />
             </Suspense>
           }
         />

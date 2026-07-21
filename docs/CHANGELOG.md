@@ -2,6 +2,40 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v0.10.0] - 2026-07-21
+
+Etapa final "Concluído" (Windchill, reversível só por admin), 2ª revisão do modelo de
+permissões (Cadastro/Processos viram `setor` cruzado com rank, não mais níveis fixos), Painel
+geral novo, Cadastro/Processos reformulados na mesma linguagem Status x Etapa, revisão geral
+de arquitetura/performance do frontend (componentização, navegação "voltar" correta) e ajuda
+("?") em cada tela principal. Ver `docs/RELEASE_v0.10.0.md` pra notas completas.
+
+### Added
+
+- `enviar_windchill`/`reverter_windchill` (`scripts/bitin_lifecycle.py`) — etapa final do
+  BITin (Status derivado "Concluído"), reversível só por admin
+  (`POST /bitins/{id}/reverter-windchill`, `check_permission(NIVEL_ADMIN)`).
+- Aba "Bitins Concluídos" em `Settings.tsx` (admin-only) — lista travada com "Voltar bitin".
+- `Usuario.setor` (`"cadastro"`/`"processos"`/`"engenharia"`), cruzado com
+  `permission_level` (77/88/99) — substitui os níveis fixos `88`/`89` da 1ª revisão.
+  `eh_do_setor`/`check_setor` no backend, `ehDoSetor`/`isCadastro`/`isProcessos` no frontend.
+- `PainelGeral.tsx` (`/painel-geral`, Gestor/Admin) + `lib/bitinEtapa.ts` (Status x Etapa,
+  fonte única usada também por Cadastro/Processos) + `GET /bitins/resumo-painel` (`$facet`).
+- `ProcessosPage.tsx` (tela própria, substitui reaproveitamento de `MeusBitins.tsx`) —
+  exclui BITins com `sem_necessidade_roteiro=True` das etapas Pendente/Revisado.
+- `components/bitin/BitinTableSection.tsx`, `bitinColunas.tsx`, `FiltroEtapaToolbar.tsx`,
+  `hooks/useDebouncedValue.ts`, `hooks/useVoltar.ts` — componentização/dedup do frontend.
+- `AjudaPopover` novo em Cadastro, Processos, Meus Bitins, Painel geral, Início, Gestão de
+  usuários e "Bitins Concluídos".
+
+### Fixed
+
+- "Voltar" em `BitinDetail.tsx` tinha alvo fixo (`/bitins`) — agora volta pra tela de origem
+  real (`navigate(-1)`).
+- BITins sem necessidade de roteiro apareciam como "Revisado" na fila do Processos mesmo
+  nunca tendo passado por lá (mesmo bug refletido em `GET /bitins/resumo-painel`).
+- Coluna "Número" perdeu cor/sublinhado ao virar componente compartilhado — corrigido.
+
 ## [v0.9.0] - 2026-07-20
 
 Auditoria completa das automações do VBA original (checklist, Alt/Esp/DWG-SAT, "REVISAR

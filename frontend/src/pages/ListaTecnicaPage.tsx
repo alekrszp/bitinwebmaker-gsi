@@ -385,7 +385,7 @@ export default function ListaTecnicaPage() {
 
       <div className="mt-3 flex flex-wrap items-center gap-3">
         <h1 className="text-2xl font-semibold text-ink">{bitin?.codigo || 'Rascunho sem código'}</h1>
-        {bitin && <StatusBadge status={bitin.status} />}
+        {bitin && <StatusBadge status={bitin.status} windchillEnviado={bitin.windchill_enviado} />}
         <span className="text-sm text-ink-muted">— Lista Técnica</span>
         <AjudaPopover titulo="Como usar a Lista Técnica">
           <p>

@@ -18,6 +18,11 @@ export interface User {
   // gerada por um admin (POST /users) e ainda não foi trocada pelo dono da conta.
   // RequireAuth.tsx usa isso pra forçar a rota /definir-senha antes de liberar o resto do app.
   senha_temporaria: boolean
+  // Espelha UserOut.eh_super_admin (2026-07-20) -- só a conta fixa em
+  // backend/auth/security.py::CONTAS_SUPER_ADMIN tem true aqui. Usado só pra decidir se
+  // "Gestão de usuários" aparece no menu (Sidebar.tsx); a checagem que protege de verdade
+  // fica no backend.
+  eh_super_admin: boolean
 }
 
 // Espelha backend/auth/schemas.py::AdminUserCreate -- corpo de POST /users (cadastro de
@@ -109,6 +114,13 @@ export interface Bitin {
   // Calculado por requisição (ver scripts/bitin_document.py::precisa_roteiro) -- decide se
   // CadastroPage.tsx mostra "Encaminhar para roteiro" ou "Não precisa de roteiro".
   precisa_roteiro: boolean
+  // Penúltimo passo do fluxo (2026-07-20, ver scripts/bitin_lifecycle.py::concluir_bitin) --
+  // só depois disso o PDF fica disponível na aba "Cadastrados" de CadastroPage.tsx.
+  bitin_cadastrado: boolean
+  data_cadastrado: string | null
+  // Última etapa de todas (2026-07-20, ver scripts/bitin_lifecycle.py::enviar_windchill).
+  windchill_enviado: boolean
+  data_windchill_enviado: string | null
 }
 
 // Espelha scripts/bitin_model.py::build_materiais_schema -- devolvido por
@@ -180,4 +192,22 @@ export interface MaterialEditavel {
     }
     lista_tecnica: ItemListaTecnica[]
   }
+}
+
+// Editável -- espelha scripts/bitin_model.py::validate_ordem_cliente (codigo obrigatório,
+// pelo menos 1 item em acrescentar_no_pedido OU retira_do_pedido). Achado em 2026-07-20: o
+// campo já era validado no envio (POP Nota 10: material com OC="X" exige entrada
+// correspondente aqui) mas não existia NENHUM formulário editável na tela -- só uma exibição
+// só-leitura (OrdemClienteSection.tsx, ver bitinTypes.ts::OrdemClienteItem) alimentada pelo
+// resumo calculado. Sem isso, era impossível enviar um BITin com OC="X" pela UI.
+export interface ItemPedidoEditavel {
+  codigo_material: string
+  quantidade: string
+}
+
+export interface OrdemClienteEditavel {
+  codigo: string
+  descricao: string
+  acrescentar_no_pedido: ItemPedidoEditavel[]
+  retira_do_pedido: ItemPedidoEditavel[]
 }

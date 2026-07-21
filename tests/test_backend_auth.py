@@ -22,6 +22,15 @@ from backend.db.mongodb import get_mongo_db  # noqa: E402
 from backend.db.session import Base, get_db  # noqa: E402
 from backend.main import app  # noqa: E402
 
+# Conta fixa de deps.CONTAS_SUPER_ADMIN (2026-07-20, ver backend/api/users.py::
+# _exigir_super_admin) -- Gestão de usuários inteira agora exige essa conta específica, não
+# só permission_level=99. Testes que chamam rotas de users como "admin" comum precisam dela
+# pra passar da 1ª barreira; os poucos que testam "outro admin (não-super) é barrado" ficam
+# de fora de propósito (ver test_admin_nao_pode_ser_rebaixado_nem_por_outro_admin /
+# test_admin_nao_pode_excluir_outro_admin, que agora esperam 403 antes de chegar na regra
+# antiga de "não mexe em admin").
+SUPER_ADMIN_EMAIL = "alessandro.pereiradarosafilho@grainproteintech.com"
+
 
 class AuthApiTest(unittest.TestCase):
     def setUp(self) -> None:
@@ -52,7 +61,7 @@ class AuthApiTest(unittest.TestCase):
         self.engine.dispose()
 
     def _create_user(
-        self, user_id: int, permission_level: int = 66, setor: str = "usuario", email: str | None = None,
+        self, user_id: int, permission_level: int = 77, setor: str = "engenharia", email: str | None = None,
     ) -> Usuario:
         db = self.SessionLocal()
         user = Usuario(
@@ -99,10 +108,10 @@ class AuthApiTest(unittest.TestCase):
             "/api/v1/auth/register",
             json={
                 "email": "segundo@example.com", "nome": "Segundo", "password": "Senha123!",
-                "setor": "usuario",
+                "setor": "engenharia",
             },
         )
-        self.assertEqual(resp.json()["permission_level"], 66)
+        self.assertEqual(resp.json()["permission_level"], 77)
 
     def test_registro_ignora_permission_level_enviado_pelo_cliente(self) -> None:
         """A vulnerabilidade encontrada na revisão do GPT_Engineering_authAPI: o cliente não
@@ -119,14 +128,14 @@ class AuthApiTest(unittest.TestCase):
             "/api/v1/auth/register",
             json={
                 "email": "invasor@example.com", "nome": "Invasor", "password": "Senha123!",
-                "permission_level": 99, "setor": "usuario",
+                "permission_level": 99, "setor": "engenharia",
             },
         )
         self.assertEqual(resp.status_code, 200, resp.text)
-        self.assertEqual(resp.json()["permission_level"], 66)
+        self.assertEqual(resp.json()["permission_level"], 77)
 
     def test_registro_com_email_duplicado_falha(self) -> None:
-        payload = {"email": "dup@example.com", "nome": "Dup", "password": "Senha123!", "setor": "usuario"}
+        payload = {"email": "dup@example.com", "nome": "Dup", "password": "Senha123!", "setor": "engenharia"}
         self.client.post("/api/v1/auth/register", json=payload)
         resp = self.client.post("/api/v1/auth/register", json=payload)
         self.assertEqual(resp.status_code, 400)
@@ -157,7 +166,7 @@ class AuthApiTest(unittest.TestCase):
             "/api/v1/auth/register",
             json={
                 "email": "login@example.com", "nome": "Login", "password": "Senha123!",
-                "setor": "usuario",
+                "setor": "engenharia",
             },
         )
         resp = self.client.post(
@@ -172,7 +181,7 @@ class AuthApiTest(unittest.TestCase):
             "/api/v1/auth/register",
             json={
                 "email": "login2@example.com", "nome": "Login2", "password": "Senha123!",
-                "setor": "usuario",
+                "setor": "engenharia",
             },
         )
         resp = self.client.post(
@@ -191,7 +200,7 @@ class AuthApiTest(unittest.TestCase):
         email = "rate-limit-test@example.com"
         self.client.post(
             "/api/v1/auth/register",
-            json={"email": email, "nome": "RL", "password": "Senha123!", "setor": "usuario"},
+            json={"email": email, "nome": "RL", "password": "Senha123!", "setor": "engenharia"},
         )
 
         for _ in range(rate_limit.MAX_TENTATIVAS):
@@ -230,7 +239,7 @@ class AuthApiTest(unittest.TestCase):
             "/api/v1/auth/register",
             json={
                 "email": "sessao@example.com", "nome": "Sessao", "password": "Senha123!",
-                "setor": "usuario",
+                "setor": "engenharia",
             },
         )
         resp = self.client.post(
@@ -254,7 +263,7 @@ class AuthApiTest(unittest.TestCase):
             "/api/v1/auth/register",
             json={
                 "email": "logout@example.com", "nome": "Logout", "password": "Senha123!",
-                "setor": "usuario",
+                "setor": "engenharia",
             },
         )
         login_resp = self.client.post(
@@ -279,7 +288,7 @@ class AuthApiTest(unittest.TestCase):
             "/api/v1/auth/register",
             json={
                 "email": "eng@example.com", "nome": "Engenheiro", "password": "Senha123!",
-                "numero_eng": "ENG-123", "setor": "usuario",
+                "numero_eng": "ENG-123", "setor": "engenharia",
             },
         )
         self.assertEqual(resp.status_code, 200, resp.text)
@@ -328,7 +337,7 @@ class AuthApiTest(unittest.TestCase):
             "/api/v1/auth/register",
             json={
                 "email": "multisetor@example.com", "nome": "Multi", "password": "Senha123!",
-                "subgrupo_ids": [subgrupo_a, subgrupo_b], "setor": "usuario",
+                "subgrupo_ids": [subgrupo_a, subgrupo_b], "setor": "engenharia",
             },
         )
         self.assertEqual(resp.status_code, 200, resp.text)
@@ -339,15 +348,15 @@ class AuthApiTest(unittest.TestCase):
             "/api/v1/auth/register",
             json={
                 "email": "setorinvalido@example.com", "nome": "Invalido", "password": "Senha123!",
-                "subgrupo_ids": [99999], "setor": "usuario",
+                "subgrupo_ids": [99999], "setor": "engenharia",
             },
         )
         self.assertEqual(resp.status_code, 400, resp.text)
 
     def test_admin_continua_vendo_todo_mundo_em_users(self) -> None:
-        admin = self._create_user(1, permission_level=99)
-        self._create_user(2, permission_level=66)
-        self._create_user(3, permission_level=66)
+        admin = self._create_user(1, permission_level=99, email=SUPER_ADMIN_EMAIL)
+        self._create_user(2, permission_level=77)
+        self._create_user(3, permission_level=77)
 
         resp = self.client.get(
             "/api/v1/users", headers={"Authorization": f"Bearer {create_access_token(admin.id)}"},
@@ -369,13 +378,13 @@ class AuthApiTest(unittest.TestCase):
     # usuários é só admin") -- revogado o acesso que Gestor(77) tinha antes.
 
     def test_users_list_exige_admin_gestor_e_negado(self) -> None:
-        comum = self._create_user(1, permission_level=66)
+        comum = self._create_user(1, permission_level=77)
         resp = self.client.get(
             "/api/v1/users", headers={"Authorization": f"Bearer {create_access_token(comum.id)}"},
         )
         self.assertEqual(resp.status_code, 403)
 
-        gestor = self._create_user(2, permission_level=77)
+        gestor = self._create_user(2, permission_level=88)
         resp_gestor = self.client.get(
             "/api/v1/users", headers={"Authorization": f"Bearer {create_access_token(gestor.id)}"},
         )
@@ -387,15 +396,15 @@ class AuthApiTest(unittest.TestCase):
         )
         self.assertEqual(resp_cadastro.status_code, 403, resp_cadastro.text)
 
-        admin = self._create_user(4, permission_level=99)
+        admin = self._create_user(4, permission_level=99, email=SUPER_ADMIN_EMAIL)
         resp_admin = self.client.get(
             "/api/v1/users", headers={"Authorization": f"Bearer {create_access_token(admin.id)}"},
         )
         self.assertEqual(resp_admin.status_code, 200, resp_admin.text)
 
     def test_get_user_por_id_exige_admin_gestor_e_negado(self) -> None:
-        gestor = self._create_user(1, permission_level=77)
-        alvo = self._create_user(2, permission_level=66)
+        gestor = self._create_user(1, permission_level=88)
+        alvo = self._create_user(2, permission_level=77)
 
         resp = self.client.get(
             f"/api/v1/users/{alvo.id}",
@@ -403,7 +412,7 @@ class AuthApiTest(unittest.TestCase):
         )
         self.assertEqual(resp.status_code, 403, resp.text)
 
-        admin = self._create_user(3, permission_level=99)
+        admin = self._create_user(3, permission_level=99, email=SUPER_ADMIN_EMAIL)
         resp_admin = self.client.get(
             f"/api/v1/users/{alvo.id}",
             headers={"Authorization": f"Bearer {create_access_token(admin.id)}"},
@@ -411,8 +420,8 @@ class AuthApiTest(unittest.TestCase):
         self.assertEqual(resp_admin.status_code, 200, resp_admin.text)
 
     def test_promover_usuario_exige_admin(self) -> None:
-        gestor = self._create_user(1, permission_level=77)
-        alvo = self._create_user(2, permission_level=66)
+        gestor = self._create_user(1, permission_level=88)
+        alvo = self._create_user(2, permission_level=77)
 
         resp_negado = self.client.patch(
             f"/api/v1/users/{alvo.id}/permission",
@@ -421,7 +430,7 @@ class AuthApiTest(unittest.TestCase):
         )
         self.assertEqual(resp_negado.status_code, 403)
 
-        admin = self._create_user(3, permission_level=99)
+        admin = self._create_user(3, permission_level=99, email=SUPER_ADMIN_EMAIL)
         resp_ok = self.client.patch(
             f"/api/v1/users/{alvo.id}/permission",
             json={"permission_level": 99, "senha_admin": "Senha123!"},
@@ -434,8 +443,8 @@ class AuthApiTest(unittest.TestCase):
         """"quando eu trocar permissão de usuário já cadastrado sempre pedir a minha senha
         para confirmar" (2026-07-17, pedido explícito) -- checada ANTES de qualquer outra
         validação, mesmo padrão de create_user_by_admin."""
-        admin = self._create_user(1, permission_level=99)  # senha real: "Senha123!"
-        alvo = self._create_user(2, permission_level=66)
+        admin = self._create_user(1, permission_level=99, email=SUPER_ADMIN_EMAIL)  # senha real: "Senha123!"
+        alvo = self._create_user(2, permission_level=77)
 
         resp = self.client.patch(
             f"/api/v1/users/{alvo.id}/permission",
@@ -448,11 +457,11 @@ class AuthApiTest(unittest.TestCase):
         db = self.SessionLocal()
         inalterado = db.query(Usuario).filter(Usuario.id == alvo.id).first()
         db.close()
-        self.assertEqual(inalterado.permission_level, 66)
+        self.assertEqual(inalterado.permission_level, 77)
 
     def test_alterar_permissao_sem_senha_admin_da_422(self) -> None:
-        admin = self._create_user(1, permission_level=99)
-        alvo = self._create_user(2, permission_level=66)
+        admin = self._create_user(1, permission_level=99, email=SUPER_ADMIN_EMAIL)
+        alvo = self._create_user(2, permission_level=77)
         resp = self.client.patch(
             f"/api/v1/users/{alvo.id}/permission",
             json={"permission_level": 77},
@@ -471,7 +480,7 @@ class AuthApiTest(unittest.TestCase):
         tocadas por isso."""
         resp = self.client.post(
             "/api/v1/auth/register",
-            json={"email": "fraco@example.com", "nome": "Fraco", "password": "123", "setor": "usuario"},
+            json={"email": "fraco@example.com", "nome": "Fraco", "password": "123", "setor": "engenharia"},
         )
         self.assertEqual(resp.status_code, 422, resp.text)
 
@@ -480,7 +489,7 @@ class AuthApiTest(unittest.TestCase):
             "/api/v1/auth/register",
             json={
                 "email": "forte@example.com", "nome": "Forte", "password": "Senha123!",
-                "setor": "usuario",
+                "setor": "engenharia",
             },
         )
         self.assertEqual(resp.status_code, 200, resp.text)
@@ -490,7 +499,7 @@ class AuthApiTest(unittest.TestCase):
             "/api/v1/auth/register",
             json={
                 "email": "troca1@example.com", "nome": "Troca1", "password": "Senha123!",
-                "setor": "usuario",
+                "setor": "engenharia",
             },
         )
         login_resp = self.client.post(
@@ -511,7 +520,7 @@ class AuthApiTest(unittest.TestCase):
             "/api/v1/auth/register",
             json={
                 "email": "troca2@example.com", "nome": "Troca2", "password": "Senha123!",
-                "setor": "usuario",
+                "setor": "engenharia",
             },
         )
         login_resp = self.client.post(
@@ -532,7 +541,7 @@ class AuthApiTest(unittest.TestCase):
             "/api/v1/auth/register",
             json={
                 "email": "troca3@example.com", "nome": "Troca3", "password": "Senha123!",
-                "setor": "usuario",
+                "setor": "engenharia",
             },
         )
         login1 = self.client.post(
@@ -598,14 +607,14 @@ class AuthApiTest(unittest.TestCase):
         self.assertEqual(outra_revogada.status_code, 401, outra_revogada.text)
 
     def test_subgrupos_criar_exige_admin(self) -> None:
-        comum = self._create_user(1, permission_level=66)
+        comum = self._create_user(1, permission_level=77)
         resp = self.client.post(
             "/api/v1/subgrupos", json={"nome": "Engenharia"},
             headers={"Authorization": f"Bearer {create_access_token(comum.id)}"},
         )
         self.assertEqual(resp.status_code, 403)
 
-        admin = self._create_user(2, permission_level=99)
+        admin = self._create_user(2, permission_level=99, email=SUPER_ADMIN_EMAIL)
         resp_ok = self.client.post(
             "/api/v1/subgrupos", json={"nome": "Engenharia"},
             headers={"Authorization": f"Bearer {create_access_token(admin.id)}"},
@@ -617,25 +626,25 @@ class AuthApiTest(unittest.TestCase):
     # para não ter que cadastrar no banco".
 
     def test_criar_usuario_por_admin_exige_permissao_99(self) -> None:
-        gestor = self._create_user(1, permission_level=77)
+        gestor = self._create_user(1, permission_level=88)
         resp = self.client.post(
             "/api/v1/users",
             json={
-                "email": "novo@example.com", "nome": "Novo", "permission_level": 66,
-                "setor": "usuario", "senha_admin": "Senha123!",
+                "email": "novo@example.com", "nome": "Novo", "permission_level": 77,
+                "setor": "engenharia", "senha_admin": "Senha123!",
             },
             headers={"Authorization": f"Bearer {create_access_token(gestor.id)}"},
         )
         self.assertEqual(resp.status_code, 403, resp.text)
 
     def test_criar_usuario_por_admin_com_sucesso_gera_senha_temporaria_valida(self) -> None:
-        admin = self._create_user(1, permission_level=99)
+        admin = self._create_user(1, permission_level=99, email=SUPER_ADMIN_EMAIL)
         subgrupo = self._criar_subgrupo("Engenharia")
         resp = self.client.post(
             "/api/v1/users",
             json={
-                "email": "Novo@Example.com", "nome": "Novo", "permission_level": 66,
-                "subgrupo_ids": [subgrupo], "setor": "usuario", "senha_admin": "Senha123!",
+                "email": "Novo@Example.com", "nome": "Novo", "permission_level": 77,
+                "subgrupo_ids": [subgrupo], "setor": "engenharia", "senha_admin": "Senha123!",
             },
             headers={"Authorization": f"Bearer {create_access_token(admin.id)}"},
         )
@@ -649,7 +658,7 @@ class AuthApiTest(unittest.TestCase):
 
         validate_password_strength(senha_gerada)  # não deve levantar
         self.assertTrue(body["senha_temporaria"])
-        self.assertEqual(body["setor"], "usuario")
+        self.assertEqual(body["setor"], "engenharia")
 
         db = self.SessionLocal()
         criado = db.query(Usuario).filter(Usuario.email == "novo@example.com").first()
@@ -658,13 +667,13 @@ class AuthApiTest(unittest.TestCase):
         self.assertTrue(criado.senha_temporaria)
 
     def test_criar_usuario_por_admin_com_email_duplicado_falha(self) -> None:
-        admin = self._create_user(1, permission_level=99)
-        self._create_user(2, permission_level=66)  # email user2@example.com
+        admin = self._create_user(1, permission_level=99, email=SUPER_ADMIN_EMAIL)
+        self._create_user(2, permission_level=77)  # email user2@example.com
         resp = self.client.post(
             "/api/v1/users",
             json={
-                "email": "user2@example.com", "nome": "Duplicado", "permission_level": 66,
-                "setor": "usuario", "senha_admin": "Senha123!",
+                "email": "user2@example.com", "nome": "Duplicado", "permission_level": 77,
+                "setor": "engenharia", "senha_admin": "Senha123!",
             },
             headers={"Authorization": f"Bearer {create_access_token(admin.id)}"},
         )
@@ -674,7 +683,7 @@ class AuthApiTest(unittest.TestCase):
         """Usuario.setor (rótulo de cargo cadastro/gestor/usuario) validado contra
         SETORES_VALIDOS -- valor fora da lista dá 422 (validação Pydantic), não chega a
         tocar no banco."""
-        admin = self._create_user(1, permission_level=99)
+        admin = self._create_user(1, permission_level=99, email=SUPER_ADMIN_EMAIL)
         resp = self.client.post(
             "/api/v1/users",
             json={
@@ -686,13 +695,13 @@ class AuthApiTest(unittest.TestCase):
         self.assertEqual(resp.status_code, 422, resp.text)
 
     def test_login_com_senha_temporaria_gerada_por_admin_funciona(self) -> None:
-        admin = self._create_user(1, permission_level=99)
+        admin = self._create_user(1, permission_level=99, email=SUPER_ADMIN_EMAIL)
         subgrupo = self._criar_subgrupo("Engenharia")
         criar = self.client.post(
             "/api/v1/users",
             json={
-                "email": "temp@example.com", "nome": "Temp", "permission_level": 66,
-                "subgrupo_ids": [subgrupo], "setor": "usuario", "senha_admin": "Senha123!",
+                "email": "temp@example.com", "nome": "Temp", "permission_level": 77,
+                "subgrupo_ids": [subgrupo], "setor": "engenharia", "senha_admin": "Senha123!",
             },
             headers={"Authorization": f"Bearer {create_access_token(admin.id)}"},
         )
@@ -720,69 +729,71 @@ class AuthApiTest(unittest.TestCase):
         self.assertEqual(me_depois.status_code, 200, me_depois.text)
         self.assertFalse(me_depois.json()["senha_temporaria"])
 
-    # Revisão do modelo de permissões (2026-07-16): 66 Usuário, 77 Gestor, 88 Cadastro,
-    # 99 Admin. Usuário/Gestor exigem ao menos 1 subgrupo. Cadastro (88) e Processos (89,
-    # 2026-07-17) tirados dessa exigência -- times centrais, não presos a um Subgrupo
-    # específico. Admin nunca precisou.
+    # 2ª revisão do modelo de permissões (2026-07-20): 77 Individual, 88 Gestor, 99 Admin,
+    # cruzado com Usuario.setor (cadastro/processos/engenharia). Só Engenharia exige ao
+    # menos 1 subgrupo (qualquer rank); Cadastro/Processos são times centrais, não presos a
+    # um Subgrupo específico. Admin nunca precisou, mesmo com setor="engenharia".
 
-    def test_criar_usuario_nivel_66_sem_subgrupo_falha(self) -> None:
-        admin = self._create_user(1, permission_level=99)
+    def test_criar_usuario_engenharia_individual_sem_subgrupo_falha(self) -> None:
+        admin = self._create_user(1, permission_level=99, email=SUPER_ADMIN_EMAIL)
         resp = self.client.post(
             "/api/v1/users",
             json={
-                "email": "semsetor66@example.com", "nome": "Sem Subgrupo", "permission_level": 66,
-                "setor": "usuario", "senha_admin": "Senha123!",
+                "email": "semsubgrupo77@example.com", "nome": "Sem Subgrupo", "permission_level": 77,
+                "setor": "engenharia", "senha_admin": "Senha123!",
             },
             headers={"Authorization": f"Bearer {create_access_token(admin.id)}"},
         )
         self.assertEqual(resp.status_code, 400, resp.text)
 
-    def test_criar_usuario_nivel_77_sem_subgrupo_falha(self) -> None:
-        admin = self._create_user(1, permission_level=99)
+    def test_criar_usuario_engenharia_gestor_sem_subgrupo_falha(self) -> None:
+        admin = self._create_user(1, permission_level=99, email=SUPER_ADMIN_EMAIL)
         resp = self.client.post(
             "/api/v1/users",
             json={
-                "email": "semsetor77@example.com", "nome": "Sem Subgrupo", "permission_level": 77,
-                "setor": "gestor", "senha_admin": "Senha123!",
+                "email": "semsubgrupo88@example.com", "nome": "Sem Subgrupo", "permission_level": 88,
+                "setor": "engenharia", "senha_admin": "Senha123!",
             },
             headers={"Authorization": f"Bearer {create_access_token(admin.id)}"},
         )
         self.assertEqual(resp.status_code, 400, resp.text)
 
-    def test_criar_usuario_nivel_88_sem_subgrupo_sucede(self) -> None:
-        """Cadastro (88) é um time central que recebe BITins de qualquer Subgrupo -- tirado
-        de NIVEIS_QUE_EXIGEM_SUBGRUPO em 2026-07-17 (pedido explícito do usuário)."""
-        admin = self._create_user(1, permission_level=99)
+    def test_criar_usuario_cadastro_individual_sem_subgrupo_sucede(self) -> None:
+        """Cadastro é um time central que recebe BITins de qualquer Subgrupo -- não exige
+        subgrupo (ver backend/auth/schemas.py::exige_subgrupo)."""
+        admin = self._create_user(1, permission_level=99, email=SUPER_ADMIN_EMAIL)
         resp = self.client.post(
             "/api/v1/users",
             json={
-                "email": "semsetor88@example.com", "nome": "Sem Subgrupo", "permission_level": 88,
+                "email": "semsubgrupocadastro@example.com", "nome": "Sem Subgrupo", "permission_level": 77,
                 "setor": "cadastro", "senha_admin": "Senha123!",
             },
             headers={"Authorization": f"Bearer {create_access_token(admin.id)}"},
         )
         self.assertEqual(resp.status_code, 200, resp.text)
 
-    def test_criar_usuario_nivel_89_sem_subgrupo_sucede(self) -> None:
-        """Processos (89), mesmo raciocínio do Cadastro logo acima."""
-        admin = self._create_user(1, permission_level=99)
+    def test_criar_usuario_processos_individual_sem_subgrupo_sucede(self) -> None:
+        """Processos, mesmo raciocínio do Cadastro logo acima."""
+        admin = self._create_user(1, permission_level=99, email=SUPER_ADMIN_EMAIL)
         resp = self.client.post(
             "/api/v1/users",
             json={
-                "email": "semsetor89@example.com", "nome": "Sem Subgrupo", "permission_level": 89,
+                "email": "semsubgrupoprocessos@example.com", "nome": "Sem Subgrupo", "permission_level": 77,
                 "setor": "processos", "senha_admin": "Senha123!",
             },
             headers={"Authorization": f"Bearer {create_access_token(admin.id)}"},
         )
         self.assertEqual(resp.status_code, 200, resp.text)
 
-    def test_criar_usuario_nivel_88_com_subgrupo_sucede(self) -> None:
-        admin = self._create_user(1, permission_level=99)
+    def test_criar_usuario_gestor_cadastro_com_subgrupo_sucede(self) -> None:
+        """Subgrupo é opcional pra Cadastro, mas informar um continua válido -- exige_subgrupo
+        só bloqueia a AUSÊNCIA de subgrupo pra Engenharia, não proíbe Cadastro de ter um."""
+        admin = self._create_user(1, permission_level=99, email=SUPER_ADMIN_EMAIL)
         subgrupo = self._criar_subgrupo("Engenharia")
         resp = self.client.post(
             "/api/v1/users",
             json={
-                "email": "cadastro88@example.com", "nome": "Cadastro", "permission_level": 88,
+                "email": "gestorcadastro@example.com", "nome": "Gestor Cadastro", "permission_level": 88,
                 "subgrupo_ids": [subgrupo], "setor": "cadastro", "senha_admin": "Senha123!",
             },
             headers={"Authorization": f"Bearer {create_access_token(admin.id)}"},
@@ -791,31 +802,35 @@ class AuthApiTest(unittest.TestCase):
         self.assertEqual(resp.json()["permission_level"], 88)
 
     def test_criar_usuario_nivel_99_sem_subgrupo_sucede(self) -> None:
-        """Admin (99) é o único nível que pode ficar sem subgrupo nenhum ("faz tudo que
-        quiser no sistema", não precisa de escopo de subgrupo)."""
-        admin = self._create_user(1, permission_level=99)
+        """Admin (99) é o único rank que pode ficar sem subgrupo nenhum mesmo com
+        setor="engenharia" (que normalmente exige subgrupo pra 77/88) -- exige_subgrupo tem
+        um bypass explícito pra NIVEL_ADMIN."""
+        admin = self._create_user(1, permission_level=99, email=SUPER_ADMIN_EMAIL)
         resp = self.client.post(
             "/api/v1/users",
             json={
-                "email": "admin99@example.com", "nome": "Outro Admin", "permission_level": 99,
-                "setor": "cadastro", "senha_admin": "Senha123!",
+                "email": "outroadmin99@example.com", "nome": "Outro Admin", "permission_level": 99,
+                "setor": "engenharia", "senha_admin": "Senha123!",
             },
             headers={"Authorization": f"Bearer {create_access_token(admin.id)}"},
         )
         self.assertEqual(resp.status_code, 200, resp.text)
 
     def test_admin_nao_pode_ser_rebaixado_nem_por_outro_admin(self) -> None:
-        """"ninguém pode tirar permissão dele" -- vale mesmo quando quem está chamando também
-        é admin. Não existe rota pra despromover um admin."""
+        """Um admin (99) comum -- não a conta super-admin -- nem chega na regra antiga de
+        "não mexe em admin": a rota inteira agora é reservada ao super-admin
+        (2026-07-20, ver _exigir_super_admin), então o 403 já bloqueia antes disso.
+        test_super_admin_pode_rebaixar_outro_admin logo abaixo cobre o caso em que quem
+        chama É o super-admin."""
         admin1 = self._create_user(1, permission_level=99)
         admin_alvo = self._create_user(2, permission_level=99)
 
         resp = self.client.patch(
             f"/api/v1/users/{admin_alvo.id}/permission",
-            json={"permission_level": 66, "senha_admin": "Senha123!"},
+            json={"permission_level": 77, "senha_admin": "Senha123!"},
             headers={"Authorization": f"Bearer {create_access_token(admin1.id)}"},
         )
-        self.assertEqual(resp.status_code, 400, resp.text)
+        self.assertEqual(resp.status_code, 403, resp.text)
 
         db = self.SessionLocal()
         ainda_admin = db.query(Usuario).filter(Usuario.id == admin_alvo.id).first()
@@ -828,28 +843,28 @@ class AuthApiTest(unittest.TestCase):
     # a proteção "admin não mexe em admin"; autoproteção continua valendo até pra ela.
 
     def test_super_admin_pode_rebaixar_outro_admin(self) -> None:
-        super_admin = self._create_user(1, permission_level=99, email="alessandro.pereiradarosafilho@grainproteintech.com")
+        super_admin = self._create_user(1, permission_level=99, email=SUPER_ADMIN_EMAIL)
         admin_alvo = self._create_user(2, permission_level=99)
 
         resp = self.client.patch(
             f"/api/v1/users/{admin_alvo.id}/permission",
-            json={"permission_level": 66, "senha_admin": "Senha123!"},
+            json={"permission_level": 77, "senha_admin": "Senha123!"},
             headers={"Authorization": f"Bearer {create_access_token(super_admin.id)}"},
         )
         self.assertEqual(resp.status_code, 200, resp.text)
-        self.assertEqual(resp.json()["permission_level"], 66)
+        self.assertEqual(resp.json()["permission_level"], 77)
 
     def test_super_admin_nao_pode_alterar_o_proprio_nivel(self) -> None:
-        super_admin = self._create_user(1, permission_level=99, email="alessandro.pereiradarosafilho@grainproteintech.com")
+        super_admin = self._create_user(1, permission_level=99, email=SUPER_ADMIN_EMAIL)
         resp = self.client.patch(
             f"/api/v1/users/{super_admin.id}/permission",
-            json={"permission_level": 66, "senha_admin": "Senha123!"},
+            json={"permission_level": 77, "senha_admin": "Senha123!"},
             headers={"Authorization": f"Bearer {create_access_token(super_admin.id)}"},
         )
         self.assertEqual(resp.status_code, 400, resp.text)
 
     def test_super_admin_pode_excluir_outro_admin(self) -> None:
-        super_admin = self._create_user(1, permission_level=99, email="alessandro.pereiradarosafilho@grainproteintech.com")
+        super_admin = self._create_user(1, permission_level=99, email=SUPER_ADMIN_EMAIL)
         admin_alvo = self._create_user(2, permission_level=99)
 
         resp = self.client.delete(
@@ -860,7 +875,7 @@ class AuthApiTest(unittest.TestCase):
         self.assertFalse(resp.json()["ativo"])
 
     def test_super_admin_nao_pode_se_auto_excluir(self) -> None:
-        super_admin = self._create_user(1, permission_level=99, email="alessandro.pereiradarosafilho@grainproteintech.com")
+        super_admin = self._create_user(1, permission_level=99, email=SUPER_ADMIN_EMAIL)
         resp = self.client.delete(
             f"/api/v1/users/{super_admin.id}",
             headers={"Authorization": f"Bearer {create_access_token(super_admin.id)}"},
@@ -875,8 +890,8 @@ class AuthApiTest(unittest.TestCase):
     # quem distingue.
 
     def test_admin_exclui_usuario_com_sucesso(self) -> None:
-        admin = self._create_user(1, permission_level=99)
-        alvo = self._create_user(2, permission_level=66)
+        admin = self._create_user(1, permission_level=99, email=SUPER_ADMIN_EMAIL)
+        alvo = self._create_user(2, permission_level=77)
 
         resp = self.client.delete(
             f"/api/v1/users/{alvo.id}",
@@ -901,8 +916,8 @@ class AuthApiTest(unittest.TestCase):
         """"quando eu reativo aparece de novo com uma nova senha do 0 e novo email"
         (2026-07-17, pedido explícito) -- reativar sempre gera senha nova e aceita e-mail
         novo (repetir o mesmo e-mail também é válido, ver teste abaixo)."""
-        admin = self._create_user(1, permission_level=99)
-        alvo = self._create_user(2, permission_level=66)  # senha real: "Senha123!"
+        admin = self._create_user(1, permission_level=99, email=SUPER_ADMIN_EMAIL)
+        alvo = self._create_user(2, permission_level=77)  # senha real: "Senha123!"
         self.client.delete(
             f"/api/v1/users/{alvo.id}", headers={"Authorization": f"Bearer {create_access_token(admin.id)}"},
         )
@@ -936,9 +951,9 @@ class AuthApiTest(unittest.TestCase):
         self.assertEqual(login_nova.status_code, 200, login_nova.text)
 
     def test_reativar_com_email_ja_em_uso_falha(self) -> None:
-        admin = self._create_user(1, permission_level=99)
-        outro = self._create_user(2, permission_level=66)
-        excluido = self._create_user(3, permission_level=66)
+        admin = self._create_user(1, permission_level=99, email=SUPER_ADMIN_EMAIL)
+        outro = self._create_user(2, permission_level=77)
+        excluido = self._create_user(3, permission_level=77)
         self.client.delete(
             f"/api/v1/users/{excluido.id}", headers={"Authorization": f"Bearer {create_access_token(admin.id)}"},
         )
@@ -954,8 +969,8 @@ class AuthApiTest(unittest.TestCase):
         """"quando um usuário é excluído... e eu tento cadastrar ele de novo, deve permitir"
         (2026-07-17, pedido explícito) -- email é UNIQUE, então create_user_by_admin precisa
         REATIVAR a linha existente em vez de tentar inserir outra."""
-        admin = self._create_user(1, permission_level=99)
-        alvo = self._create_user(2, permission_level=66)
+        admin = self._create_user(1, permission_level=99, email=SUPER_ADMIN_EMAIL)
+        alvo = self._create_user(2, permission_level=77)
         alvo_id = alvo.id
         self.client.delete(
             f"/api/v1/users/{alvo_id}", headers={"Authorization": f"Bearer {create_access_token(admin.id)}"},
@@ -979,12 +994,12 @@ class AuthApiTest(unittest.TestCase):
         db.close()
 
     def test_recadastrar_email_de_usuario_ativo_ainda_falha(self) -> None:
-        admin = self._create_user(1, permission_level=99)
-        ativo = self._create_user(2, permission_level=66)
+        admin = self._create_user(1, permission_level=99, email=SUPER_ADMIN_EMAIL)
+        ativo = self._create_user(2, permission_level=77)
         resp = self.client.post(
             "/api/v1/users",
             json={
-                "email": ativo.email, "nome": "Duplicado", "permission_level": 66,
+                "email": ativo.email, "nome": "Duplicado", "permission_level": 77,
                 "setor": "cadastro", "subgrupo_ids": [], "senha_admin": "Senha123!",
             },
             headers={"Authorization": f"Bearer {create_access_token(admin.id)}"},
@@ -992,8 +1007,8 @@ class AuthApiTest(unittest.TestCase):
         self.assertEqual(resp.status_code, 400, resp.text)
 
     def test_usuario_excluido_nao_consegue_mais_logar(self) -> None:
-        admin = self._create_user(1, permission_level=99)
-        alvo = self._create_user(2, permission_level=66)  # senha real: "Senha123!"
+        admin = self._create_user(1, permission_level=99, email=SUPER_ADMIN_EMAIL)
+        alvo = self._create_user(2, permission_level=77)  # senha real: "Senha123!"
 
         self.client.delete(
             f"/api/v1/users/{alvo.id}",
@@ -1006,7 +1021,7 @@ class AuthApiTest(unittest.TestCase):
         self.assertEqual(resp.status_code, 400, resp.text)
 
     def test_admin_nao_pode_excluir_a_si_mesmo(self) -> None:
-        admin = self._create_user(1, permission_level=99)
+        admin = self._create_user(1, permission_level=99, email=SUPER_ADMIN_EMAIL)
         resp = self.client.delete(
             f"/api/v1/users/{admin.id}",
             headers={"Authorization": f"Bearer {create_access_token(admin.id)}"},
@@ -1014,6 +1029,9 @@ class AuthApiTest(unittest.TestCase):
         self.assertEqual(resp.status_code, 400, resp.text)
 
     def test_admin_nao_pode_excluir_outro_admin(self) -> None:
+        """Mesmo raciocínio de test_admin_nao_pode_ser_rebaixado_nem_por_outro_admin acima --
+        admin1 não é o super-admin, então é barrado pelo 403 de _exigir_super_admin antes de
+        chegar na regra antiga "não exclui admin"."""
         admin1 = self._create_user(1, permission_level=99)
         admin_alvo = self._create_user(2, permission_level=99)
 
@@ -1021,11 +1039,11 @@ class AuthApiTest(unittest.TestCase):
             f"/api/v1/users/{admin_alvo.id}",
             headers={"Authorization": f"Bearer {create_access_token(admin1.id)}"},
         )
-        self.assertEqual(resp.status_code, 400, resp.text)
+        self.assertEqual(resp.status_code, 403, resp.text)
 
     def test_gestor_nao_pode_excluir_usuario(self) -> None:
-        gestor = self._create_user(1, permission_level=77)
-        alvo = self._create_user(2, permission_level=66)
+        gestor = self._create_user(1, permission_level=88)
+        alvo = self._create_user(2, permission_level=77)
         resp = self.client.delete(
             f"/api/v1/users/{alvo.id}",
             headers={"Authorization": f"Bearer {create_access_token(gestor.id)}"},
@@ -1042,7 +1060,7 @@ class AuthApiTest(unittest.TestCase):
         )
         self.assertEqual(resp.status_code, 403, resp.text)
 
-        gestor = self._create_user(2, permission_level=77)
+        gestor = self._create_user(2, permission_level=88)
         resp_gestor = self.client.get(
             "/api/v1/users", headers={"Authorization": f"Bearer {create_access_token(gestor.id)}"},
         )
@@ -1053,7 +1071,7 @@ class AuthApiTest(unittest.TestCase):
     # qualquer escrita no banco (backend/api/users.py::create_user_by_admin).
 
     def test_criar_usuario_com_senha_admin_incorreta_falha(self) -> None:
-        admin = self._create_user(1, permission_level=99)  # senha real: "Senha123!"
+        admin = self._create_user(1, permission_level=99, email=SUPER_ADMIN_EMAIL)  # senha real: "Senha123!"
         resp = self.client.post(
             "/api/v1/users",
             json={
@@ -1070,7 +1088,7 @@ class AuthApiTest(unittest.TestCase):
         self.assertIsNone(nao_criado)
 
     def test_criar_usuario_com_senha_admin_correta_sucede(self) -> None:
-        admin = self._create_user(1, permission_level=99)
+        admin = self._create_user(1, permission_level=99, email=SUPER_ADMIN_EMAIL)
         resp = self.client.post(
             "/api/v1/users",
             json={
@@ -1087,10 +1105,10 @@ class AuthApiTest(unittest.TestCase):
     # Renomeado de PATCH /users/{id}/sectors.
 
     def test_admin_reatribui_subgrupo_de_usuario_66_com_sucesso(self) -> None:
-        admin = self._create_user(1, permission_level=99)
+        admin = self._create_user(1, permission_level=99, email=SUPER_ADMIN_EMAIL)
         subgrupo_a = self._criar_subgrupo("Armazenagem")
         subgrupo_b = self._criar_subgrupo("Proteína")
-        alvo = self._create_user(2, permission_level=66)
+        alvo = self._create_user(2, permission_level=77)
 
         resp = self.client.patch(
             f"/api/v1/users/{alvo.id}/subgrupos",
@@ -1101,9 +1119,9 @@ class AuthApiTest(unittest.TestCase):
         self.assertEqual(sorted(resp.json()["subgrupo_ids"]), sorted([subgrupo_a, subgrupo_b]))
 
     def test_admin_nao_pode_deixar_usuario_66_sem_subgrupo(self) -> None:
-        admin = self._create_user(1, permission_level=99)
+        admin = self._create_user(1, permission_level=99, email=SUPER_ADMIN_EMAIL)
         subgrupo = self._criar_subgrupo("Armazenagem")
-        alvo = self._create_user(2, permission_level=66)
+        alvo = self._create_user(2, permission_level=77)
         # Subgrupo inicial pra garantir que a rejeição é da regra, não de já estar vazio.
         self.client.patch(
             f"/api/v1/users/{alvo.id}/subgrupos",
@@ -1121,7 +1139,7 @@ class AuthApiTest(unittest.TestCase):
     def test_admin_pode_deixar_usuario_99_sem_subgrupo(self) -> None:
         """Admin (99) não é afetado pela regra de subgrupo obrigatório -- pode ficar sem
         subgrupo nenhum, mesma exceção de create_user_by_admin."""
-        admin = self._create_user(1, permission_level=99)
+        admin = self._create_user(1, permission_level=99, email=SUPER_ADMIN_EMAIL)
         outro_admin = self._create_user(2, permission_level=99)
 
         resp = self.client.patch(
@@ -1135,31 +1153,31 @@ class AuthApiTest(unittest.TestCase):
     # Novo campo Usuario.setor (2026-07-16) -- rótulo descritivo de cargo, PATCH dedicado.
 
     def test_admin_troca_setor_de_usuario_com_sucesso(self) -> None:
-        admin = self._create_user(1, permission_level=99)
-        alvo = self._create_user(2, permission_level=66, setor="usuario")
+        admin = self._create_user(1, permission_level=99, email=SUPER_ADMIN_EMAIL)
+        alvo = self._create_user(2, permission_level=88, setor="engenharia")
 
         resp = self.client.patch(
             f"/api/v1/users/{alvo.id}/setor",
-            json={"setor": "gestor"},
+            json={"setor": "processos"},
             headers={"Authorization": f"Bearer {create_access_token(admin.id)}"},
         )
         self.assertEqual(resp.status_code, 200, resp.text)
-        self.assertEqual(resp.json()["setor"], "gestor")
+        self.assertEqual(resp.json()["setor"], "processos")
 
     def test_troca_setor_exige_admin(self) -> None:
-        gestor = self._create_user(1, permission_level=77)
-        alvo = self._create_user(2, permission_level=66)
+        gestor = self._create_user(1, permission_level=88)
+        alvo = self._create_user(2, permission_level=77)
 
         resp = self.client.patch(
             f"/api/v1/users/{alvo.id}/setor",
-            json={"setor": "gestor"},
+            json={"setor": "processos"},
             headers={"Authorization": f"Bearer {create_access_token(gestor.id)}"},
         )
         self.assertEqual(resp.status_code, 403, resp.text)
 
     def test_troca_setor_com_valor_invalido_falha(self) -> None:
-        admin = self._create_user(1, permission_level=99)
-        alvo = self._create_user(2, permission_level=66)
+        admin = self._create_user(1, permission_level=99, email=SUPER_ADMIN_EMAIL)
+        alvo = self._create_user(2, permission_level=77)
 
         resp = self.client.patch(
             f"/api/v1/users/{alvo.id}/setor",

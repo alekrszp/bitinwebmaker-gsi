@@ -50,6 +50,12 @@ def render_bitin_summary(
         # Setor Processos (2026-07-17) -- ver bitin_lifecycle.concluir_processamento.
         "processos_concluido": bitin.get("processos_concluido", False),
         "data_processos_concluido": bitin.get("data_processos_concluido"),
+        # Penúltimo passo do fluxo (2026-07-20) -- ver bitin_lifecycle.concluir_bitin.
+        "bitin_cadastrado": bitin.get("bitin_cadastrado", False),
+        "data_cadastrado": bitin.get("data_cadastrado"),
+        # Último passo de todos (2026-07-20) -- ver bitin_lifecycle.enviar_windchill.
+        "windchill_enviado": bitin.get("windchill_enviado", False),
+        "data_windchill_enviado": bitin.get("data_windchill_enviado"),
         "setor": bitin.get("setor", ""),
         "produto": bitin.get("produto", ""),
         "motivo": bitin.get("motivo", ""),

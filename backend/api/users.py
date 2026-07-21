@@ -11,7 +11,6 @@ from backend.auth.deps import (
 from backend.auth.models import Usuario, usuario_subgrupos
 from backend.auth.routes import _resolve_subgrupos
 from backend.auth.schemas import (
-    NIVEIS_QUE_EXIGEM_SUBGRUPO,
     SETORES_VALIDOS,
     AdminUserCreate,
     AdminUserCreateOut,
@@ -20,11 +19,22 @@ from backend.auth.schemas import (
     UserUpdatePermission,
     UserUpdateSetor,
     UserUpdateSubgrupos,
+    exige_subgrupo,
 )
 from backend.auth.security import generate_temp_password, get_password_hash, verify_password
 from backend.db.session import get_db
 
 router = APIRouter()
+
+
+def _exigir_super_admin(current_user: Usuario) -> None:
+    """Gestão de usuários inteira reservada à conta fixa em deps.CONTAS_SUPER_ADMIN, não a
+    todo permission_level 99 (2026-07-20, pedido explícito: "GESTÃO DE USUÁRIOS SÓ PARA ADMIN
+    TOTAL (EU)" -- outro admin 99 que surgir no futuro continua vendo o resto do menu de admin
+    (ex.: Painel geral), só esta tela fica de fora). `check_permission(NIVEL_ADMIN)` continua
+    sendo a 1ª barreira em cada rota; esta função é a 2ª, mais estreita."""
+    if not eh_super_admin(current_user):
+        raise HTTPException(status_code=403, detail="Só o administrador principal pode gerenciar usuários.")
 
 
 def _subgrupo_ids_do(db: Session, user_id: int) -> list[int]:
@@ -78,6 +88,7 @@ def create_user_by_admin(
     Reconfirmação de senha do admin (2026-07-16, pedido explícito) -- senha_admin precisa
     bater com a senha ATUAL de quem está chamando antes de qualquer escrita no banco, mesma
     checagem (verify_password) usada em backend/auth/routes.py::change_password."""
+    _exigir_super_admin(current_user)
     if not verify_password(user_in.senha_admin, current_user.hashed_password):
         raise HTTPException(status_code=400, detail="Senha incorreta.")
 
@@ -91,12 +102,11 @@ def create_user_by_admin(
     if existing and existing.ativo:
         raise HTTPException(status_code=400, detail="E-mail já cadastrado")
 
-    # Usuário/Gestor (66/77) precisam de ao menos um Subgrupo -- 2026-07-16, revisão do modelo
-    # de permissões. Cadastro/Processos (88/89) tirados dessa exigência em 2026-07-17 (times
-    # centrais, não presos a um Subgrupo específico, ver NIVEIS_QUE_EXIGEM_SUBGRUPO). Admin
-    # (99) sempre ficou de fora (enxerga tudo sem escopo nenhum). Mesmo estilo de erro 400 de
-    # _resolve_subgrupos logo abaixo.
-    if user_in.permission_level in NIVEIS_QUE_EXIGEM_SUBGRUPO and not user_in.subgrupo_ids:
+    # Só Engenharia precisa de ao menos um Subgrupo (2026-07-20, 2ª revisão do modelo de
+    # permissões -- ver backend/auth/schemas.py::exige_subgrupo) -- Cadastro/Processos são
+    # times centrais, não presos a um Subgrupo específico; Admin (99) sempre ficou de fora
+    # mesmo quando setor="engenharia". Mesmo estilo de erro 400 de _resolve_subgrupos abaixo.
+    if exige_subgrupo(user_in.setor, user_in.permission_level) and not user_in.subgrupo_ids:
         raise HTTPException(
             status_code=400,
             detail="Este nível de permissão exige ao menos um subgrupo -- selecione um subgrupo antes de cadastrar.",
@@ -157,6 +167,7 @@ def list_users(
     # Gestor também -- revogado.
     current_user: Usuario = Depends(check_permission(NIVEL_ADMIN)),
 ) -> list[UserOut]:
+    _exigir_super_admin(current_user)
     # Volta a devolver ativos E excluídos juntos (2026-07-17, era só ativo=True) -- a tela de
     # Gestão de usuários agora tem um filtro Ativados/Desativados (GestaoUsuarios.tsx), então
     # precisa dos dois pra filtrar no cliente. `UserOut.ativo` já existia pra distinguir.
@@ -171,6 +182,7 @@ def get_user(
     # SÓ ADMIN -- mesma revogação de list_users acima (2026-07-16).
     current_user: Usuario = Depends(check_permission(NIVEL_ADMIN)),
 ) -> UserOut:
+    _exigir_super_admin(current_user)
     user = db.query(Usuario).filter(Usuario.id == user_id).first()
     if not user:
         raise HTTPException(status_code=404, detail="Usuário não encontrado")
@@ -184,6 +196,7 @@ def update_user_permission(
     db: Session = Depends(get_db),
     current_user: Usuario = Depends(check_permission(NIVEL_ADMIN)),  # só admin promove/rebaixa
 ) -> UserOut:
+    _exigir_super_admin(current_user)
     # Reconfirmação de senha do admin (2026-07-17, pedido explícito) -- checada ANTES de
     # qualquer outra validação/escrita, mesmo padrão de create_user_by_admin.
     if not verify_password(payload.senha_admin, current_user.hashed_password):
@@ -217,19 +230,19 @@ def update_user_subgrupos(
     user_id: int,
     payload: UserUpdateSubgrupos,
     db: Session = Depends(get_db),
-    _current_user: Usuario = Depends(check_permission(NIVEL_ADMIN)),  # só admin reatribui subgrupo
+    current_user: Usuario = Depends(check_permission(NIVEL_ADMIN)),  # só admin reatribui subgrupo
 ) -> UserOut:
     """Reatribuição de subgrupo(s) de um usuário JÁ cadastrado (2026-07-16, pedido explícito do
     admin) -- endpoint dedicado, à parte de /permission e /setor, mesmo espírito de "uma rota
-    PATCH por aspecto" já usado nesse arquivo. Mesma regra de NIVEIS_QUE_EXIGEM_SUBGRUPO de
-    create_user_by_admin acima: Usuário/Gestor (66/77) não podem ficar sem nenhum subgrupo;
-    Cadastro/Processos (88/89) e Admin (99) não são afetados por essa regra (podem ficar sem
-    subgrupo). Renomeado de update_user_sectors / PATCH /sectors (2026-07-16)."""
+    PATCH por aspecto" já usado nesse arquivo. Mesma regra de exige_subgrupo de
+    create_user_by_admin acima: só Engenharia precisa de ao menos um subgrupo; Cadastro/
+    Processos e Admin (99) não são afetados por essa regra (podem ficar sem subgrupo)."""
+    _exigir_super_admin(current_user)
     user = db.query(Usuario).filter(Usuario.id == user_id).first()
     if not user:
         raise HTTPException(status_code=404, detail="Usuário não encontrado")
 
-    if user.permission_level in NIVEIS_QUE_EXIGEM_SUBGRUPO and not payload.subgrupo_ids:
+    if exige_subgrupo(user.setor, user.permission_level) and not payload.subgrupo_ids:
         raise HTTPException(
             status_code=400,
             detail="Este nível de permissão exige ao menos um subgrupo -- selecione um subgrupo antes de salvar.",
@@ -247,13 +260,14 @@ def update_user_setor(
     user_id: int,
     payload: UserUpdateSetor,
     db: Session = Depends(get_db),
-    _current_user: Usuario = Depends(check_permission(NIVEL_ADMIN)),  # só admin troca o rótulo
+    current_user: Usuario = Depends(check_permission(NIVEL_ADMIN)),  # só admin troca o rótulo
 ) -> UserOut:
     """Troca do rótulo de cargo (cadastro/gestor/usuario) de um usuário já existente
     (2026-07-16). `setor` é só um rótulo descritivo do cargo da pessoa -- NÃO controla
     nenhuma regra de acesso, isso continua sendo só `permission_level` (ver
     backend/auth/models.py::Usuario.setor). Validação contra SETORES_VALIDOS já acontece no
     pydantic validator de UserUpdateSetor; a checagem aqui é defensiva/redundante."""
+    _exigir_super_admin(current_user)
     if payload.setor not in SETORES_VALIDOS:
         raise HTTPException(
             status_code=400,
@@ -288,6 +302,7 @@ def delete_user(
     EXCETO o super-admin oculto (2026-07-17, ver backend/auth/deps.py::eh_super_admin) pra
     excluir OUTRO admin -- autoproteção (não pode se auto-excluir) continua valendo igual pra
     ele também."""
+    _exigir_super_admin(current_user)
     user = db.query(Usuario).filter(Usuario.id == user_id).first()
     if not user:
         raise HTTPException(status_code=404, detail="Usuário não encontrado")
@@ -307,7 +322,7 @@ def reactivate_user(
     user_id: int,
     payload: UserReactivate,
     db: Session = Depends(get_db),
-    _current_user: Usuario = Depends(check_permission(NIVEL_ADMIN)),  # só admin reativa
+    current_user: Usuario = Depends(check_permission(NIVEL_ADMIN)),  # só admin reativa
 ) -> AdminUserCreateOut:
     """Reverte o soft-delete de delete_user -- 2026-07-17, pedido explícito: "quando eu
     reativo aparece de novo com uma nova senha do 0 e novo email". Diferente da primeira
@@ -318,6 +333,7 @@ def reactivate_user(
     troca no próximo login). Sem confirmação de senha do admin (diferente de
     create_user_by_admin) -- não é criação de conta nova nem escalonamento de privilégio,
     só destrava uma conta que o próprio admin acabou de excluir."""
+    _exigir_super_admin(current_user)
     user = db.query(Usuario).filter(Usuario.id == user_id).first()
     if not user:
         raise HTTPException(status_code=404, detail="Usuário não encontrado")

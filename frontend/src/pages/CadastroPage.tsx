@@ -1,54 +1,79 @@
 import { useEffect, useState } from 'react'
-import { Link } from 'react-router-dom'
-import StatusBadge from '../components/bitin/StatusBadge'
+import { useSearchParams } from 'react-router-dom'
+import AjudaPopover from '../components/bitin/AjudaPopover'
+import BitinTableSection from '../components/bitin/BitinTableSection'
+import { COLUNAS_PADRAO_BITIN } from '../components/bitin/bitinColunas'
+import FiltroEtapaToolbar from '../components/bitin/FiltroEtapaToolbar'
 import { useAuth } from '../hooks/useAuth'
+import { useDebouncedValue } from '../hooks/useDebouncedValue'
 import { api } from '../lib/api'
 import { isCadastro } from '../lib/permissions'
 import type { Bitin } from '../lib/types'
 
-// Fila de trabalho do setor Cadastro (2026-07-17) -- substitui de vez o e-mail/PDF manual
-// que existia antes (Módulo12.bas na macro original, depois um botão "Enviar e-mail" nesta
-// v1, removido a pedido do usuário: "sem essa opção de enviar email só enviar de volta pra
-// cadastro"). Três abas -- "Recebidos" (recém-enviado, ainda sem decisão), "Enviados para
-// roteiros" (encaminhado pro setor Processos, aguardando revisão) e "Retornados de roteiro"
-// (estado final -- ou o Processos concluiu, ou o Cadastro decidiu que não precisava ir pra
-// lá, ver `b.precisa_roteiro`/concluirSemRoteiro abaixo -- com PDF pra registro externo, "o
-// pdf só vai existir no final onde ou voltou de processos ou o bitin não precisa ir pra
-// processos"). Mesmo padrão de gating de MeusBitins.tsx/GestaoUsuariosPage.tsx (checagem de
-// nível dentro do componente).
-type Aba = 'para_cadastro' | 'enviado_roteiro' | 'pronto_cadastro'
+// Fila de trabalho do setor Cadastro (2026-07-17, ajustada em 2026-07-20/21) -- substitui de
+// vez o e-mail/PDF manual que existia antes (Módulo12.bas na macro original, depois um botão
+// "Enviar e-mail" nesta v1, removido a pedido do usuário).
+//
+// Roteamento automático (2026-07-20) -- o próprio ENVIO já decide sozinho se o BITin precisa
+// de roteiro (vai direto pro Processos) ou não (vai direto pra "Aguardando cadastro"), ver
+// scripts/bitin_lifecycle.py::enviar_bitin. Cadastro só vê o BITin quando ele NÃO precisa de
+// roteiro nenhum ou quando o Processos devolve.
+//
+// STATUS x ETAPA (2026-07-20, pedido explícito: "não confunde status com etapa... a tela de
+// painel geral e a tela de cadastro e processos devem conversar na mesma língua" -- ver
+// lib/bitinEtapa.ts, mesma fonte usada por PainelGeral.tsx/ProcessosPage.tsx). Esta página só
+// mostra Status=Enviado -- BITins concluídos (Status=Concluído, windchill_enviado=True) saíram
+// daqui (2026-07-21, pedido explícito: "aba de bitins concluidos ainda junto de cadastro
+// remove de lá e faz isso numa aba lá em configurações só do admin") e agora vivem na aba
+// "Bitins Concluídos" de Settings.tsx, com opção de reverter.
+type EtapaFiltro = 'todos' | 'aguardando_cadastro' | 'pendencia_envio'
 
-const ABAS: { value: Aba; label: string }[] = [
-  { value: 'para_cadastro', label: 'Recebidos' },
-  { value: 'enviado_roteiro', label: 'Enviados para roteiros' },
-  { value: 'pronto_cadastro', label: 'Retornados de roteiro' },
+const OPCOES_ETAPA: { value: EtapaFiltro; label: string }[] = [
+  { value: 'todos', label: 'Todas' },
+  { value: 'aguardando_cadastro', label: 'Aguardando cadastro' },
+  { value: 'pendencia_envio', label: 'Pendência de envio' },
 ]
 
-// GET /bitins?status=enviado&<filtro da aba> -- cada aba filtra por um campo diferente do
-// mesmo par encaminhado_roteiro/processos_concluido (ver backend/api/bitins.py::list_bitins).
-const FILTRO_POR_ABA: Record<Aba, Record<string, boolean>> = {
-  para_cadastro: { encaminhado_roteiro: false },
-  enviado_roteiro: { encaminhado_roteiro: true, processos_concluido: false },
-  pronto_cadastro: { processos_concluido: true },
+// GET /bitins?status=enviado&<filtro> -- ver backend/api/bitins.py::list_bitins.
+function filtroPorEtapa(etapa: EtapaFiltro): Record<string, boolean> {
+  switch (etapa) {
+    case 'todos':
+      return { windchill_enviado: false }
+    case 'aguardando_cadastro':
+      return { processos_concluido: true, bitin_cadastrado: false }
+    case 'pendencia_envio':
+      return { bitin_cadastrado: true, windchill_enviado: false }
+  }
 }
+
+const ETAPAS_VALIDAS = new Set<EtapaFiltro>(OPCOES_ETAPA.map((o) => o.value))
 
 export default function CadastroPage() {
   const { user } = useAuth()
-  const [aba, setAba] = useState<Aba>('para_cadastro')
+  // Etapa inicial via query string (2026-07-20) -- deixa os cartões de resumo de "Início
+  // cadastro" (Home.tsx) linkarem direto pra visão certa.
+  const [searchParams] = useSearchParams()
+  const etapaInicial = searchParams.get('etapa')
+  const [etapa, setEtapa] = useState<EtapaFiltro>(
+    etapaInicial && ETAPAS_VALIDAS.has(etapaInicial as EtapaFiltro) ? (etapaInicial as EtapaFiltro) : 'aguardando_cadastro',
+  )
+  const [busca, setBusca] = useState('')
+  const termo = useDebouncedValue(busca.trim())
   const [bitins, setBitins] = useState<Bitin[] | null>(null)
   const [erro, setErro] = useState<string | null>(null)
-  const [encaminhandoId, setEncaminhandoId] = useState<string | null>(null)
-  const [concluindoId, setConcluindoId] = useState<string | null>(null)
+  const [finalizandoId, setFinalizandoId] = useState<string | null>(null)
   const [baixandoId, setBaixandoId] = useState<string | null>(null)
 
-  const podeAcessar = isCadastro(user?.permission_level)
+  const podeAcessar = isCadastro(user?.permission_level, user?.setor)
 
   function carregar() {
     let cancelado = false
     setBitins(null)
     setErro(null)
+    const params: Record<string, string | boolean> = { status: 'enviado', ...filtroPorEtapa(etapa) }
+    if (termo) params.termo = termo
     api
-      .get('/bitins', { params: { status: 'enviado', ...FILTRO_POR_ABA[aba] } })
+      .get('/bitins', { params })
       .then((resp) => {
         if (!cancelado) setBitins(resp.data)
       })
@@ -64,44 +89,37 @@ export default function CadastroPage() {
     if (!podeAcessar) return
     return carregar()
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [aba, podeAcessar])
+  }, [etapa, termo, podeAcessar])
 
-  async function encaminhar(bitin: Bitin) {
+  // "Concluir BITIN" (2026-07-20, pedido explícito) -- o Cadastro confirma que já fez o
+  // cadastro/liberação de verdade no SAP. Move de "Aguardando cadastro" pra "Pendência de
+  // envio" -- só a partir daqui o PDF fica disponível.
+  async function concluirBitin(bitin: Bitin) {
     setErro(null)
-    setEncaminhandoId(bitin.mongo_id)
+    setFinalizandoId(bitin.mongo_id)
     try {
-      await api.post(`/bitins/${bitin.mongo_id}/encaminhar-roteiro`)
+      await api.post(`/bitins/${bitin.mongo_id}/concluir-bitin`)
       setBitins((atual) => atual?.filter((b) => b.mongo_id !== bitin.mongo_id) ?? null)
     } catch {
-      setErro('Não foi possível encaminhar para o roteiro. Tente novamente.')
+      setErro('Não foi possível concluir o BITin. Tente novamente.')
     } finally {
-      setEncaminhandoId(null)
+      setFinalizandoId(null)
     }
   }
 
-  // "Não precisa de roteiro" (2026-07-17, pedido explícito: "coloca essa opção, do cadastro
-  // não precisar enviar pra processos, quando não houver: D/P, D/- ou -/P") -- alternativa a
-  // "Encaminhar para roteiro", só aparece quando `!b.precisa_roteiro` (calculado no backend,
-  // ver bitin_document.precisa_roteiro). Chega direto na aba "Retornados de roteiro" (mesmo
-  // filtro processos_concluido=true de quem passou pelo Processos de verdade).
-  async function concluirSemRoteiro(bitin: Bitin) {
-    setErro(null)
-    setConcluindoId(bitin.mongo_id)
-    try {
-      await api.post(`/bitins/${bitin.mongo_id}/concluir-sem-roteiro`)
-      setBitins((atual) => atual?.filter((b) => b.mongo_id !== bitin.mongo_id) ?? null)
-    } catch {
-      setErro('Não foi possível concluir sem roteiro. Tente novamente.')
-    } finally {
-      setConcluindoId(null)
-    }
-  }
-
-  // PDF sob demanda (GET /{id}/pdf já existente) -- não precisa de um snapshot guardado à
-  // parte: o BITin fica travado
-  // depois que o Processos conclui, então o conteúdo não muda mais (decisão do usuário,
-  // 2026-07-17: "sob demanda é suficiente").
-  async function baixarPdf(bitin: Bitin) {
+  // "Baixar PDF" (2026-07-20, pedido explícito) -- um botão só: baixa o PDF E marca o BITin
+  // como Concluído na mesma ação (windchill_enviado=True, ver bitin_lifecycle.
+  // enviar_windchill). Confirmação ANTES de baixar -- pedido explícito: "ter um botão de
+  // certeza quando baixar o pdf dizendo que ele vai pra uma pasta de bitins concluidos e não
+  // terá como voltar" -- essa é a última ação desta tela: depois disso o Status do BITin vira
+  // "Concluído" e ele sai da fila de trabalho pra aba "Bitins Concluídos" em Settings.tsx
+  // (só admin, único jeito de reverter é lá).
+  async function baixarPdfEConcluir(bitin: Bitin) {
+    const confirmado = window.confirm(
+      `Baixar o PDF do BITin ${bitin.codigo ?? '—'} e marcar como concluído?\n\n` +
+        'Ele sai da fila do Cadastro. Só um admin pode reverter, em Configurações.',
+    )
+    if (!confirmado) return
     setErro(null)
     setBaixandoId(bitin.mongo_id)
     try {
@@ -114,8 +132,10 @@ export default function CadastroPage() {
       a.click()
       a.remove()
       window.URL.revokeObjectURL(url)
+      await api.post(`/bitins/${bitin.mongo_id}/enviar-windchill`)
+      setBitins((atual) => atual?.filter((b) => b.mongo_id !== bitin.mongo_id) ?? null)
     } catch {
-      setErro('Não foi possível baixar o PDF. Tente novamente.')
+      setErro('Não foi possível baixar o PDF/concluir. Tente novamente.')
     } finally {
       setBaixandoId(null)
     }
@@ -129,106 +149,72 @@ export default function CadastroPage() {
     )
   }
 
+  function acoesLinha(b: Bitin) {
+    if (etapa === 'aguardando_cadastro' || (etapa === 'todos' && b.processos_concluido && !b.bitin_cadastrado)) {
+      return (
+        <button
+          type="button"
+          onClick={() => concluirBitin(b)}
+          disabled={finalizandoId === b.mongo_id}
+          className="whitespace-nowrap rounded-lg bg-brand-navy px-3 py-1.5 text-xs font-medium text-white hover:bg-brand-navy-dark disabled:cursor-not-allowed disabled:opacity-60"
+        >
+          {finalizandoId === b.mongo_id ? 'Concluindo...' : 'Concluir BITIN'}
+        </button>
+      )
+    }
+    if (etapa === 'pendencia_envio' || (etapa === 'todos' && b.bitin_cadastrado)) {
+      return (
+        <button
+          type="button"
+          onClick={() => baixarPdfEConcluir(b)}
+          disabled={baixandoId === b.mongo_id}
+          className="whitespace-nowrap rounded-lg bg-brand-navy px-3 py-1.5 text-xs font-medium text-white hover:bg-brand-navy-dark disabled:cursor-not-allowed disabled:opacity-60"
+        >
+          {baixandoId === b.mongo_id ? 'Baixando...' : 'Baixar PDF'}
+        </button>
+      )
+    }
+    return null
+  }
+
   return (
     <div className="mx-auto max-w-6xl">
-      <h1 className="text-2xl font-semibold text-ink">Cadastro</h1>
-
-      <div className="mt-4 flex gap-1 border-b border-line">
-        {ABAS.map(({ value, label }) => (
-          <button
-            key={value}
-            type="button"
-            onClick={() => setAba(value)}
-            className={`-mb-px border-b-2 px-3 py-2 text-sm font-medium transition-colors ${
-              aba === value
-                ? 'border-brand-navy text-ink'
-                : 'border-transparent text-ink-muted hover:text-ink'
-            }`}
-          >
-            {label}
-          </button>
-        ))}
+      <div className="flex flex-wrap items-center gap-3">
+        <h1 className="text-2xl font-semibold text-ink">Cadastro</h1>
+        <AjudaPopover titulo="Como funciona a fila de Cadastro">
+          <p>
+            Um BITin chega aqui sozinho, sem triagem manual: ao ser enviado pelo engenheiro, o
+            sistema já decide se precisa passar por Processos (roteiro) ou não. Quem não precisa
+            já cai direto em "Aguardando cadastro"; quem precisa só chega aqui depois que
+            Processos revisa e devolve.
+          </p>
+          <p>
+            <strong>Etapa "Aguardando cadastro"</strong>: o BITin já está liberado pra você
+            cadastrar/liberar no SAP de verdade. Depois de feito isso, clique <strong>"Concluir
+            BITIN"</strong> -- ele passa pra etapa seguinte.
+          </p>
+          <p>
+            <strong>Etapa "Pendência de envio"</strong>: falta só baixar o PDF final e mandar pro
+            Windchill. O botão <strong>"Baixar PDF"</strong> faz as duas coisas juntas (baixa e
+            marca como concluído) -- por isso pede confirmação antes: depois disso o BITin sai
+            desta fila e só um admin consegue reverter, em Configurações → "Bitins Concluídos".
+          </p>
+          <p>
+            <strong>Etapa "Todas"</strong> mostra os dois grupos juntos, cada linha com o botão
+            certo pro seu estado. A busca filtra por motivo, solicitante ou número.
+          </p>
+        </AjudaPopover>
       </div>
 
-      {erro && <p className="mt-4 text-sm text-red-600">{erro}</p>}
-      {!bitins && !erro && <p className="mt-4 text-sm text-ink-muted">Carregando...</p>}
-      {bitins && bitins.length === 0 && !erro && (
-        <p className="mt-4 text-sm text-ink-muted">Nenhum BITin nesta fila.</p>
-      )}
+      <FiltroEtapaToolbar
+        opcoes={OPCOES_ETAPA}
+        valor={etapa}
+        onChange={setEtapa}
+        busca={busca}
+        onBuscaChange={setBusca}
+      />
 
-      {bitins && bitins.length > 0 && (
-        <div className="mt-4 overflow-hidden rounded-lg border border-line">
-          <table className="w-full text-left text-sm">
-            <thead>
-              <tr className="bg-surface-alt text-xs uppercase tracking-wide text-ink-muted">
-                <th className="px-4 py-2 font-medium">Número</th>
-                <th className="px-4 py-2 font-medium">Motivo</th>
-                <th className="px-4 py-2 font-medium">Solicitante</th>
-                <th className="px-4 py-2 font-medium">Status</th>
-                <th className="w-44" />
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-line bg-surface">
-              {bitins.map((b) => (
-                <tr key={b.mongo_id} className="hover:bg-surface-alt">
-                  <td className="px-4 py-2">
-                    <Link to={`/bitins/${b.mongo_id}`} className="block text-ink hover:underline">
-                      {b.codigo ?? '—'}
-                    </Link>
-                  </td>
-                  <td className="px-4 py-2 text-ink-muted">
-                    <Link to={`/bitins/${b.mongo_id}`} className="block">
-                      {String(b.content?.motivo ?? '—')}
-                    </Link>
-                  </td>
-                  <td className="px-4 py-2 text-ink-muted">
-                    <Link to={`/bitins/${b.mongo_id}`} className="block">
-                      {String(b.content?.solicitante ?? '—')}
-                    </Link>
-                  </td>
-                  <td className="px-4 py-2">
-                    <Link to={`/bitins/${b.mongo_id}`} className="block">
-                      <StatusBadge status={b.status} />
-                    </Link>
-                  </td>
-                  <td className="px-4 py-2 text-right">
-                    {aba === 'para_cadastro' &&
-                      (b.precisa_roteiro ? (
-                        <button
-                          type="button"
-                          onClick={() => encaminhar(b)}
-                          disabled={encaminhandoId === b.mongo_id}
-                          className="whitespace-nowrap rounded-lg border border-line px-3 py-1.5 text-xs font-medium text-ink hover:bg-surface-alt disabled:cursor-not-allowed disabled:opacity-60"
-                        >
-                          {encaminhandoId === b.mongo_id ? 'Encaminhando...' : 'Encaminhar para roteiro'}
-                        </button>
-                      ) : (
-                        <button
-                          type="button"
-                          onClick={() => concluirSemRoteiro(b)}
-                          disabled={concluindoId === b.mongo_id}
-                          className="whitespace-nowrap rounded-lg border border-line px-3 py-1.5 text-xs font-medium text-ink hover:bg-surface-alt disabled:cursor-not-allowed disabled:opacity-60"
-                        >
-                          {concluindoId === b.mongo_id ? 'Concluindo...' : 'Não precisa de roteiro'}
-                        </button>
-                      ))}
-                    {aba === 'pronto_cadastro' && (
-                      <button
-                        type="button"
-                        onClick={() => baixarPdf(b)}
-                        disabled={baixandoId === b.mongo_id}
-                        className="whitespace-nowrap rounded-lg border border-line px-3 py-1.5 text-xs font-medium text-ink hover:bg-surface-alt disabled:cursor-not-allowed disabled:opacity-60"
-                      >
-                        {baixandoId === b.mongo_id ? 'Baixando...' : 'Baixar PDF'}
-                      </button>
-                    )}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
+      <BitinTableSection bitins={bitins} erro={erro} colunas={COLUNAS_PADRAO_BITIN} acoes={acoesLinha} />
     </div>
   )
 }

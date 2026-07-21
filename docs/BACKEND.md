@@ -331,64 +331,76 @@ usuário: "vamos fazer uma autenticação melhor, segurança nas senhas etc.".
   outro dispositivo/navegador desloga esses, mas não a sessão que acabou de fazer a própria
   troca.
 
-### Revisão do modelo de permissões (2026-07-16)
+### Revisão do modelo de permissões (2ª revisão, 2026-07-20)
 
-Substituído o esquema antigo de 3 níveis (`0`/`1`/`99`) por 4 níveis explícitos, nomeados em
-`backend/auth/deps.py` (`NIVEL_USUARIO`, `NIVEL_GESTOR`, `NIVEL_CADASTRO`, `NIVEL_ADMIN`) e
-usados em todo o backend em vez de números mágicos. Os valores em si (66/77/88/99) foram
-escolhidos pelo usuário e **não formam uma hierarquia numérica limpa** — em particular, `88`
-(Cadastro) fica numericamente "entre" Gestor (77) e Admin (99), mas não herda os privilégios de
-nenhum dos dois. Por isso `check_permission` mudou de assinatura: em vez de um único threshold
-(`level: int`, checava `user.permission_level < level`), agora recebe um conjunto explícito de
-níveis permitidos — `check_permission(*allowed_levels: int)`, checando
-`user.permission_level in allowed_levels`. Cada rota passa o conjunto exato de quem pode
-chamá-la (ex.: `check_permission(NIVEL_GESTOR, NIVEL_ADMIN)` em `GET /users`).
+O esquema de 4 níveis fixos (66/77/88/89/99, `NIVEL_USUARIO`/`NIVEL_GESTOR`/`NIVEL_CADASTRO`/
+`NIVEL_PROCESSOS`/`NIVEL_ADMIN`) da 1ª revisão foi substituído: `Usuario.permission_level`
+agora é só o RANK (`77` Individual, `88` Gestor, `99` Admin — nomeados
+`NIVEL_INDIVIDUAL`/`NIVEL_GESTOR`/`NIVEL_ADMIN` em `backend/auth/deps.py`), cruzado com um
+campo novo, `Usuario.setor: str | None` (`"cadastro"` / `"processos"` / `"engenharia"`).
+Cadastro e Processos deixaram de ser NÍVEIS numéricos e viraram SETORES — um Individual e um
+Gestor do mesmo setor têm a fila de trabalho idêntica; a única diferença de um Gestor é acesso
+extra ao Painel geral (`GET /bitins/resumo-painel`, escopado ao próprio setor).
 
-**Tabela de permissões completa** — os 4 valores de `Usuario.permission_level` que existem hoje,
-o que cada um pode ver/fazer, e as restrições especiais de cada um. O número em si **não é uma
-escala contínua** (ver acima: 88 fica numericamente "entre" 77 e 99 mas não herda privilégio de
-nenhum dos dois) — esta tabela é a fonte de verdade de o que cada valor faz, não a ordem
-numérica:
+- `eh_do_setor(user, *setores)` — `True` se o rank é Individual OU Gestor **e** o setor bate
+  com algum dos passados. Admin nunca "é" de um setor (identidade), mas...
+- `check_setor(*setores)` — dependency do FastAPI: admin sempre passa (visão total), Individual/
+  Gestor só se `eh_do_setor` bate. Substituiu `check_permission(NIVEL_CADASTRO, ...)` na
+  maioria das rotas de Cadastro/Processos.
+- `check_permission(*allowed_levels: int)` — a checagem antiga, só por rank puro (sem setor),
+  ainda existe pra rotas admin-exclusivas onde setor não importa (ex.: `reverter-windchill`
+  abaixo, `POST /users`).
 
-| Nível | Nome interno | BITins que vê | Gestão de usuários | Subgrupo obrigatório? | Restrições especiais |
-|---|---|---|---|---|---|
-| **66** | `NIVEL_USUARIO` (era `0`) | Só os próprios (qualquer status). | Não acessa `GET /users`. | Sim — 400 se `subgrupo_ids` vier vazio. | Nenhuma. |
-| **77** | `NIVEL_GESTOR` (era `1`) | Rascunho + enviado de quem compartilha ao menos 1 Subgrupo com ele, além dos próprios. | Não acessa `GET /users` (revogado em 2026-07-16 — só Admin gerencia usuários hoje). | Sim — 400 se vazio. | Nenhuma. |
-| **88** | `NIVEL_CADASTRO` | **Global** (2026-07-20, corrigido — era escopado por Subgrupo até então, ver nota abaixo): qualquer BITin `"enviado"`, de qualquer autor/Subgrupo, além dos próprios em qualquer status (incl. rascunho). Cria/edita/envia os próprios normalmente. | Não acessa `GET /users`. | Não (tirado em 2026-07-17 — time central, não preso a um Subgrupo). | Único nível (com Admin) que pode `encaminhar-roteiro`/`concluir-sem-roteiro` um BITin — ver "Roteamento pós-envio" em `docs/BITIN_MODEL.md`. |
-| **89** | `NIVEL_PROCESSOS` (novo, 2026-07-17) | Fila global de BITins com `encaminhado_roteiro=True` (concluídos ou não pelo Processos), além dos próprios em qualquer status. | Não acessa `GET /users`. | Não — time central, mesmo raciocínio do Cadastro. | Não cria BITin (`POST /bitins/draft` sem `mongo_id` recusa com 403 pra esse nível — só revisa o que chega encaminhado). Única exceção do sistema a "BITin enviado é travado pra sempre": pode reeditar via `POST .../atualizar-processos` enquanto `encaminhado_roteiro=True` e `processos_concluido=False`. |
-| **99** | `NIVEL_ADMIN` | Todos, sem escopo de Subgrupo. | Único nível com acesso — cria, lista, promove/rebaixa, exclui (soft-delete) e reativa usuário. | Não — único nível que pode ficar sem Subgrupo. | Nunca pode ser rebaixado (`PATCH .../permission` rejeita com 400 se o ALVO já é 99) nem excluído (`DELETE /users/{id}` idem) — nem por outro admin, **exceto o super-admin oculto** (ver seção abaixo). Sem rota de despromoção pública pra quem não é o super-admin (só edição direta no banco). |
+**Tabela de permissões** — o que cada combinação rank/setor vê e faz:
 
-**Cadastro virou global em 2026-07-20**: até essa data a visibilidade do nível 88 era
-escopada por Subgrupo (herdada de quando esse nível só significava "colega de trabalho com
-acesso extra", 2026-07-16) — um teste de ponta a ponta novo
-(`tests/test_bitin_workflow_e2e.py`) mostrou que isso fazia BITins de engenheiros fora do
-Subgrupo do Cadastro sumirem da fila "Recebidos" (`CadastroPage.tsx`), o que não fazia
-sentido: Cadastro é o ponto de recebimento de TODO BITin enviado, não um recorte por
-Subgrupo. Corrigido em `backend/api/bitins.py::list_bitins`.
+| Rank | Setor | BITins que vê | Gestão de usuários | Restrições especiais |
+|---|---|---|---|---|
+| **77** Individual | Engenharia | Só os próprios (qualquer status). | Não acessa `GET /users`. | Cria/edita BITin normalmente. |
+| **88** Gestor | Engenharia | Próprios + colegas do mesmo Subgrupo. | Não acessa `GET /users`. | Ganha Painel geral (`/painel-geral`), escopado ao Subgrupo. |
+| **77/88** | Cadastro | **Global**: qualquer BITin `"enviado"`, de qualquer autor, além dos próprios em qualquer status. | Não acessa `GET /users`. | Não cria BITin (403). Único setor (com Admin) que chama `concluir-bitin`/`enviar-windchill`. Gestor ganha Painel geral escopado a "todo BITin enviado" (mesma visão global). |
+| **77/88** | Processos | Fila global de BITins com `encaminhado_roteiro=True`, além dos próprios em qualquer status. | Não acessa `GET /users`. | Não cria BITin (403). Única exceção do sistema a "BITin enviado é travado pra sempre": reedita via `atualizar-processos` enquanto `encaminhado_roteiro=True` e `processos_concluido=False`. Gestor ganha Painel geral escopado à fila do setor. |
+| **99** Admin | — (`setor` irrelevante) | Todos, qualquer setor/Subgrupo. | Único rank com acesso — mas só a conta super-admin fixa (ver abaixo), não qualquer 99. | Nunca pode ser rebaixado/excluído (exceto pelo super-admin oculto). Único rank que chama `reverter-windchill`. Vê Cadastro E Processos ao mesmo tempo (Sidebar.tsx), mesmo sem ter `setor` nenhum dos dois. |
 
-### Endpoints de roteamento pós-envio (2026-07-17/20)
+### Endpoints de roteamento pós-envio (2026-07-17 a 2026-07-21)
 
 Regra de negócio e ciclo de vida completos em `docs/BITIN_MODEL.md`, seção "Roteamento
-pós-envio (Cadastro → Processos)" — aqui só o resumo dos 4 endpoints novos, todos em
-`backend/api/bitins.py`:
+pós-envio (Cadastro → Processos → Windchill)" — aqui só o resumo dos endpoints, todos em
+`backend/api/bitins.py`. `encaminhar-roteiro`/`concluir-sem-roteiro` hoje são chamados
+automaticamente por `enviar_bitin` (sem clique manual do Cadastro) — as rotas continuam
+existindo como escape hatch:
 
-- `POST /bitins/{mongo_id}/encaminhar-roteiro` — `check_permission(NIVEL_CADASTRO,
-  NIVEL_ADMIN)`. Marca `encaminhado_roteiro=True`, abre a janela de reedição do Processos.
-- `POST /bitins/{mongo_id}/concluir-sem-roteiro` — `check_permission(NIVEL_CADASTRO,
-  NIVEL_ADMIN)`. Alternativa ao encaminhamento quando `bitin_document.precisa_roteiro`
-  devolve `False` — 400 se devolver `True` (reforço no servidor, não confia só no frontend
-  esconder o botão errado).
-- `POST /bitins/{mongo_id}/atualizar-processos` — `check_permission(NIVEL_PROCESSOS,
-  NIVEL_ADMIN)`. Única forma de editar conteúdo de um BITin já `"enviado"` — `$set` só no
-  campo `content` (nunca `status`/`sql_ref_id`), e reforça no servidor todo campo
-  administrado pelo sistema dentro de `content` (`bitin`, `status`,
-  `encaminhado_roteiro`/`processos_concluido`/etc.) por cima do que o payload mandar.
-- `POST /bitins/{mongo_id}/concluir-processos` — `check_permission(NIVEL_PROCESSOS,
-  NIVEL_ADMIN)`. Fecha a janela de reedição — `processos_concluido=True`.
+- `POST /bitins/{mongo_id}/encaminhar-roteiro` — `check_setor(SETOR_CADASTRO)`. Marca
+  `encaminhado_roteiro=True`, abre a janela de reedição do Processos.
+- `POST /bitins/{mongo_id}/concluir-sem-roteiro` — `check_setor(SETOR_CADASTRO)`. Alternativa
+  quando `bitin_document.precisa_roteiro` devolve `False` — 400 se devolver `True` (reforço
+  no servidor, não confia só no frontend esconder o botão errado).
+- `POST /bitins/{mongo_id}/atualizar-processos` — `check_setor(SETOR_PROCESSOS)`. Única forma
+  de editar conteúdo de um BITin já `"enviado"` — `$set` só no campo `content` (nunca
+  `status`/`sql_ref_id`), e reforça no servidor todo campo administrado pelo sistema dentro
+  de `content` por cima do que o payload mandar.
+- `POST /bitins/{mongo_id}/concluir-processos` — `check_setor(SETOR_PROCESSOS)`. Fecha a
+  janela de reedição — `processos_concluido=True`.
+- `POST /bitins/{mongo_id}/concluir-bitin` — `check_setor(SETOR_CADASTRO)`. Confirma que o
+  Cadastro já fez o cadastro/liberação de verdade no SAP — `bitin_cadastrado=True`, PDF fica
+  disponível a partir daqui.
+- `POST /bitins/{mongo_id}/enviar-windchill` — `check_setor(SETOR_CADASTRO)`. Última etapa —
+  `windchill_enviado=True`, BITin sai da fila normal do Cadastro (Status derivado vira
+  "Concluído", ver `lib/bitinEtapa.ts`).
+- `POST /bitins/{mongo_id}/reverter-windchill` — `check_permission(NIVEL_ADMIN)` (não
+  `check_setor` — admin-only de propósito, ninguém do Cadastro reverte). Desfaz
+  `enviar-windchill`, volta pra "Pendência de envio". Único jeito de sair da pasta "Bitins
+  Concluídos" (`Settings.tsx`, aba admin-only).
 
-Todos os 4 devolvem 404 se o `mongo_id` não existir, e usam o mesmo `BitinResponse` de
+Todos devolvem 404 se o `mongo_id` não existir, e usam o mesmo `BitinResponse` de
 `GET /bitins/{mongo_id}` (inclui `precisa_roteiro`, `encaminhado_roteiro`,
-`processos_concluido`, `sem_necessidade_roteiro` e seus `data_*`).
+`processos_concluido`, `sem_necessidade_roteiro`, `bitin_cadastrado`, `windchill_enviado` e
+seus `data_*`).
+
+`GET /bitins/resumo-painel` (`$facet` — `cadastro_aguardando`, `cadastro_cadastrados`,
+`processos_pendentes`, `processos_concluidos`, `geral_rascunhos`, `geral_enviados`, todos num
+round-trip só) alimenta os cartões de `Home.tsx` pra quem é Cadastro/Processos/Gestor de
+Engenharia/Admin, no mesmo escopo de `list_bitins` — substitui as até 7 chamadas paralelas de
+`GET /bitins?limit=200/500` que existiam antes.
 
 ### Super-admin oculto (2026-07-17)
 

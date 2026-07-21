@@ -1,4 +1,4 @@
-import type { MaterialEditavel } from './types'
+import type { MaterialEditavel, OrdemClienteEditavel } from './types'
 
 // Material em branco -- usado tanto na aba "BITin" ("+ Novo material", cadastro direto à mão)
 // quanto em Códigos SAP ("+ Nova linha") -- as duas telas operam sobre o mesmo materiais[] do
@@ -25,6 +25,12 @@ export function materialVazio(): MaterialEditavel {
       lista_tecnica: [],
     },
   }
+}
+
+// Entrada de "Ordem de cliente" em branco -- "+ Nova entrada" em OrdemClienteEditor.tsx
+// (2026-07-20, ver types.ts::OrdemClienteEditavel pro porquê desse componente existir).
+export function ordemClienteVazia(): OrdemClienteEditavel {
+  return { codigo: '', descricao: '', acrescentar_no_pedido: [], retira_do_pedido: [] }
 }
 
 // Materiais salvos antes de um campo existir no modelo (ex.: BITins criados antes de
