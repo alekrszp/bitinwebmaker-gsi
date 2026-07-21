@@ -965,6 +965,68 @@ class AuthApiTest(unittest.TestCase):
         )
         self.assertEqual(resp.status_code, 400, resp.text)
 
+    def test_admin_reseta_senha_de_usuario(self) -> None:
+        """"Esqueci minha senha" (2026-07-21, pedido explícito) -- sem SMTP, virou uma opção
+        do admin dentro de Gestão de usuários em vez de self-service por e-mail. Mesmo padrão
+        de reativar (senha nova, texto puro uma única vez, senha_temporaria=True), mas sem
+        mexer em email/ativo."""
+        admin = self._create_user(1, permission_level=99, email=SUPER_ADMIN_EMAIL)
+        alvo = self._create_user(2, permission_level=77)  # senha real: "Senha123!"
+
+        resp = self.client.post(
+            f"/api/v1/users/{alvo.id}/resetar-senha",
+            headers={"Authorization": f"Bearer {create_access_token(admin.id)}"},
+        )
+        self.assertEqual(resp.status_code, 200, resp.text)
+        self.assertEqual(resp.json()["email"], alvo.email)  # email não muda
+        senha_nova = resp.json()["senha_temporaria_gerada"]
+        self.assertTrue(senha_nova)
+
+        db = self.SessionLocal()
+        atualizado = db.query(Usuario).filter(Usuario.id == alvo.id).first()
+        db.close()
+        self.assertTrue(atualizado.senha_temporaria)
+
+        login_antiga = self.client.post(
+            "/api/v1/auth/login", data={"username": alvo.email, "password": "Senha123!"},
+        )
+        self.assertEqual(login_antiga.status_code, 400, login_antiga.text)
+
+        login_nova = self.client.post(
+            "/api/v1/auth/login", data={"username": alvo.email, "password": senha_nova},
+        )
+        self.assertEqual(login_nova.status_code, 200, login_nova.text)
+
+    def test_resetar_senha_de_usuario_excluido_falha(self) -> None:
+        admin = self._create_user(1, permission_level=99, email=SUPER_ADMIN_EMAIL)
+        alvo = self._create_user(2, permission_level=77)
+        self.client.delete(
+            f"/api/v1/users/{alvo.id}", headers={"Authorization": f"Bearer {create_access_token(admin.id)}"},
+        )
+
+        resp = self.client.post(
+            f"/api/v1/users/{alvo.id}/resetar-senha",
+            headers={"Authorization": f"Bearer {create_access_token(admin.id)}"},
+        )
+        self.assertEqual(resp.status_code, 400, resp.text)
+
+    def test_usuario_comum_nao_pode_resetar_senha_de_outro(self) -> None:
+        admin = self._create_user(1, permission_level=99, email=SUPER_ADMIN_EMAIL)
+        outro_admin_nao_super = self._create_user(2, permission_level=99)
+        alvo = self._create_user(3, permission_level=77)
+
+        resp_comum = self.client.post(
+            f"/api/v1/users/{alvo.id}/resetar-senha",
+            headers={"Authorization": f"Bearer {create_access_token(alvo.id)}"},
+        )
+        self.assertEqual(resp_comum.status_code, 403)
+
+        resp_admin_nao_super = self.client.post(
+            f"/api/v1/users/{alvo.id}/resetar-senha",
+            headers={"Authorization": f"Bearer {create_access_token(outro_admin_nao_super.id)}"},
+        )
+        self.assertEqual(resp_admin_nao_super.status_code, 403)
+
     def test_recadastrar_email_de_usuario_excluido_reativa_a_mesma_linha(self) -> None:
         """"quando um usuário é excluído... e eu tento cadastrar ele de novo, deve permitir"
         (2026-07-17, pedido explícito) -- email é UNIQUE, então create_user_by_admin precisa

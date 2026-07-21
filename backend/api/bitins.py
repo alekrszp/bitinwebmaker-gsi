@@ -420,6 +420,12 @@ TERMO_CAMPO_MONGO = {
     "codigo": "content.bitin",
 }
 
+# `criado_por` é o e-mail de quem criou o BITin (campo top-level do doc, não content.*) --
+# fora do TERMO_CAMPO_MONGO/campo_mongo acima de propósito, porque tem seu próprio parâmetro
+# dedicado (ver `list_bitins`) usado pelo filtro "Usuário" do Painel geral, que precisa
+# combinar com os outros filtros (status/etapa/setor) sem herdar o "$or" de motivo/
+# solicitante/código.
+
 
 def _condicoes_escopo(current_user: Usuario, db: Session) -> list[dict[str, Any]]:
     """Escopo por (rank, setor) -- 2ª revisão do modelo de permissões (2026-07-20): Cadastro/
@@ -466,6 +472,7 @@ async def list_bitins(
     bitin_cadastrado: bool | None = None,
     windchill_enviado: bool | None = None,
     sem_necessidade_roteiro: bool | None = None,
+    criado_por: str | None = None,
     limit: int = 20,
     skip: int = 0,
     current_user: Usuario = Depends(get_current_active_user),
@@ -517,6 +524,12 @@ async def list_bitins(
         condicoes.append({
             "sem_necessidade_roteiro": {"$ne": True} if not sem_necessidade_roteiro else True
         })
+    if criado_por:
+        # Filtro "Usuário" do Painel geral (2026-07-21, paginação real -- antes buscava até
+        # 5000 BITins e filtrava por criado_por no cliente). Substring/case-insensitive (não
+        # exact-match) -- mais fácil de digitar um pedaço do e-mail do que ter que saber o
+        # endereço completo.
+        condicoes.append({"criado_por": {"$regex": re.escape(criado_por), "$options": "i"}})
     if termo:
         # re.escape antes de virar $regex do Mongo -- sem isso, metacaracteres de regex
         # digitados pelo usuário (ex.: "(", "*") viram parte do padrão em vez de texto

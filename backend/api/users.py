@@ -356,3 +356,35 @@ def reactivate_user(
         **UserOut.from_usuario(user).model_dump(),
         senha_temporaria_gerada=senha_temporaria_gerada,
     )
+
+
+@router.post("/{user_id}/resetar-senha", response_model=AdminUserCreateOut)
+def reset_user_password(
+    user_id: int,
+    db: Session = Depends(get_db),
+    current_user: Usuario = Depends(check_permission(NIVEL_ADMIN)),
+) -> AdminUserCreateOut:
+    """"Esqueci minha senha" (2026-07-21, pedido explícito) -- sem SMTP configurado no
+    backend (nenhum envio de e-mail real acontece hoje, nem pra usuário nem pra admin), um
+    fluxo self-service de reset por link não teria como entregar nada de verdade. Decisão do
+    usuário: em vez disso, uma opção dentro de Gestão de usuários pro admin resetar a senha de
+    qualquer conta na hora -- mesmo padrão de `reactivate_user` (gera senha temporária nova,
+    devolve em texto puro UMA ÚNICA VEZ, marca `senha_temporaria=True` pra forçar troca no
+    próximo login), mas sem mexer em email/ativo -- só a senha muda."""
+    _exigir_super_admin(current_user)
+    user = db.query(Usuario).filter(Usuario.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="Usuário não encontrado")
+    if not user.ativo:
+        raise HTTPException(status_code=400, detail="Usuário está excluído -- reative a conta em vez de resetar a senha.")
+
+    senha_temporaria_gerada = generate_temp_password()
+    user.hashed_password = get_password_hash(senha_temporaria_gerada)
+    user.senha_temporaria = True
+    db.add(user)
+    db.commit()
+    db.refresh(user)
+    return AdminUserCreateOut(
+        **UserOut.from_usuario(user).model_dump(),
+        senha_temporaria_gerada=senha_temporaria_gerada,
+    )

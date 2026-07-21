@@ -587,26 +587,33 @@ com Playwright nas contas reais (ver `docs/RELEASE_v0.10.0.md`/`v0.10.1.md`).
   Cadastro (única exceção do sistema a "enviado é travado pra sempre"), conclui quando termina.
   Etapas "Pendente"/"Revisado" — BITins que nunca precisaram de roteiro não aparecem aqui.
 - **Painel geral** (`/painel-geral`, Gestor/Admin): visão de leitura de todo BITin visível pro
-  usuário, Status x Etapa, filtros de Setor/Usuário/Status/Etapa, export CSV.
+  usuário, Status x Etapa, filtros de Setor/Usuário (substring de e-mail)/Status/Etapa,
+  **paginação real no servidor** (2026-07-21, 50 por página, `GET /bitins`
+  `limit`/`skip`/`criado_por` — antes buscava até 5000 de uma vez e filtrava tudo no cliente),
+  export CSV da página atual.
 - **Configurações**: "Minha conta" (+ troca de senha) pra qualquer nível; aba "Bitins
   Concluídos" (admin-only) — lista de BITins com Status="Concluído", botão "Voltar bitin"
   reverte o envio ao Windchill.
 - **Gestão de usuários** (`/usuarios`, só super-admin fixo): cadastro/reativação com senha
-  temporária, promover/rebaixar nível, atribuir setor/Subgrupo, soft-delete.
+  temporária, promover/rebaixar nível, atribuir setor/Subgrupo, soft-delete, **"Resetar
+  senha"** (2026-07-21, `POST /users/{id}/resetar-senha` — gera senha temporária nova pra
+  qualquer conta ativa, mesmo padrão de reativação; substitui um "esqueci minha senha"
+  self-service, que precisaria de SMTP configurado pra entregar algo de verdade).
 - Logout: volta pro login.
 - Tema claro/escuro (toggle no login E no topbar pós-login, padrão claro, escolha persiste no
   navegador).
 
 ## O que NÃO está nesta fatia ainda (próximos incrementos)
 
-- **"Esqueci minha senha"** — só existe troca de senha sabendo a senha atual
-  (`POST /auth/change-password`); sem fluxo de reset pra quem esqueceu.
-- **RBAC visível na UI** além do que já existe — o backend recusa (`403`) quem tenta
-  editar/excluir sem permissão; a UI não esconde botões preventivamente pra ações que vão
-  falhar no backend.
-- **Painel geral sem paginação de verdade** — busca tudo em lotes de 500 (`PainelGeral.tsx`)
-  até esgotar; funciona, mas não escala indefinidamente. Filtros são todos client-side sobre a
-  lista carregada, não passados pro backend.
+- **"Esqueci minha senha" self-service** — decisão do usuário (2026-07-21): em vez de um
+  fluxo por e-mail (sem SMTP configurado, não teria como entregar nada de verdade), virou
+  "Resetar senha" dentro de Gestão de usuários (admin faz por quem esqueceu). Um fluxo
+  self-service de verdade continua não existindo, e só faz sentido com SMTP real configurado.
+- **RBAC visível na UI**: revisado em 2026-07-21 — os controles de edição (BitinDetail,
+  CadastroPage, MeusBitins, GestaoUsuarios) já consultam `pode_editar` (calculado no servidor)
+  ou checagens de setor/permissão espelhando exatamente a regra do backend, então não achei
+  um botão real que apareça e sempre falhe com 403 ao clicar. Se aparecer um caso concreto,
+  registrar aqui.
 
 ## Rodando localmente
 

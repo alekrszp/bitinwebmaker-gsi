@@ -476,6 +476,27 @@ class BitinApiTest(unittest.TestCase):
         self.assertEqual(len(body), 1)
         self.assertEqual(body[0]["content"]["motivo"], "Ajuste Especial")
 
+    def test_listar_com_filtro_criado_por(self) -> None:
+        """`criado_por` (2026-07-21, paginação real do Painel geral) -- substring/case-
+        insensitive, não exact-match (mais fácil digitar um pedaço do e-mail)."""
+        admin = self._create_user(2, permission_level=99)
+        fulano = self._create_user(3, email="fulano.especial@example.com")
+        self.client.post(
+            "/api/v1/bitins/draft",
+            json={"content": make_bitin_content()},
+            headers={"Authorization": f"Bearer {self._token_for(fulano)}"},
+        )
+        self.client.post("/api/v1/bitins/draft", json={"content": make_bitin_content()})
+
+        resp = self.client.get(
+            "/api/v1/bitins", params={"criado_por": "ESPECIAL"},
+            headers={"Authorization": f"Bearer {self._token_for(admin)}"},
+        )
+        self.assertEqual(resp.status_code, 200)
+        body = resp.json()
+        self.assertEqual(len(body), 1)
+        self.assertEqual(body[0]["criado_por"], "fulano.especial@example.com")
+
     def test_listar_com_paginacao(self) -> None:
         for _ in range(5):
             self.client.post("/api/v1/bitins/draft", json={"content": make_bitin_content()})

@@ -2,6 +2,22 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v0.11.0] - 2026-07-21
+
+Admin reseta a senha de qualquer usuário direto em Gestão de usuários ("esqueci minha senha"
+sem SMTP configurado), e Painel geral ganhou paginação real no servidor (antes buscava até
+5000 BITins de uma vez e filtrava tudo no cliente). Ver `docs/RELEASE_v0.11.0.md`.
+
+### Added
+
+- `POST /users/{id}/resetar-senha` (admin-only) + botão "Resetar senha" em
+  `GestaoUsuarios.tsx` — gera senha temporária nova pra qualquer conta ativa.
+- `criado_por` como filtro substring/case-insensitive em `GET /bitins` — alimenta o filtro
+  "Usuário" do Painel geral.
+- Paginação real (`limit`/`skip`, 50 por página, botões Anterior/Próxima) em `PainelGeral.tsx`
+  — Setor/Status/Etapa/Usuário viram parâmetros de servidor em vez de filtro client-side sobre
+  a lista inteira carregada.
+
 ## [Unreleased] - Limpeza de repositório (2026-07-21)
 
 Sem mudança de código de produto — só arrumação. Removidos do repositório: dumps de pesquisa

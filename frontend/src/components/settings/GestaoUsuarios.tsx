@@ -56,6 +56,14 @@ export default function GestaoUsuarios({ subgrupos }: { subgrupos: Subgrupo[] })
   // reativar), mostrada UMA ÚNICA VEZ aqui.
   const [senhaReativacao, setSenhaReativacao] = useState<{ nome: string; senha: string; email: string } | null>(null)
   const [senhaReativacaoCopiada, setSenhaReativacaoCopiada] = useState(false)
+  // "Esqueci minha senha" (2026-07-21, pedido explícito) -- sem SMTP configurado no backend,
+  // um fluxo self-service por e-mail não teria como entregar nada de verdade (nenhum envio
+  // real acontece hoje). Decisão do usuário: em vez disso, o admin reseta a senha de qualquer
+  // conta direto por aqui -- mesmo padrão de reativarUsuario (POST gera senha nova, mostrada
+  // uma única vez, mailto pra repassar), só que sem mexer em email/ativo.
+  const [resetandoSenhaId, setResetandoSenhaId] = useState<number | null>(null)
+  const [senhaResetada, setSenhaResetada] = useState<{ nome: string; senha: string; email: string } | null>(null)
+  const [senhaResetadaCopiada, setSenhaResetadaCopiada] = useState(false)
 
   useEffect(() => {
     api
@@ -195,6 +203,36 @@ export default function GestaoUsuarios({ subgrupos }: { subgrupos: Subgrupo[] })
     }
   }
 
+  // Resetar senha (2026-07-21) -- POST /users/{id}/resetar-senha, mesmo padrão de
+  // reativarUsuario acima, mas sem prompt de e-mail (não muda) e com confirmação simples.
+  async function resetarSenha(userId: number, nome: string) {
+    if (!window.confirm(`Resetar a senha de "${nome}"? A senha atual para de funcionar na hora.`)) return
+    setResetandoSenhaId(userId)
+    setError(null)
+    setSenhaResetada(null)
+    try {
+      const resp = await api.post<AdminUserCreateResponse>(`/users/${userId}/resetar-senha`)
+      const gerada = { nome: resp.data.nome, senha: resp.data.senha_temporaria_gerada, email: resp.data.email }
+      setSenhaResetada(gerada)
+      setSenhaResetadaCopiada(false)
+      window.location.href = montarMailtoSenhaTemporaria(gerada)
+    } catch (err) {
+      setError(extrairErro(err, 'Não foi possível resetar a senha desse usuário.'))
+    } finally {
+      setResetandoSenhaId(null)
+    }
+  }
+
+  async function copiarSenhaResetada(senha: string) {
+    try {
+      await navigator.clipboard.writeText(senha)
+      setSenhaResetadaCopiada(true)
+      setTimeout(() => setSenhaResetadaCopiada(false), 2000)
+    } catch {
+      // Fallback é a senha continuar selecionável na tela.
+    }
+  }
+
   function adicionarUsuarioCriado(novo: User) {
     // Mesmo padrão de atualização otimista local de alterarNivel acima -- evita um refetch de
     // GET /users só pra mostrar a linha nova, o admin já vê o usuário na tabela sem reload.
@@ -234,6 +272,33 @@ export default function GestaoUsuarios({ subgrupos }: { subgrupos: Subgrupo[] })
             </button>
             <a
               href={montarMailtoSenhaTemporaria(senhaReativacao)}
+              className="rounded-lg bg-brand-navy px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-brand-navy-dark"
+            >
+              Abrir e-mail
+            </a>
+          </div>
+        </div>
+      )}
+
+      {senhaResetada && (
+        <div className="mt-3 rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+          <p className="font-medium">
+            Nova senha temporária de {senhaResetada.nome} ({senhaResetada.email}):{' '}
+            <span className="rounded bg-amber-100 px-1.5 py-0.5 font-mono">{senhaResetada.senha}</span>
+          </p>
+          <p className="mt-1 text-xs">
+            Essa senha só aparece agora -- anote e repasse pra {senhaResetada.nome} antes de sair desta tela.
+          </p>
+          <div className="mt-2 flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={() => copiarSenhaResetada(senhaResetada.senha)}
+              className="rounded-lg border border-amber-300 bg-white px-4 py-2 text-sm font-medium text-amber-900 transition-colors hover:bg-amber-100"
+            >
+              {senhaResetadaCopiada ? 'Copiado!' : 'Copiar senha'}
+            </button>
+            <a
+              href={montarMailtoSenhaTemporaria(senhaResetada)}
               className="rounded-lg bg-brand-navy px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-brand-navy-dark"
             >
               Abrir e-mail
@@ -391,6 +456,18 @@ export default function GestaoUsuarios({ subgrupos }: { subgrupos: Subgrupo[] })
                       </select>
                     </td>
                     <td className="whitespace-nowrap px-3 py-2 text-right">
+                      {/* "Resetar senha" (2026-07-21) -- qualquer usuário ativo, inclusive
+                          admin, pode ter a senha resetada por aqui (diferente de excluir/
+                          rebaixar, não é escalonamento de privilégio nenhum). */}
+                      <button
+                        type="button"
+                        onClick={() => resetarSenha(u.id, u.nome)}
+                        disabled={resetandoSenhaId === u.id}
+                        title="Resetar senha"
+                        className="rounded px-2 py-1 text-xs font-medium text-brand-navy hover:bg-surface-alt disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        {resetandoSenhaId === u.id ? 'Resetando...' : 'Resetar senha'}
+                      </button>
                       {/* Só desabilita "sou eu mesmo" -- ver comentário sobre o super-admin
                           oculto acima do <select> de Nível. Quem tenta excluir um admin sem
                           o privilégio recebe o 400 do servidor normalmente. */}
@@ -399,7 +476,7 @@ export default function GestaoUsuarios({ subgrupos }: { subgrupos: Subgrupo[] })
                         onClick={() => excluirUsuario(u.id, u.nome)}
                         disabled={souEu || excluindoId === u.id}
                         title={souEu ? 'Você não pode excluir a si mesmo' : 'Excluir usuário'}
-                        className="rounded p-1.5 text-ink-faint hover:bg-red-50 hover:text-red-600 disabled:cursor-not-allowed disabled:opacity-30 disabled:hover:bg-transparent dark:hover:bg-red-950"
+                        className="ml-1 rounded p-1.5 text-ink-faint hover:bg-red-50 hover:text-red-600 disabled:cursor-not-allowed disabled:opacity-30 disabled:hover:bg-transparent dark:hover:bg-red-950"
                       >
                         <TrashIcon className="h-4 w-4" />
                       </button>
