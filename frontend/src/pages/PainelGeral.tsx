@@ -48,11 +48,27 @@ export default function PainelGeral() {
     let cancelado = false
     setBitins(null)
     setErro(null)
-    // limit alto -- painel de leitura, não tem paginação ainda.
-    api
-      .get('/bitins', { params: { limit: 500 } })
-      .then((resp) => {
-        if (!cancelado) setBitins(resp.data)
+
+    // Sem paginação NA TELA (os filtros abaixo são todos client-side, sobre a lista inteira já
+    // carregada) -- mas isso não pode significar truncar em 500 e esconder o resto em
+    // silêncio. Busca em lotes (`skip`/`limit`) até a página vir mais curta que o lote, com um
+    // teto de segurança (10 lotes = 5000 BITins) só pra nunca travar o navegador se o sistema
+    // crescer muito além disso -- nesse caso extremo, valeria migrar os filtros pro backend.
+    const TAMANHO_LOTE = 500
+    const MAX_LOTES = 10
+    async function carregarTudo() {
+      const acumulado: Bitin[] = []
+      for (let lote = 0; lote < MAX_LOTES; lote++) {
+        const resp = await api.get('/bitins', { params: { limit: TAMANHO_LOTE, skip: lote * TAMANHO_LOTE } })
+        acumulado.push(...resp.data)
+        if (resp.data.length < TAMANHO_LOTE) break
+      }
+      return acumulado
+    }
+
+    carregarTudo()
+      .then((todos) => {
+        if (!cancelado) setBitins(todos)
       })
       .catch(() => {
         if (!cancelado) setErro('Não foi possível carregar os BITins.')
@@ -218,6 +234,11 @@ export default function PainelGeral() {
       {!bitins && !erro && <p className="mt-4 text-sm text-ink-muted">Carregando...</p>}
       {bitins && filtrados.length === 0 && !erro && (
         <p className="mt-4 text-sm text-ink-muted">Nenhum BITin nesta visão.</p>
+      )}
+      {bitins && filtrados.length > 0 && (
+        <p className="mt-4 text-xs text-ink-faint">
+          {filtrados.length} de {bitins.length} BITin{bitins.length === 1 ? '' : 's'} carregado{bitins.length === 1 ? '' : 's'}
+        </p>
       )}
 
       {bitins && filtrados.length > 0 && (

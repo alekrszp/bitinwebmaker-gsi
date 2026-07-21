@@ -4,6 +4,15 @@ Primeira fatia do frontend web que substitui o Excel/VBA — construída depois 
 (`backend/`) já estar validado com 147 testes. Ver `docs/BACKEND.md` para a API que este
 frontend consome.
 
+> **Como ler este documento**: as seções abaixo são um diário cronológico de construção (cada
+> `##`/`###` é datado) — registram a decisão e o PORQUÊ de cada rodada, não necessariamente o
+> estado atual (uma rodada seguinte muda o que uma anterior descreveu, sem voltar a editar o
+> texto antigo). Pra estado ATUAL: a árvore de arquivos em "## Estrutura" e as seções mais
+> recentes (maior data no título) são as mais confiáveis; qualquer coisa sobre nível de
+> permissão numérico (`66`/`77`/`88`/`89`/`99`) fora da seção "Revisão do modelo de permissões"
+> mais recente é quase certamente de um esquema anterior — a fonte de verdade viva do modelo de
+> permissões é sempre `docs/BACKEND.md`/`docs/BITIN_MODEL.md`, nunca este histórico.
+
 ## Reset da tela de Bitins (2026-07-13)
 
 Depois de 8 rodadas de feedback direto tentando acertar o design da tela de cadastro
@@ -305,6 +314,17 @@ não ter nada.
 Antes era só um placeholder ("Nada configurável ainda por aqui."). Escopo fechado com o
 usuário: o que já dá pra fazer sem endpoint novo (Postgres/SQLite já funciona nesta máquina,
 diferente do Mongo — validado ao vivo de verdade, não só por teste automatizado).
+
+> **Nota (2026-07-21)**: o histórico abaixo é da PRIMEIRA versão de "Gestão de usuários"
+> (ainda dentro de `Settings.tsx`, esquema de 4 níveis fixos `66`/`77`/`88`/`99` =
+> Usuário/Gestor/Cadastro/Admin). Hoje "Gestão de usuários" é uma página própria
+> (`GestaoUsuariosPage.tsx`, rota `/usuarios`), visível só pra `Settings.tsx` (aba "Minha
+> conta" + "Bitins Concluídos" pra admin, ver seção "Etapa final «Concluído»" mais abaixo), e
+> restrita à conta super-admin fixa — não a qualquer `99` (ver "Super-admin oculto" em
+> `docs/BACKEND.md`). Os números `77`/`88`/`99` também mudaram de sentido: hoje são RANK
+> (Individual/Gestor/Admin), cruzado com `Usuario.setor` — ver "Revisão do modelo de
+> permissões (2ª revisão)" em `docs/BACKEND.md`/`docs/BITIN_MODEL.md`. O texto abaixo fica só
+> como registro de como cada decisão foi tomada, não como referência do esquema atual.
 
 - **"Minha conta"** (somente leitura): nome, e-mail, setor(es) (nomes resolvidos via `GET
   /sectors`, público — desde 2026-07-15 um usuário pode ter vários `Setor` ao mesmo tempo,

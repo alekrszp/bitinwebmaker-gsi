@@ -46,16 +46,16 @@ backend/
                       mongo_document_id, criado_por, created_at, updated_at)
   bitin_number.py  - geração do número sequencial, com retry seguro contra corrida
   auth/
-    models.py       - Usuario, Setor (mesmo Postgres/Base das tabelas acima)
-    security.py     - hash de senha (pbkdf2_sha256), criação de JWT
-    schemas.py       - pydantic: UserCreate, UserOut, Token, SectorCreate, ...
-    deps.py         - get_current_user/get_current_active_user/check_permission(nível)
+    models.py       - Usuario, Subgrupo (mesmo Postgres/Base das tabelas acima)
+    security.py     - hash de senha (pbkdf2_sha256), criação de JWT, CONTAS_SUPER_ADMIN
+    schemas.py       - pydantic: UserCreate, UserOut, Token, SubgrupoCreate, ...
+    deps.py         - get_current_user/get_current_active_user/check_permission/check_setor
     routes.py       - /auth/register, /auth/login
   main.py          - app FastAPI
   api/
     bitins.py       - endpoints de BITin
     users.py        - /users/me, /users (RBAC), /users/{id}/permission (promoção)
-    sectors.py      - /sectors
+    subgrupos.py    - /subgrupos (ex-sectors.py)
 ```
 
 `backend/` importa direto de `scripts/` (mesmo padrão de `sys.path.insert` usado em
@@ -175,23 +175,23 @@ pra sua coluna na grade Plan1 (ZBPP009, 36 colunas) — derivado casando `plan1_
 pelo `plan2_col` (a coluna "atual" de cada par atual/novo é sempre `plan2_col - 1`, já que os
 pares ficam sempre em colunas adjacentes).
 
-**Auth/users/sectors** (ver seção "Autenticação" abaixo para o design completo):
+**Auth/users/subgrupos** (ver seção "Autenticação" abaixo para o design completo):
 
 | Método | Rota | O que faz |
 |---|---|---|
-| POST | `/auth/register` | Público. Cria usuário, sempre `permission_level=NIVEL_USUARIO` (66, exceto bootstrap do primeiro usuário). |
+| POST | `/auth/register` | Público. Cria usuário, sempre `permission_level=NIVEL_INDIVIDUAL` (77, exceto bootstrap do primeiro usuário, que vira `NIVEL_ADMIN`). |
 | POST | `/auth/login` | Público (`OAuth2PasswordRequestForm`: `username`=e-mail, `password`). Devolve `Token`. Grava `TentativaLogin`, atualiza `ultimo_acesso`, cria `SessaoUsuario` no sucesso. |
 | POST | `/auth/logout` | Autenticado. Revoga a `SessaoUsuario` do token atual (ver "Tabelas de sessão e auditoria de login" abaixo) — chamadas seguintes com o mesmo token viram `401`. |
 | POST | `/auth/change-password` | Autenticado. Exige `senha_atual` correta; `senha_nova` passa pela mesma validação de força de `UserCreate.password`. Revoga as OUTRAS sessões ativas do usuário (mantém a atual válida) — ver "Troca de senha self-service" abaixo. Também zera `Usuario.senha_temporaria` no sucesso (ver "Cadastro de usuário só por admin" abaixo) — mesma rota atende tanto troca voluntária quanto o primeiro login forçado. |
 | GET | `/users/me` | Perfil do usuário autenticado. Inclui `senha_temporaria`. |
-| POST | `/users` | Cadastro de usuário — exige `NIVEL_ADMIN` (99). Ver "Cadastro de usuário só por admin" abaixo. Usuário/Gestor/Cadastro (66/77/88) exigem ao menos 1 setor no corpo, 400 se faltar. Se o e-mail já pertence a um usuário **excluído** (`ativo=False`), REATIVA a mesma linha (novos dados, nova senha temporária) em vez de rejeitar com "e-mail já cadastrado" (2026-07-17, pedido explícito) — email é UNIQUE no banco, então recadastro tem que reaproveitar a linha, não inserir outra. Só bloqueia de verdade se o e-mail já é de alguém ATIVO. |
-| GET | `/users` | Lista usuários — exige `NIVEL_ADMIN` (99) **só** (2026-07-16, revogado de Gestor: "em hipótese alguma 88, 77, 66 podem ver permissões e usuários que existem. gestão de usuários é só admin"; linha corrigida em 2026-07-17, achado de auditoria — dizia "Gestor ou Admin" com escopo por setor, desatualizado desde a revogação). Devolve ativos E excluídos juntos (2026-07-17, era só `ativo=True` — revertido pro filtro Ativados/Desativados de `GestaoUsuarios.tsx`); `UserOut.ativo` é quem distingue. |
-| GET | `/users/{id}` | Busca usuário por id — mesmo gate de `GET /users` (Gestor/Admin). Mesmo escopo por setor: gestor pedindo um id fora do(s) setor(es) dele recebe **404** (não 403 — não vaza que o id existe). |
+| POST | `/users` | Cadastro de usuário — exige `NIVEL_ADMIN` (99), na prática só o super-admin oculto (`GestaoUsuariosPage.tsx` é a única tela que chama). Setor obrigatório pra rank 77/88 (Individual/Gestor); Subgrupo obrigatório só quando o setor é Engenharia. Se o e-mail já pertence a um usuário **excluído** (`ativo=False`), REATIVA a mesma linha (novos dados, nova senha temporária) em vez de rejeitar com "e-mail já cadastrado" — email é UNIQUE no banco, então recadastro tem que reaproveitar a linha, não inserir outra. Só bloqueia de verdade se o e-mail já é de alguém ATIVO. |
+| GET | `/users` | Lista usuários — exige `NIVEL_ADMIN` (99). Devolve ativos E excluídos juntos; `UserOut.ativo` é quem distingue. |
+| GET | `/users/{id}` | Busca usuário por id — mesmo gate de `GET /users`. |
 | PATCH | `/users/{id}/permission` | Promove/rebaixa — exige `NIVEL_ADMIN` (99). Ninguém mexe na própria permissão por esta rota (400). Rejeita com 400 se o ALVO já é admin (99) — ninguém pode rebaixar um admin, nem outro admin, **exceto o super-admin oculto** (ver "Super-admin oculto" abaixo). |
 | DELETE | `/users/{id}` | "Excluir" usuário (2026-07-17) — exige `NIVEL_ADMIN` (99). **Soft-delete**: marca `Usuario.ativo=False`, não apaga a linha; login e todo request autenticado já checam `ativo`, então a conta para de funcionar na hora. Rejeita com 400 se o alvo é o próprio chamador (sempre, sem exceção) ou já é admin (99) — **exceto o super-admin oculto** pra excluir outro admin (ver abaixo). |
 | POST | `/users/{id}/reativar` | Reverte o soft-delete — exige `NIVEL_ADMIN` (99). Corpo: `{email}` (pode repetir o e-mail antigo ou trocar — 400 se já em uso por OUTRO usuário). Sempre gera senha temporária nova (`senha_temporaria=True`, devolvida uma única vez em `senha_temporaria_gerada`, mesmo padrão de `POST /users`) — 2026-07-17, pedido explícito: "quando eu reativo aparece de novo com uma nova senha do 0 e novo email". Sem confirmação de senha do admin (não é criação de conta nem escalonamento de privilégio). |
-| GET | `/sectors` | Público (form de registro precisa listar antes do login existir). |
-| POST | `/sectors` | Cria setor — exige admin. |
+| GET | `/subgrupos` | Público (form de registro precisa listar antes do login existir). Renomeado de `/sectors` (2026-07-16, junto com a rename geral `Setor` → `Subgrupo`) — não confundir com `Usuario.setor` (Cadastro/Processos/Engenharia, ver "Revisão do modelo de permissões"). |
+| POST | `/subgrupos` | Cria subgrupo — exige admin. |
 
 ## Autenticação (adicionado em 2026-07-10, unificado no mesmo dia)
 
@@ -209,10 +209,12 @@ buscar o perfil completo do usuário) — unificar resolve isso de graça, com u
   backend também roda em Windows).
 - Cadeia de dependências `get_current_user` → `get_current_active_user` → `check_permission(nível)`
   (`backend/auth/deps.py`).
-- RBAC (`Usuario.permission_level`) -- ver "Revisão do modelo de permissões" abaixo pro esquema
-  atual de 4 níveis (era 3 níveis 0/1/99 até 2026-07-15).
-- Tabela `Setor` (departamento do usuário — Engenharia, RH, TI, ... — **não confundir** com o
-  `setor` do BITin em si, que define o prefixo `P`/`A`).
+- RBAC (`Usuario.permission_level`) -- ver "Revisão do modelo de permissões (2ª revisão)"
+  abaixo pro esquema atual (rank 77/88/99 cruzado com `Usuario.setor`).
+- Tabela `Subgrupo` (ex-`Setor`, renomeado 2026-07-16 — departamento/equipe do usuário, ex.
+  "Proteína Animal"/"Armazenagem de Grãos" — **não confundir** com `Usuario.setor`, o campo
+  novo da 2ª revisão de permissões, nem com o `setor` do BITin em si, que define o prefixo
+  `P`/`A`. Três conceitos de nome parecido, propositalmente distintos).
 
 **Corrigido em relação ao `GPT_Engineering_authAPI`** (achados da revisão, ver histórico do
 chat/commit para a lista completa):
@@ -220,7 +222,7 @@ chat/commit para a lista completa):
 - **Vulnerabilidade de escalonamento de privilégio**: lá, `POST /auth/register` aceitava
   `permission_level` direto do corpo da requisição — qualquer um podia se registrar como admin.
   Aqui, `UserCreate` (`backend/auth/schemas.py`) nem tem esse campo — o nível é sempre decidido
-  no servidor (`backend/auth/routes.py`): **`NIVEL_USUARIO` (66) por padrão**, exceto o
+  no servidor (`backend/auth/routes.py`): **`NIVEL_INDIVIDUAL` (77) por padrão**, exceto o
   **primeiro usuário já registrado no sistema**, que vira admin automaticamente (bootstrap —
   sem isso, o sistema nasceria sem nenhum admin capaz de promover ninguém). Promoções depois
   disso só via `PATCH /users/{id}/permission`, protegido por `check_permission(NIVEL_ADMIN)`.
