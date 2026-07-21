@@ -21,21 +21,28 @@ export function statusDoBitin(b: Pick<Bitin, 'status' | 'windchill_enviado'>): S
 // ETAPA: aonde o BITin está parado DENTRO de um setor específico -- só existe enquanto o
 // Status é "Enviado" (rascunho não tem etapa nenhuma, é só do engenheiro; "Concluído" também
 // não tem mais etapa, já terminou o fluxo e mora numa pasta separada, ver CadastroPage.tsx).
-export type Etapa = 'Recebido (Cadastro)' | 'Com Processos' | 'Aguardando cadastro' | 'Pendência de envio'
+//
+// Sem "Recebido (Cadastro)" (2026-07-21, pedido explícito, removido por não servir mais pra
+// nada) -- essa etapa representava o intervalo entre "enviado" e o roteamento pro Processos,
+// de quando o Cadastro triava manualmente ("Encaminhar para roteiro"/"Não precisa de
+// roteiro"). Desde 2026-07-20, `enviar_bitin` já decide e roteia sozinho, na mesma requisição
+// do envio (`encaminhar_para_roteiro`/`concluir_sem_roteiro` chamados sincronamente) -- então
+// `encaminhado_roteiro` já vem `True` assim que o BITin vira "Enviado", tornando essa etapa
+// inatingível na prática (só aparecia em BITins antigos, enviados antes do roteamento
+// automático existir, já corrigidos manualmente).
+export type Etapa = 'Com Processos' | 'Aguardando cadastro' | 'Pendência de envio'
 
 export function etapaDoBitin(b: Pick<Bitin, 'status' | 'windchill_enviado' | 'bitin_cadastrado' | 'processos_concluido' | 'encaminhado_roteiro'>): Etapa | null {
   if (statusDoBitin(b) !== 'Enviado') return null
   if (b.bitin_cadastrado) return 'Pendência de envio'
   if (b.processos_concluido) return 'Aguardando cadastro'
-  if (b.encaminhado_roteiro) return 'Com Processos'
-  return 'Recebido (Cadastro)'
+  return 'Com Processos'
 }
 
-export const ETAPAS: Etapa[] = ['Recebido (Cadastro)', 'Com Processos', 'Aguardando cadastro', 'Pendência de envio']
+export const ETAPAS: Etapa[] = ['Com Processos', 'Aguardando cadastro', 'Pendência de envio']
 
 // Setor responsável por cada etapa -- quem tem o BITin em mãos agora.
 export const RESPONSAVEL_POR_ETAPA: Record<Etapa, string> = {
-  'Recebido (Cadastro)': 'Cadastro',
   'Com Processos': 'Processos',
   'Aguardando cadastro': 'Cadastro',
   'Pendência de envio': 'Cadastro',

@@ -1,4 +1,4 @@
-import { Fragment, memo, useCallback, useEffect, useMemo, useState, type ClipboardEvent } from 'react'
+import { Fragment, memo, useCallback, useEffect, useMemo, useRef, useState, type ClipboardEvent } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import Card from '../components/Card'
 import AjudaPopover from '../components/bitin/AjudaPopover'
@@ -265,6 +265,13 @@ export default function CodigosSapPage() {
   const [bitin, setBitin] = useState<Bitin | null>(null)
   const [schema, setSchema] = useState<MateriaisSchema | null>(null)
   const [materiais, setMateriais] = useState<LinhaSap[]>([])
+  // Espelho síncrono de `materiais` (2026-07-21, mesmo bug real corrigido em
+  // ListaTecnicaPage.tsx): `salvar()` lia o estado via um "capturar dentro do updater do
+  // setState" logo após forçar o blur do campo focado -- não é garantido rodar a tempo (achado
+  // ao vivo com Playwright: `POST /bitins/draft` saía sem o material que tinha acabado de ser
+  // editado). `materiaisRef.current` é escrito direto em cada mutador abaixo, então está
+  // sempre correto no instante em que `salvar()` lê.
+  const materiaisRef = useRef(materiais)
   const [conteudoExistente, setConteudoExistente] = useState<Record<string, unknown>>({})
   const [carregando, setCarregando] = useState(true)
   const [salvando, setSalvando] = useState(false)
@@ -303,7 +310,9 @@ export default function CodigosSapPage() {
         // materiais já salvos sobrescrevia o primeiro material em vez de criar um novo,
         // porque não havia linha em branco nenhuma pra receber a colagem).
         const temLinhaBranca = materiaisExistentes.some((m) => m.codigo_material === '')
-        setMateriais(temLinhaBranca ? materiaisExistentes : [...materiaisExistentes, novaLinhaSap()])
+        const carregados = temLinhaBranca ? materiaisExistentes : [...materiaisExistentes, novaLinhaSap()]
+        materiaisRef.current = carregados
+        setMateriais(carregados)
       })
       .catch(() => setErro('Não foi possível carregar os dados.'))
       .finally(() => setCarregando(false))
@@ -323,46 +332,46 @@ export default function CodigosSapPage() {
   // React.memo de LinhaSapRow/CelulaTexto pular re-render de linhas não tocadas (ver
   // comentário em LinhaSapRow acima). Todas operam por `_id`, não índice.
   const atualizarIdentificacao = useCallback((id: string, campo: keyof MaterialEditavel, valor: string) => {
-    setMateriais((atual) => atual.map((m) => (m._id === id ? { ...m, [campo]: valor } : m)))
+    materiaisRef.current = materiaisRef.current.map((m) => (m._id === id ? { ...m, [campo]: valor } : m))
+    setMateriais(materiaisRef.current)
     setSujo(true)
   }, [setSujo])
 
   const atualizarDadoBasicoDe = useCallback((id: string, campo: string, de: string) => {
-    setMateriais((atual) =>
-      atual.map((m) => {
-        if (m._id !== id) return m
-        const existente = m.alteracoes.dados_basicos[campo]
-        return {
-          ...m,
-          alteracoes: {
-            ...m.alteracoes,
-            dados_basicos: { ...m.alteracoes.dados_basicos, [campo]: { de, para: existente?.para ?? '' } },
-          },
-        }
-      }),
-    )
+    materiaisRef.current = materiaisRef.current.map((m) => {
+      if (m._id !== id) return m
+      const existente = m.alteracoes.dados_basicos[campo]
+      return {
+        ...m,
+        alteracoes: {
+          ...m.alteracoes,
+          dados_basicos: { ...m.alteracoes.dados_basicos, [campo]: { de, para: existente?.para ?? '' } },
+        },
+      }
+    })
+    setMateriais(materiaisRef.current)
     setSujo(true)
   }, [setSujo])
 
   const atualizarDadoBasicoPara = useCallback((id: string, campo: string, para: string) => {
-    setMateriais((atual) =>
-      atual.map((m) => {
-        if (m._id !== id) return m
-        const existente = m.alteracoes.dados_basicos[campo]
-        return {
-          ...m,
-          alteracoes: {
-            ...m.alteracoes,
-            dados_basicos: { ...m.alteracoes.dados_basicos, [campo]: { de: existente?.de ?? '', para } },
-          },
-        }
-      }),
-    )
+    materiaisRef.current = materiaisRef.current.map((m) => {
+      if (m._id !== id) return m
+      const existente = m.alteracoes.dados_basicos[campo]
+      return {
+        ...m,
+        alteracoes: {
+          ...m.alteracoes,
+          dados_basicos: { ...m.alteracoes.dados_basicos, [campo]: { de: existente?.de ?? '', para } },
+        },
+      }
+    })
+    setMateriais(materiaisRef.current)
     setSujo(true)
   }, [setSujo])
 
   const removerLinha = useCallback((id: string) => {
-    setMateriais((atual) => atual.filter((m) => m._id !== id))
+    materiaisRef.current = materiaisRef.current.filter((m) => m._id !== id)
+    setMateriais(materiaisRef.current)
     setSelecionadas((atual) => {
       if (!atual.has(id)) return atual
       const copia = new Set(atual)
@@ -377,17 +386,17 @@ export default function CodigosSapPage() {
   // -- seleção múltipla via checkbox por linha substitui ter que clicar em cada "×" um por um
   // pra remover vários materiais.
   const removerSelecionadas = useCallback(() => {
-    setMateriais((atual) => {
-      const restantes = atual.filter((m) => !selecionadas.has(m._id))
-      return restantes.length > 0 ? restantes : [novaLinhaSap()]
-    })
+    const restantes = materiaisRef.current.filter((m) => !selecionadas.has(m._id))
+    materiaisRef.current = restantes.length > 0 ? restantes : [novaLinhaSap()]
+    setMateriais(materiaisRef.current)
     setSelecionadas(new Set())
     setSujo(true)
   }, [selecionadas, setSujo])
 
   function limparTudo() {
     if (!window.confirm('Limpar toda a tabela? Essa ação não pode ser desfeita.')) return
-    setMateriais([novaLinhaSap()])
+    materiaisRef.current = [novaLinhaSap()]
+    setMateriais(materiaisRef.current)
     setSelecionadas(new Set())
     setSujo(true)
   }
@@ -436,15 +445,15 @@ export default function CodigosSapPage() {
       >
       const novosMateriais = brutos.map(paraMaterialEditavel)
       if (novosMateriais.length > 0) {
-        setMateriais((atual) => {
-          const indice = atual.findIndex((m) => m._id === id)
-          if (indice === -1) return atual
-          const copia = [...atual]
+        const indice = materiaisRef.current.findIndex((m) => m._id === id)
+        if (indice !== -1) {
+          const copia = [...materiaisRef.current]
           copia.splice(indice, 1, ...novosMateriais)
           if (copia.every((m) => m.codigo_material !== '')) copia.push(novaLinhaSap())
-          return copia
-        })
-        setSujo(true)
+          materiaisRef.current = copia
+          setMateriais(materiaisRef.current)
+          setSujo(true)
+        }
       }
     } catch {
       setErro('Não foi possível interpretar o texto colado.')
@@ -453,23 +462,16 @@ export default function CodigosSapPage() {
   }, [setSujo])
 
   async function salvar() {
-    // Força o commit do blur ANTES de ler o estado (2026-07-17, mesmo truque do
-    // `handleLocalSave` do CodeForm.jsx antigo) -- células de texto só propagam pro estado da
-    // linha no blur (ver CelulaTexto acima); sem isso, clicar em "Salvar" direto com uma célula
-    // ainda focada perderia o valor digenado que nunca chegou a desfocar.
+    // Força o commit do blur ANTES de ler o estado -- células de texto só propagam pro estado
+    // da linha no blur (ver CelulaTexto acima). `materiaisRef.current` (2026-07-21, mesmo bug
+    // real corrigido em ListaTecnicaPage.tsx -- ver comentário na declaração do ref acima) é
+    // escrito direto pelos mutadores, então já está atualizado assim que o blur síncrono roda.
     if (document.activeElement instanceof HTMLElement) document.activeElement.blur()
-    await new Promise((resolve) => setTimeout(resolve, 0))
 
     setErro(null)
     setSalvando(true)
     try {
-      // Lê o estado JÁ COM o commit do blur aplicado (setState funcional só pra espiar o valor
-      // atual, sem programar outro re-render -- retorna a mesma referência).
-      let materiaisAtuais: LinhaSap[] = []
-      setMateriais((atual) => {
-        materiaisAtuais = atual
-        return atual
-      })
+      const materiaisAtuais = materiaisRef.current
 
       // A linha em branco no final é só espaço pra continuar colando/digitando -- nunca é
       // persistida como material de verdade (bug real encontrado em 2026-07-15: virava um
@@ -480,7 +482,8 @@ export default function CodigosSapPage() {
         mongo_id: mongoId,
         content: { ...conteudoExistente, materiais: payload },
       })
-      setMateriais([...materiaisPreenchidos, novaLinhaSap()])
+      materiaisRef.current = [...materiaisPreenchidos, novaLinhaSap()]
+      setMateriais(materiaisRef.current)
       setSujo(false)
       return true
     } catch {
@@ -612,7 +615,8 @@ export default function CodigosSapPage() {
           <button
             type="button"
             onClick={() => {
-              setMateriais((atual) => [...atual, novaLinhaSap()])
+              materiaisRef.current = [...materiaisRef.current, novaLinhaSap()]
+              setMateriais(materiaisRef.current)
               setSujo(true)
             }}
             className="ml-auto rounded-lg border border-dashed border-line px-3 py-1.5 text-xs font-medium text-ink-muted hover:bg-surface"

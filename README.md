@@ -127,6 +127,9 @@ npm run dev
 Releases são criadas manualmente no GitHub, usando `docs/RELEASE_vX.Y.Z.md` como corpo de
 cada release. O processo não é automatizado — a publicação é feita pelo GitHub web interface.
 
+- v0.10.1 — bloqueio de envio sem alteração real, confirmação antes de enviar, correção de
+  bug real de perda de dados no Salvar/Importar da Lista Técnica/Códigos SAP:
+  `docs/RELEASE_v0.10.1.md` — <https://github.com/alekrszp/bitinwebmaker-gsi/releases/tag/v0.10.1>
 - v0.10.0 — etapa final "Concluído" (Windchill, reversível só por admin), 2ª revisão do
   modelo de permissões (Cadastro/Processos viram `setor`, não mais níveis fixos), Painel
   geral, Cadastro/Processos reformulados, componentização/performance do frontend:
@@ -175,7 +178,7 @@ cada release. O processo não é automatizado — a publicação é feita pelo G
 - v0.1.0 — PoC inicial: `docs/RELEASE_v0.1.0.md` — <https://github.com/alekrszp/bitinwebmaker-gsi/releases/tag/v0.1.0>
 
 Veja também `docs/CHANGELOG.md` para as notas de release completas (inclui v0.7.2 → v0.8.0 →
-v0.9.0 → v0.10.0 sem pular nenhuma).
+v0.9.0 → v0.10.0 → v0.10.1 sem pular nenhuma).
 
 ## Arquivos principais
 

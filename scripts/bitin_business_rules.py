@@ -58,6 +58,15 @@ def validate_business_rules(
     }
     codigos_centros_vistos: set[tuple[str, str]] = set()
     valores_validos = document_config["valores_validos"]
+    # Nenhuma alteração de verdade em nenhum material (2026-07-21, pedido explícito: "o
+    # sistema deixa enviar bitin sem nenhuma alteração") -- `validate_bitin` (bitin_model.py)
+    # já garante que existe PELO MENOS 1 material com os campos de identificação obrigatórios
+    # (codigo_material/centro/tipo_material), mas isso sozinho não significa que algo foi
+    # realmente alterado -- um material "vazio" (Alt/Esp/etc todos no valor padrão "-", sem
+    # dados_basicos, sem lista_tecnica) passava por essa checagem e virava um BITin enviado
+    # sem propósito nenhum. Aqui embaixo cada material contribui pra esse flag junto com o
+    # resto das regras (não duplica leitura de `impactos`/`mudancas_reais`/`dados_basicos`).
+    algum_material_alterado = False
 
     for idx, material in enumerate(bitin.get("materiais", [])):
         codigo = material.get("codigo_material", "?")
@@ -97,6 +106,17 @@ def validate_business_rules(
             elif para != "":
                 mudancas_reais.append(campo)
 
+        # Alteração de verdade neste material: algum de/para efetivo em dados_basicos, algum
+        # impacto operacional fora do padrão "-", "Atualizar DWG/SAT" marcado, ou componente
+        # em lista_tecnica -- qualquer um já basta pra este material "contar".
+        if (
+            mudancas_reais
+            or any(impactos.get(campo, "-") != "-" for campo in ("alt", "est", "esp", "lp", "pre", "oc", "of"))
+            or impactos.get("atualizar_dwg_sat")
+            or alteracoes.get("lista_tecnica")
+        ):
+            algum_material_alterado = True
+
         alt_field = f"{material_field}.alteracoes.impactos_operacionais.alt"
 
         # Geral: Alt="-" (sem alteração) mas há campos de dados_basicos realmente mudando.
@@ -129,6 +149,14 @@ def validate_business_rules(
                 f"{prefix}: Afeta Ordem de Cliente (OC=X) requer entrada correspondente em "
                 f"'ordem_cliente[]' com codigo={codigo!r} (POP Nota 10)",
             ))
+
+    # Nenhum material teve alteração de verdade (ver flag acima) -- BITin sem propósito.
+    if bitin.get("materiais") and not algum_material_alterado:
+        errors.append(make_error(
+            "materiais", "nenhuma_alteracao_real",
+            "Nenhum material tem alteração de verdade (Alt/Est/Esp/LP/Pré/OC/OF, dados básicos "
+            "ou lista técnica) -- preencha ao menos uma antes de enviar",
+        ))
 
     # Nota 8: sucatear estoque exige registrar centro de custo e conta razão -- não é mais um
     # campo por material, é a descrição do item 22 da checklist ("Centro de custo (se tem

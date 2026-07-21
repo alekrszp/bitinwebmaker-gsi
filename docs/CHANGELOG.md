@@ -2,6 +2,30 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v0.10.1] - 2026-07-21
+
+Bloqueio de envio de BITin sem nenhuma alteração real, confirmação antes de enviar, e
+correção de um bug real de perda de dados no Salvar/Importar da Lista Técnica/Códigos SAP
+(achado e reproduzido em teste manual + Playwright). Ver `docs/RELEASE_v0.10.1.md`.
+
+### Added
+
+- Regra de negócio `nenhuma_alteracao_real` (`scripts/bitin_business_rules.py`) — bloqueia
+  envio se nenhum material tem alteração de verdade.
+- Confirmação antes de enviar (`EdicaoBottomBar.tsx`).
+- Colunas Centro/Descrição na Lista Técnica — material novo já nasce completo.
+- Autocompletar (`<datalist>`) de Código pai na Lista Técnica.
+- Suite de ponta a ponta estendida (`tests/test_bitin_workflow_e2e.py`) até
+  Concluir/Windchill/Reverter, gestor no Painel geral, e bloqueio de envio vazio.
+
+### Fixed
+
+- Salvar/Importar em Lista Técnica e Códigos SAP podiam não persistir a última linha editada
+  (truque de captura de estado via `setState` funcional não era confiável) — trocado por uma
+  `ref` síncrona.
+- "+ Nova linha" da Lista Técnica não cria mais linha sozinha ao digitar.
+- Etapa "Recebido (Cadastro)" (inatingível desde o roteamento automático) removida.
+
 ## [v0.10.0] - 2026-07-21
 
 Etapa final "Concluído" (Windchill, reversível só por admin), 2ª revisão do modelo de

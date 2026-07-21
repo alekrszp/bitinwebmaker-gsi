@@ -61,7 +61,7 @@ lógicas divergentes.
 | `checklist[]` | Sistema, calculado, **com override manual** | Enquanto rascunho (só o override) | Sugestão automática a partir dos impactos operacionais de cada material (`scripts/bitin_document.py::build_checklist`). O engenheiro pode clicar num item da checklist (aba "BITin", tela editável) e sobrescrever manualmente — o valor fica em `bitin['checklist_overrides']` (dict `id -> bool`) e tem prioridade sobre o cálculo automático quando presente. Cada item devolvido carrega `manual: bool` pra UI marcar o que foi sobrescrito. Decisão registrada com o usuário (2026-07-15): "não tem como clickar na checklist e ir mudando os setores". |
 | Setores acionados | Sistema, calculado | Nunca editado diretamente | Derivado do checklist (já com overrides aplicados) via crosswalk fixo `config/bitin_document_mapping.json::checklist_setores` (extraído de um BITin real, aba "SETORES CHECKLIST"). Clicar num item da checklist muda os setores acionados pelo mesmo motivo que a sugestão automática mudaria — não existe lógica separada pros dois casos. |
 | `materiais[].alteracoes.dados_basicos` | Engenheiro | Enquanto rascunho | Cada entrada é `{de, para}`. Se a chave bate com um campo do crosswalk (`vba_mapping.json::bitin_schema_crosswalk.dados_basicos`, 30 campos), é um **campo SAP reconhecido** — mostrado normal, com rótulo traduzido, numa tabela De/Para. Se não bate, é **texto livre** (o engenheiro digitou uma nota solta, tipo "Salvar DWG") — mostrado destacado (vermelho/`--color-livre-text`), num bloco à parte (nunca dentro da mesma tabela De/Para), com a chave exibida do jeito que foi escrita. Essa distinção é a mesma nos dois lados — visualização (`AlteracaoTable`) e edição (`MaterialEditorCard`) — reaproveitando o mesmo crosswalk (`scripts/bitin_document.py::build_campo_alterado_diffs` na visualização; `MateriaisSchema.dados_basicos` na edição), nunca reimplementada em paralelo. |
-| `materiais[].alteracoes.lista_tecnica[]` | Engenheiro | Enquanto rascunho | Cada item é `{codigo_filho, quantidade_de, quantidade_para, operacao}`. O código pai é o próprio `codigo_material` do material (não repetido no item). `operacao` (inserir/alterar/excluir) é só pro cadastro decidir a intenção — **não aparece na visualização**, o engenheiro nem precisa pensar nisso ao ler o documento. |
+| `materiais[].alteracoes.lista_tecnica[]` | Engenheiro | Enquanto rascunho | Cada item é `{codigo_filho, quantidade_de, quantidade_para, operacao}`. O código pai é o próprio `codigo_material` do material (não repetido no item). `operacao` (inserir/alterar/excluir) é só pro cadastro decidir a intenção — **não aparece na visualização**, o engenheiro nem precisa pensar nisso ao ler o documento. Na tela `ListaTecnicaPage.tsx` (grade plana, código pai texto livre), se o código pai digitado ainda não existe em `materiais[]`, um material novo é criado com `centro`/`descricao_material` também preenchidos pelas colunas Centro/Descrição da própria grade (2026-07-21) — sem isso, o material novo nascia com esses dois campos em branco, um bloco incompleto até o engenheiro voltar na aba BITin pra completar à mão. Se o código pai já existe, esses dois campos só preenchem o que estiver em branco, nunca sobrescrevem valor já declarado. |
 | `ordem_cliente[]` | Engenheiro | Enquanto rascunho | Só relevante quando `impactos_operacionais.oc == "X"` em algum material (Nota 10 do POP). |
 | `materiais[].alteracoes.impactos_operacionais` (Alt/Est/Esp/LP/Pre/OC/OF + `atualizar_dwg_sat`/`centro_custo`/`conta_razao`) | Engenheiro declara | Enquanto rascunho | Não é derivado de código SAP (só existem sugestões opcionais não-autoritativas, ver `suggest_alt`/`suggest_dwg_sat_action`). |
 
@@ -306,10 +306,15 @@ já temos (`alt` aqui é o valor **declarado** pelo engenheiro, não derivado de
 
 | Regra | Nota do POP | Condição | Exigência |
 |---|---|---|---|
-| Desenho aprovado | Nota 2 | `impactos_operacionais.alt` começa com `"D"` (D/P, D/-, D/F) | `materiais[].desenho_aprovado == true` |
-| NCM exige fiscal | Nota 17 | `alteracoes.dados_basicos.ncm.para` preenchido | `materiais[].ncm_aprovado_fiscal == true` |
 | Sucateamento exige centro de custo | Nota 8 | `impactos_operacionais.est == "S"` | `impactos_operacionais.centro_custo` e `.conta_razao` preenchidos |
 | Ordem de cliente precisa do quadro 2 | Nota 10 | `impactos_operacionais.oc == "X"` | existe uma entrada em `ordem_cliente[]` com `codigo` igual ao `codigo_material` |
+
+**Nota 2 (desenho aprovado) e Nota 17 (NCM aprovado pelo fiscal) NÃO são validadas** (removido
+2026-07-15) — exigem confirmação externa que o sistema não tem como conferir, e não há
+controle na UI pra marcar `desenho_aprovado`/`ncm_aprovado_fiscal` como verdadeiros; bloquear
+o envio nessas condições tornaria o envio permanentemente impossível sempre que a condição de
+gatilho ocorresse. Ficam só como lembrete no popover de ajuda ("?") da aba BITin —
+responsabilidade do engenheiro confirmar antes de enviar.
 
 **Não automatizadas ainda** (precisam de mais contexto ou integração externa antes de virar
 regra): Nota 6 (conferir versão do desenho aprovada no Windchill — precisa integração com o
@@ -331,6 +336,7 @@ ou futuro):
 | Campo sem efeito real | `dados_basicos.<campo>.de == .para` (e `para` não vazio) | listar um campo que não muda é sinal de erro de preenchimento |
 | Alt inconsistente com mudanças | `alt == "-"` mas há `dados_basicos` com `para` preenchido | se declarou "sem alteração" mas hay mudança registrada, o Alt provavelmente está errado |
 | Alt de desenho sem revisão | `alt` começa com `"D"` mas não há mudança em `nivel_revisao` | alteração de desenho sem bater com nenhum campo de desenho mudando é sinal de Alt errado |
+| Nenhuma alteração de verdade | nenhum material tem `dados_basicos` com mudança efetiva, `impactos_operacionais` fora do padrão `"-"`, `atualizar_dwg_sat` marcado, nem `lista_tecnica` | BITin sem propósito nenhum (2026-07-21, pedido explícito: "o sistema deixa enviar bitin sem nenhuma alteração") — mesmo que a estrutura passe em `validate_bitin` (código/centro/tipo preenchidos), não é um envio válido se nada foi realmente alterado |
 
 ## Ciclo de vida do BITin (rascunho → enviado)
 
@@ -420,9 +426,13 @@ se perde mesmo o doc top-level continuando correto; ver `backend/api/bitins.py`,
 
 **STATUS x ETAPA** (vocabulário compartilhado, `lib/bitinEtapa.ts`) — Status é o estado geral
 do BITin (`Rascunho`/`Enviado`/`Concluído`); Etapa só existe pra Status=Enviado e descreve
-onde ele está parado DENTRO de um setor (`Recebido (Cadastro)`/`Com Processos`/`Aguardando
-cadastro`/`Pendência de envio`). As 3 telas de listagem (Painel geral, Cadastro, Processos)
-leem a mesma fonte — nunca recalculam a etapa com lógica própria divergente.
+onde ele está parado DENTRO de um setor (`Com Processos`/`Aguardando cadastro`/`Pendência de
+envio`). As 3 telas de listagem (Painel geral, Cadastro, Processos) leem a mesma fonte — nunca
+recalculam a etapa com lógica própria divergente. Existiu uma etapa a mais, `Recebido
+(Cadastro)`, removida em 2026-07-21 por ter ficado inatingível na prática: representava o
+intervalo entre "enviado" e o roteamento pro Processos, de quando essa decisão era manual —
+desde que `enviar_bitin` passou a decidir e rotear sozinho (2026-07-20, mesma requisição do
+envio), `encaminhado_roteiro` já vem `True` assim que o BITin vira "Enviado".
 
 **Decisão automática "precisa de roteiro"** — `bitin_document.precisa_roteiro(bitin)`: `True`
 se QUALQUER material do BITin tem `Alt` em `{"D/P", "D/-", "-/P"}` (pedido explícito do

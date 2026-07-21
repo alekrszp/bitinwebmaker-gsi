@@ -65,6 +65,13 @@ def _dados_basicos_consistentes_com_alt(alt: str) -> dict:
 
 
 def make_bitin_content(alt: str = "-/P", **overrides) -> dict:
+    # esp="X" quando Alt="-" (2026-07-21) -- desde a regra `nenhuma_alteracao_real`
+    # (scripts/bitin_business_rules.py, "o sistema deixa enviar bitin sem nenhuma alteração"),
+    # Alt="-" sozinho (sem dados_basicos, que geraria "alt_inconsistent_no_changes" se
+    # combinado com Alt="-") não é mais um BITin válido pra envio -- precisa de uma alteração
+    # de verdade por OUTRO canal. `esp` não participa de nenhuma outra regra de consistência
+    # aqui, então não interfere nos testes que variam só o Alt.
+    impactos = {"alt": alt} if alt != "-" else {"alt": alt, "esp": "X"}
     base = {
         "setor": "Proteína Animal",
         "produto": "Silo X",
@@ -78,7 +85,7 @@ def make_bitin_content(alt: str = "-/P", **overrides) -> dict:
                 "tipo_material": "HALB",
                 "alteracoes": {
                     "dados_basicos": _dados_basicos_consistentes_com_alt(alt),
-                    "impactos_operacionais": {"alt": alt},
+                    "impactos_operacionais": impactos,
                 },
             }
         ],
@@ -274,6 +281,52 @@ class ComRoteiroWorkflowTest(BitinWorkflowTestBase):
         sem_auth = self.client.get(f"/api/v1/bitins/{mongo_id}/pdf")
         self.assertEqual(sem_auth.status_code, 401)
 
+        # 11) "Concluir BITIN" -- só Cadastro/admin (Processos já não participa mais).
+        negado_concluir = self.client.post(
+            f"/api/v1/bitins/{mongo_id}/concluir-bitin", headers=self._auth(self.processos),
+        )
+        self.assertEqual(negado_concluir.status_code, 403)
+        concluir_bitin = self.client.post(
+            f"/api/v1/bitins/{mongo_id}/concluir-bitin", headers=self._auth(self.cadastro),
+        )
+        self.assertEqual(concluir_bitin.status_code, 200, concluir_bitin.text)
+        self.assertTrue(concluir_bitin.json()["bitin_cadastrado"])
+
+        # 12) "Enviar pro Windchill" -- Status vira "Concluído" (derivado, `status` bruto
+        # continua "enviado"), some da fila normal do Cadastro (bitin_cadastrado=True vira
+        # "aguardando" só até aqui, agora windchill_enviado=True fecha o ciclo).
+        windchill = self.client.post(
+            f"/api/v1/bitins/{mongo_id}/enviar-windchill", headers=self._auth(self.cadastro),
+        )
+        self.assertEqual(windchill.status_code, 200, windchill.text)
+        self.assertTrue(windchill.json()["windchill_enviado"])
+        self.assertEqual(windchill.json()["status"], "enviado")  # campo bruto nunca muda
+
+        self.assertNotIn(mongo_id, self._bitins_visiveis_para(
+            self.cadastro, status="enviado", bitin_cadastrado=True, windchill_enviado=False,
+        ))
+        self.assertIn(mongo_id, self._bitins_visiveis_para(
+            self.cadastro, status="enviado", windchill_enviado=True,
+        ))
+
+        # 13) Reverter só admin -- Cadastro (mesmo tendo feito o envio) toma 403.
+        negado_reverter = self.client.post(
+            f"/api/v1/bitins/{mongo_id}/reverter-windchill", headers=self._auth(self.cadastro),
+        )
+        self.assertEqual(negado_reverter.status_code, 403)
+
+        reverter = self.client.post(
+            f"/api/v1/bitins/{mongo_id}/reverter-windchill", headers=self._auth(self.admin),
+        )
+        self.assertEqual(reverter.status_code, 200, reverter.text)
+        self.assertFalse(reverter.json()["windchill_enviado"])
+        self.assertTrue(reverter.json()["bitin_cadastrado"])  # só desfaz o último passo
+
+        # 14) Volta pra "Pendência de envio" no Cadastro.
+        self.assertIn(mongo_id, self._bitins_visiveis_para(
+            self.cadastro, status="enviado", bitin_cadastrado=True, windchill_enviado=False,
+        ))
+
 
 class SemRoteiroWorkflowTest(BitinWorkflowTestBase):
     """BITin com Alt que NÃO exige o setor Processos (D/F, -/F, -) -- o Cadastro conclui
@@ -308,10 +361,35 @@ class SemRoteiroWorkflowTest(BitinWorkflowTestBase):
         detalhe_processos = self.client.get(f"/api/v1/bitins/{mongo_id}", headers=self._auth(self.processos))
         self.assertFalse(detalhe_processos.json()["pode_editar"])
 
+        # ProcessosPage.tsx exclui `sem_necessidade_roteiro=True` das duas etapas (Pendente e
+        # Revisado, 2026-07-21) -- este BITin nunca passou pelo Processos de verdade, não deve
+        # aparecer como se tivesse "passado" por lá.
+        self.assertNotIn(mongo_id, self._bitins_visiveis_para(
+            self.processos, status="enviado", processos_concluido=True, sem_necessidade_roteiro=False,
+        ))
+
         # PDF pronto na hora, sem esperar Processos.
         pdf = self.client.get(f"/api/v1/bitins/{mongo_id}/pdf", headers=self._auth(self.cadastro))
         self.assertEqual(pdf.status_code, 200)
         self.assertTrue(pdf.content.startswith(b"%PDF"))
+
+        # Mesma cauda do fluxo com roteiro: Concluir BITIN -> Windchill -> reverter (admin).
+        concluir_bitin = self.client.post(
+            f"/api/v1/bitins/{mongo_id}/concluir-bitin", headers=self._auth(self.cadastro),
+        )
+        self.assertEqual(concluir_bitin.status_code, 200, concluir_bitin.text)
+
+        windchill = self.client.post(
+            f"/api/v1/bitins/{mongo_id}/enviar-windchill", headers=self._auth(self.cadastro),
+        )
+        self.assertEqual(windchill.status_code, 200, windchill.text)
+        self.assertTrue(windchill.json()["windchill_enviado"])
+
+        reverter = self.client.post(
+            f"/api/v1/bitins/{mongo_id}/reverter-windchill", headers=self._auth(self.admin),
+        )
+        self.assertEqual(reverter.status_code, 200, reverter.text)
+        self.assertFalse(reverter.json()["windchill_enviado"])
 
     def test_concluir_sem_roteiro_manual_rejeitado_apos_roteamento_automatico(self) -> None:
         """Escape hatch defensivo (POST /concluir-sem-roteiro ainda existe, mas o roteamento
@@ -323,6 +401,68 @@ class SemRoteiroWorkflowTest(BitinWorkflowTestBase):
             f"/api/v1/bitins/{mongo_id}/concluir-sem-roteiro", headers=self._auth(self.cadastro),
         )
         self.assertEqual(resp.status_code, 400)
+
+
+class SemAlteracaoRealNaoEnviaTest(BitinWorkflowTestBase):
+    """Regra de negócio nova (2026-07-21, pedido explícito: "o sistema deixa enviar bitin
+    sem nenhuma alteração") -- ponta a ponta via POST /enviar de verdade, não só a função de
+    validação isolada (já coberta em tests/test_bitin_business_rules.py)."""
+
+    def test_envio_bloqueado_sem_nenhuma_alteracao_real(self) -> None:
+        content = make_bitin_content(alt="-")
+        # `make_bitin_content` já compensa Alt="-" com esp="X" (ver comentário na função) --
+        # aqui eu quero o caso realmente vazio, então desfaço isso de propósito.
+        content["materiais"][0]["alteracoes"]["impactos_operacionais"] = {"alt": "-"}
+        draft = self.client.post(
+            "/api/v1/bitins/draft", json={"content": content}, headers=self._auth(self.engenheiro),
+        )
+        mongo_id = draft.json()["mongo_id"]
+
+        resp = self.client.post(f"/api/v1/bitins/{mongo_id}/enviar", headers=self._auth(self.engenheiro))
+        body = resp.json()
+        self.assertFalse(body["ok"])
+        self.assertTrue(any(e["code"] == "nenhuma_alteracao_real" for e in body["errors"]))
+
+        # Continua rascunho -- editável, não travado.
+        detalhe = self.client.get(f"/api/v1/bitins/{mongo_id}", headers=self._auth(self.engenheiro))
+        self.assertEqual(detalhe.json()["status"], "rascunho")
+
+        # Corrige com uma alteração de verdade -- agora envia normalmente.
+        content["materiais"][0]["alteracoes"]["impactos_operacionais"] = {"alt": "-", "esp": "X"}
+        self.client.post(
+            "/api/v1/bitins/draft", json={"mongo_id": mongo_id, "content": content}, headers=self._auth(self.engenheiro),
+        )
+        resp2 = self.client.post(f"/api/v1/bitins/{mongo_id}/enviar", headers=self._auth(self.engenheiro))
+        self.assertTrue(resp2.json()["ok"], resp2.text)
+
+
+class GestorEscopoPainelTest(BitinWorkflowTestBase):
+    """Gestor de setor ganhou acesso ao Painel geral na 2ª revisão do modelo de permissões
+    (2026-07-20) -- escopado ao PRÓPRIO setor, não ao sistema inteiro (diferença central
+    entre Gestor e Admin)."""
+
+    def setUp(self) -> None:
+        super().setUp()
+        self.gestor_cadastro = self._criar_usuario(NIVEL_GESTOR, setor="cadastro", nome="Gestor Cadastro")
+        self.gestor_processos = self._criar_usuario(NIVEL_GESTOR, setor="processos", nome="Gestor Processos")
+        self.bitin_cadastro = self._enviar_bitin(self.engenheiro, alt="-/F")  # vai direto pro Cadastro
+        self.bitin_processos = self._enviar_bitin(self.outro_engenheiro, alt="D/P")  # fica com Processos
+
+    def test_gestor_cadastro_ve_fila_global_de_cadastro(self) -> None:
+        vistos = self._bitins_visiveis_para(self.gestor_cadastro)
+        self.assertIn(self.bitin_cadastro, vistos)
+        self.assertIn(self.bitin_processos, vistos)  # Cadastro vê todo BITin enviado, global
+
+    def test_gestor_processos_ve_so_fila_encaminhada(self) -> None:
+        vistos = self._bitins_visiveis_para(self.gestor_processos)
+        self.assertIn(self.bitin_processos, vistos)
+
+    def test_resumo_painel_admin_conta_os_dois_setores(self) -> None:
+        resumo = self.client.get("/api/v1/bitins/resumo-painel", headers=self._auth(self.admin))
+        self.assertEqual(resumo.status_code, 200, resumo.text)
+        body = resumo.json()
+        self.assertGreaterEqual(body["cadastro_aguardando"], 1)  # bitin_cadastro
+        self.assertGreaterEqual(body["processos_pendentes"], 1)  # bitin_processos
 
 
 class VisibilidadePorPapelTest(BitinWorkflowTestBase):

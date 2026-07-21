@@ -1,4 +1,4 @@
-import { memo, useCallback, useEffect, useState } from 'react'
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import Card from '../components/Card'
 import AjudaPopover from '../components/bitin/AjudaPopover'
@@ -27,6 +27,15 @@ import type { Bitin, ItemListaTecnica, MaterialEditavel, OperacaoListaTecnica } 
 // outra pra existir.
 interface LinhaListaTecnicaBase extends ItemListaTecnica {
   codigo_pai: string
+  // Centro/Descrição do MATERIAL pai (2026-07-21, pedido explícito: "coloca centro e
+  // descrição nos campos para importar junto e ficar o bloco todo completo pós
+  // importação") -- só importam quando o código pai é NOVO (não existe ainda em
+  // materiais[]): sem eles, o material criado do zero pelo Salvar/Importar ficava com
+  // `centro`/`descricao_material` em branco, um bloco incompleto na aba BITin até o
+  // engenheiro preencher à mão por lá. Repetido em toda linha do mesmo código pai (mesma
+  // ideia do próprio "Código pai") -- ao salvar, o primeiro valor não-vazio do grupo vale.
+  centro: string
+  descricao: string
 }
 
 // `_id` client-side estável por linha (2026-07-17, otimização de performance -- mesmo padrão
@@ -36,6 +45,8 @@ type LinhaListaTecnica = LinhaListaTecnicaBase & { _id: string }
 function linhaVazia(): LinhaListaTecnica {
   return {
     codigo_pai: '',
+    centro: '',
+    descricao: '',
     // "alterar" só como placeholder interno -- o valor de verdade é recalculado em
     // `derivarOperacao` na hora de salvar (ver comentário lá), não editado na UI.
     operacao: 'alterar',
@@ -66,7 +77,13 @@ function derivarOperacao(item: ItemListaTecnica): OperacaoListaTecnica {
 
 function materiaisParaLinhas(materiais: MaterialEditavel[]): LinhaListaTecnica[] {
   const linhas = materiais.flatMap((m) =>
-    m.alteracoes.lista_tecnica.map((item) => ({ codigo_pai: m.codigo_material, ...item, _id: crypto.randomUUID() })),
+    m.alteracoes.lista_tecnica.map((item) => ({
+      codigo_pai: m.codigo_material,
+      centro: m.centro,
+      descricao: m.descricao_material,
+      ...item,
+      _id: crypto.randomUUID(),
+    })),
   )
   // Sempre sobra uma linha em branco no final pra continuar preenchendo (mesmo padrão da
   // ZBPP009 -- não obriga clicar em "+ Nova linha" primeiro).
@@ -80,6 +97,7 @@ const CelulaTexto = memo(function CelulaTexto({
   onCommit,
   numerico,
   className,
+  listId,
 }: {
   valor: string
   onCommit: (novoValor: string) => void
@@ -91,6 +109,12 @@ const CelulaTexto = memo(function CelulaTexto({
   // `inputMode="decimal"` -- mantém o teclado numérico no celular sem o visual de spinner.
   numerico?: boolean
   className: string
+  // Sugestões de autocompletar via <datalist> nativo (2026-07-21, achado ao investigar "não
+  // tá importando o código da lista técnica") -- Código pai é texto livre, então bastava
+  // digitar diferente do código do material por 1 caractere (espaço, maiúscula) pra virar um
+  // material NOVO em vez de anexar no existente, sem erro nenhum na tela -- parecia que
+  // simplesmente não importava. Sugerir os códigos já usados no BITin reduz o risco de typo.
+  listId?: string
 }) {
   const [local, setLocal] = useState(valor)
   useEffect(() => setLocal(valor), [valor])
@@ -98,6 +122,7 @@ const CelulaTexto = memo(function CelulaTexto({
     <input
       type="text"
       inputMode={numerico ? 'decimal' : undefined}
+      list={listId}
       value={local}
       onChange={(e) => setLocal(numerico ? e.target.value.replace(/[^0-9.]/g, '') : e.target.value)}
       onBlur={() => {
@@ -139,6 +164,21 @@ const LinhaTecnicaRow = memo(function LinhaTecnicaRow({
           valor={linha.codigo_pai}
           onCommit={(valor) => onCampoCommit(linha._id, 'codigo_pai', valor)}
           className={`w-32 ${classeInput}`}
+          listId="lista-tecnica-codigos-pai"
+        />
+      </td>
+      <td className="p-1.5">
+        <CelulaTexto
+          valor={linha.centro}
+          onCommit={(valor) => onCampoCommit(linha._id, 'centro', valor)}
+          className={`w-24 ${classeInput}`}
+        />
+      </td>
+      <td className="p-1.5">
+        <CelulaTexto
+          valor={linha.descricao}
+          onCommit={(valor) => onCampoCommit(linha._id, 'descricao', valor)}
+          className={`w-48 ${classeInput}`}
         />
       </td>
       <td className="p-1.5">
@@ -183,11 +223,28 @@ export default function ListaTecnicaPage() {
   const navigate = useNavigate()
   const [bitin, setBitin] = useState<Bitin | null>(null)
   const [materiais, setMateriais] = useState<MaterialEditavel[]>([])
+  const codigosExistentes = useMemo(
+    () => [...new Set(materiais.map((m) => m.codigo_material.trim()).filter(Boolean))],
+    [materiais],
+  )
   const [linhas, setLinhas] = useState<LinhaListaTecnica[]>([linhaVazia()])
+  // Espelho síncrono de `linhas` (2026-07-21, achado real ao investigar "não tá importando"):
+  // `salvar()` precisa ler o valor mais recente logo depois de forçar o blur do campo focado
+  // (linha abaixo), mas o `setLinhas` funcional só reflete a mudança do blur numa renderização
+  // futura -- não é garantido rodar de forma síncrona (testado ao vivo com Playwright: o
+  // POST /bitins/draft saía com `materiais: []` mesmo com a linha visivelmente preenchida na
+  // tela). `linhasRef.current` é escrito diretamente dentro de cada função que muda `linhas`
+  // (não depende de nenhum agendamento do React), então está sempre correto no instante em
+  // que é lido.
+  const linhasRef = useRef(linhas)
   const [conteudoExistente, setConteudoExistente] = useState<Record<string, unknown>>({})
   const [carregando, setCarregando] = useState(true)
   const [salvando, setSalvando] = useState(false)
   const [erro, setErro] = useState<string | null>(null)
+  // Confirmação visível de "Salvar" (2026-07-21, achado ao investigar "não tá funcionando") --
+  // antes o botão só voltava pro texto normal, sem nenhum sinal de sucesso na tela; ficava
+  // fácil achar que não tinha feito nada mesmo quando salvou certo.
+  const [salvoRecentemente, setSalvoRecentemente] = useState(false)
   // Seleção por _id estável, não índice (2026-07-17) -- mesmo motivo de CodigosSapPage.tsx.
   const [selecionadas, setSelecionadas] = useState<Set<string>>(new Set())
   const { enviando, errosEnvio, bitinEnviado, enviar } = useEnviarBitin(mongoId)
@@ -214,7 +271,9 @@ export default function ListaTecnicaPage() {
         setConteudoExistente(resp.data.content)
         const materiaisExistentes = ((resp.data.content.materiais as MaterialEditavel[] | undefined) ?? []).map(normalizarMaterial)
         setMateriais(materiaisExistentes)
-        setLinhas(materiaisParaLinhas(materiaisExistentes))
+        const linhasCarregadas = materiaisParaLinhas(materiaisExistentes)
+        linhasRef.current = linhasCarregadas
+        setLinhas(linhasCarregadas)
       })
       .catch(() => setErro('Não foi possível carregar os dados.'))
       .finally(() => setCarregando(false))
@@ -226,17 +285,16 @@ export default function ListaTecnicaPage() {
   // useCallback (2026-07-17) -- identidade estável permite o React.memo de LinhaTecnicaRow/
   // CelulaTexto pular re-render de linhas não tocadas. Operam por `_id`, não índice.
   const atualizarCampo = useCallback((id: string, campo: keyof LinhaListaTecnicaBase, valor: string) => {
-    setLinhas((atual) => {
-      const copia = atual.map((l) => (l._id === id ? { ...l, [campo]: valor } : l))
-      // Igual à ZBPP009: garante sempre uma linha em branco no final pra continuar digitando.
-      if (copia.every((l) => l.codigo_pai.trim() !== '' || l.codigo_filho.trim() !== '')) copia.push(linhaVazia())
-      return copia
-    })
+    // Sem linha nova automática (2026-07-21, pedido explícito: "só criar linha nova quando
+    // clicka no botão") -- só "+ Nova linha" abaixo adiciona.
+    linhasRef.current = linhasRef.current.map((l) => (l._id === id ? { ...l, [campo]: valor } : l))
+    setLinhas(linhasRef.current)
     setSujo(true)
   }, [setSujo])
 
   const removerLinha = useCallback((id: string) => {
-    setLinhas((atual) => atual.filter((l) => l._id !== id))
+    linhasRef.current = linhasRef.current.filter((l) => l._id !== id)
+    setLinhas(linhasRef.current)
     setSelecionadas((atual) => {
       if (!atual.has(id)) return atual
       const copia = new Set(atual)
@@ -249,20 +307,17 @@ export default function ListaTecnicaPage() {
   // Mesma barra de ferramentas da ZBPP009 (CodigosSapPage.tsx), 2026-07-16 -- decisão do
   // usuário: "faz isso tb na lista técnica".
   const removerSelecionadas = useCallback(() => {
-    setLinhas((atual) => {
-      const restantes = atual.filter((l) => !selecionadas.has(l._id))
-      if (restantes.length === 0) return [linhaVazia()]
-      // Mesma regra de "sempre uma linha em branco no final" usada em atualizarCampo.
-      if (restantes.every((l) => l.codigo_pai.trim() !== '' || l.codigo_filho.trim() !== '')) restantes.push(linhaVazia())
-      return restantes
-    })
+    const restantes = linhasRef.current.filter((l) => !selecionadas.has(l._id))
+    linhasRef.current = restantes.length === 0 ? [linhaVazia()] : restantes
+    setLinhas(linhasRef.current)
     setSelecionadas(new Set())
     setSujo(true)
   }, [selecionadas, setSujo])
 
   function limparTudo() {
     if (!window.confirm('Limpar toda a tabela? Essa ação não pode ser desfeita.')) return
-    setLinhas([linhaVazia()])
+    linhasRef.current = [linhaVazia()]
+    setLinhas(linhasRef.current)
     setSelecionadas(new Set())
     setSujo(true)
   }
@@ -281,42 +336,68 @@ export default function ListaTecnicaPage() {
   }
 
   async function salvar() {
-    // Força o commit do blur ANTES de ler o estado (2026-07-17, mesmo truque de
-    // CodigosSapPage.tsx) -- células de texto só propagam pro estado da linha no blur.
+    // Força o commit do blur ANTES de ler o estado -- células de texto só propagam pro estado
+    // da linha no blur. `.blur()` dispara o evento na hora (síncrono), e `atualizarCampo`
+    // agora escreve direto em `linhasRef.current` (não só em `setLinhas`) -- não precisa mais
+    // do `await setTimeout(0)` que existia aqui antes só pra esperar o React processar.
     if (document.activeElement instanceof HTMLElement) document.activeElement.blur()
-    await new Promise((resolve) => setTimeout(resolve, 0))
 
     setErro(null)
     setSalvando(true)
     try {
-      let linhasAtuais: LinhaListaTecnica[] = []
-      setLinhas((atual) => {
-        linhasAtuais = atual
-        return atual
-      })
+      // `linhasRef.current` (não o `linhas` do closure, nem um "capturar via setState" --
+      // 2026-07-21, ver comentário na declaração do ref acima pro bug real que isso corrige).
+      const linhasAtuais = linhasRef.current
 
       // Linha sem código pai ou sem código filho não vira componente de verdade (mesma regra
       // de "linha em branco não persiste" da ZBPP009/BitinDetail).
       const linhasPreenchidas = linhasAtuais.filter((l) => l.codigo_pai.trim() !== '' && l.codigo_filho.trim() !== '')
-      const grupos = new Map<string, ItemListaTecnica[]>()
+      // Chave normalizada (trim + minúsculo) pra agrupar/casar com o material existente (2026-07-21,
+      // achado ao investigar "não tá importando o código" -- Código pai é texto livre, um
+      // espaço ou maiúscula a mais bastava pra virar um material NOVO em vez de anexar no
+      // existente, sem erro nenhum visível). O <datalist> acima (`lista-tecnica-codigos-pai`)
+      // já ajuda a evitar o typo; isso aqui é o reforço caso mesmo assim a grafia diverja só
+      // no caixa-alta/baixa.
+      const normalizar = (s: string) => s.trim().toLowerCase()
+      const grupos = new Map<
+        string,
+        { codigoDigitado: string; centro: string; descricao: string; itens: ItemListaTecnica[] }
+      >()
       for (const l of linhasPreenchidas) {
-        const { codigo_pai, _id, ...item } = l
-        const chave = codigo_pai.trim()
+        const { codigo_pai, centro, descricao, _id, ...item } = l
+        const chave = normalizar(codigo_pai)
+        const grupo = grupos.get(chave) ?? { codigoDigitado: codigo_pai.trim(), centro: '', descricao: '', itens: [] }
+        // Primeiro valor não-vazio do grupo vale pro Centro/Descrição do material (várias
+        // linhas do mesmo código pai podem repetir o mesmo valor ou deixar em branco depois
+        // da primeira -- não precisa preencher em toda linha).
+        if (!grupo.centro && centro.trim()) grupo.centro = centro.trim()
+        if (!grupo.descricao && descricao.trim()) grupo.descricao = descricao.trim()
         // Operação derivada aqui (2026-07-17, campo removido da UI) -- ver derivarOperacao.
-        grupos.set(chave, [...(grupos.get(chave) ?? []), { ...item, operacao: derivarOperacao(item) }])
+        grupo.itens.push({ ...item, operacao: derivarOperacao(item) })
+        grupos.set(chave, grupo)
       }
 
-      let materiaisAtualizados = materiais.map((m) => ({
-        ...m,
-        alteracoes: { ...m.alteracoes, lista_tecnica: grupos.get(m.codigo_material.trim()) ?? [] },
-      }))
-      for (const [codigoPai, itens] of grupos) {
-        if (!materiaisAtualizados.some((m) => m.codigo_material.trim() === codigoPai)) {
+      let materiaisAtualizados = materiais.map((m) => {
+        const grupo = grupos.get(normalizar(m.codigo_material))
+        return {
+          ...m,
+          // Só preenche Centro/Descrição se o material ainda estiver em branco -- nunca
+          // sobrescreve o que já foi declarado (mesmo espírito da sugestão automática de Alt/
+          // Esp em bitin_document.py: campo já preenchido sempre vence).
+          centro: m.centro.trim() || grupo?.centro || m.centro,
+          descricao_material: m.descricao_material.trim() || grupo?.descricao || m.descricao_material,
+          alteracoes: { ...m.alteracoes, lista_tecnica: grupo?.itens ?? [] },
+        }
+      })
+      for (const [chave, { codigoDigitado, centro, descricao, itens }] of grupos) {
+        if (!materiaisAtualizados.some((m) => normalizar(m.codigo_material) === chave)) {
           materiaisAtualizados = [
             ...materiaisAtualizados,
             {
               ...materialVazio(),
-              codigo_material: codigoPai,
+              codigo_material: codigoDigitado,
+              centro,
+              descricao_material: descricao,
               alteracoes: { ...materialVazio().alteracoes, lista_tecnica: itens },
             },
           ]
@@ -328,8 +409,12 @@ export default function ListaTecnicaPage() {
         content: { ...conteudoExistente, materiais: materiaisAtualizados },
       })
       setMateriais(materiaisAtualizados)
-      setLinhas(materiaisParaLinhas(materiaisAtualizados))
+      const linhasRecarregadas = materiaisParaLinhas(materiaisAtualizados)
+      linhasRef.current = linhasRecarregadas
+      setLinhas(linhasRecarregadas)
       setSujo(false)
+      setSalvoRecentemente(true)
+      setTimeout(() => setSalvoRecentemente(false), 3000)
       return true
     } catch {
       setErro('Não foi possível salvar. Tente novamente.')
@@ -347,9 +432,15 @@ export default function ListaTecnicaPage() {
   // "Importar" (2026-07-15): salva e volta direto pra aba BITin -- mesma ideia da ZBPP009
   // (decisão do usuário: "tudo oque ele fizeram ali faz a automação e completa direto la na
   // tela de BITin"). A checklist "Alteração lista técnica" é recalculada automaticamente lá.
+  //
+  // Corrigido (2026-07-21, achado ao investigar "clico em importar e não importa nada"):
+  // antes navegava incondicionalmente, mesmo quando `salvar()` falhava (ex.: erro de rede) --
+  // o usuário caía na aba BITin com nada importado e sem entender por quê, já que o banner de
+  // erro (`erro`) fica pra trás na página que ele acabou de sair. Agora só navega se salvou de
+  // verdade.
   async function importar() {
-    await salvar()
-    navigate(`/bitins/${mongoId}`)
+    const ok = await salvar()
+    if (ok) navigate(`/bitins/${mongoId}`)
   }
 
   if (carregando) {
@@ -391,7 +482,10 @@ export default function ListaTecnicaPage() {
           <p>
             Cada linha é um componente filho -- <strong>Código pai</strong> é texto livre, não
             precisa existir ainda em BITin/ZBPP009 (se não existir, um material novo é criado
-            automaticamente ao salvar, só com esse código, pra receber os componentes).
+            automaticamente ao salvar, com <strong>Centro</strong> e <strong>Descrição</strong>{' '}
+            já preenchidos com o que você digitar aqui, pra não ficar um bloco incompleto). Se o
+            código pai já existe, esses dois campos só completam o que estiver em branco --
+            nunca sobrescrevem o que já foi preenchido antes.
           </p>
           <p>
             Sem campo de <strong>Operação</strong> pra escolher -- é deduzido sozinho pelo que
@@ -425,6 +519,7 @@ export default function ListaTecnicaPage() {
       </div>
 
       {erro && <p className="mt-3 text-sm text-red-600">{erro}</p>}
+      {salvoRecentemente && !erro && <p className="mt-3 text-sm text-brand-green">Salvo.</p>}
       <ErrosEnvioBanner erros={errosEnvio} />
 
       <Card title="Lista técnica">
@@ -450,7 +545,8 @@ export default function ListaTecnicaPage() {
           <button
             type="button"
             onClick={() => {
-              setLinhas((atual) => [...atual, linhaVazia()])
+              linhasRef.current = [...linhasRef.current, linhaVazia()]
+              setLinhas(linhasRef.current)
               setSujo(true)
             }}
             className="ml-auto rounded-lg border border-dashed border-line px-3 py-1.5 text-xs font-medium text-ink-muted hover:bg-surface"
@@ -458,6 +554,12 @@ export default function ListaTecnicaPage() {
             + Nova linha
           </button>
         </div>
+
+        <datalist id="lista-tecnica-codigos-pai">
+          {codigosExistentes.map((c) => (
+            <option key={c} value={c} />
+          ))}
+        </datalist>
 
         <div className="mt-2 overflow-x-auto rounded border border-line">
           <table className="w-full text-left text-sm">
@@ -472,6 +574,8 @@ export default function ListaTecnicaPage() {
                   />
                 </th>
                 <th className="whitespace-nowrap px-3 py-2 font-medium">Código pai</th>
+                <th className="whitespace-nowrap px-3 py-2 font-medium">Centro</th>
+                <th className="whitespace-nowrap px-3 py-2 font-medium">Descrição</th>
                 <th className="whitespace-nowrap px-3 py-2 font-medium">Código filho</th>
                 <th className="whitespace-nowrap px-3 py-2 font-medium">Quantidade de</th>
                 <th className="whitespace-nowrap px-3 py-2 font-medium">Quantidade para</th>

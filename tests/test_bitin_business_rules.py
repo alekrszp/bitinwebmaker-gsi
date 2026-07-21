@@ -25,7 +25,11 @@ def make_bitin(**overrides) -> dict:
                 "tipo_material": "HALB",
                 "alteracoes": {
                     "dados_basicos": {},
-                    "impactos_operacionais": {"alt": "-"},
+                    # esp="X" (2026-07-21) -- só pra ter uma alteração de verdade no BITin base
+                    # (ver regra nova `nenhuma_alteracao_real`); não aciona nenhuma outra regra
+                    # deste módulo (diferente de alt/oc/est), então não interfere nos testes
+                    # que fazem overrides parciais em cima deste fixture.
+                    "impactos_operacionais": {"alt": "-", "esp": "X"},
                 },
             }
         ],
@@ -124,6 +128,38 @@ class ValidateBusinessRulesTest(unittest.TestCase):
         }
         errors = self.validate(bitin)
         self.assertFalse(any(e["code"].startswith("invalid_") for e in errors))
+
+    # --- Regra geral: nenhuma alteração de verdade em BITin nenhum material (2026-07-21,
+    # pedido explícito: "o sistema deixa enviar bitin sem nenhuma alteração") ---
+
+    def test_geral_nenhuma_alteracao_real_falha(self) -> None:
+        bitin = make_bitin()
+        bitin["materiais"][0]["alteracoes"]["impactos_operacionais"] = {"alt": "-"}
+        errors = self.validate(bitin)
+        self.assertTrue(any(e["code"] == "nenhuma_alteracao_real" for e in errors))
+
+    def test_geral_alteracao_via_dados_basicos_nao_falha_essa_regra(self) -> None:
+        bitin = make_bitin()
+        bitin["materiais"][0]["alteracoes"]["impactos_operacionais"] = {"alt": "D/-"}
+        bitin["materiais"][0]["alteracoes"]["dados_basicos"] = {"nivel_revisao": {"de": "A", "para": "B"}}
+        errors = self.validate(bitin)
+        self.assertFalse(any(e["code"] == "nenhuma_alteracao_real" for e in errors))
+
+    def test_geral_alteracao_via_lista_tecnica_nao_falha_essa_regra(self) -> None:
+        bitin = make_bitin()
+        bitin["materiais"][0]["alteracoes"]["impactos_operacionais"] = {"alt": "-"}
+        bitin["materiais"][0]["alteracoes"]["lista_tecnica"] = [
+            {"operacao": "inserir", "codigo_filho": "COMP01", "quantidade_de": "", "quantidade_para": "5"},
+        ]
+        errors = self.validate(bitin)
+        self.assertFalse(any(e["code"] == "nenhuma_alteracao_real" for e in errors))
+
+    def test_geral_bitin_sem_material_nenhum_nao_dispara_essa_regra(self) -> None:
+        # `validate_bitin` (bitin_model.py) já bloqueia isso separadamente ("no_materiais") --
+        # esta regra não deve duplicar o erro nem quebrar com lista vazia.
+        bitin = make_bitin(materiais=[])
+        errors = self.validate(bitin)
+        self.assertFalse(any(e["code"] == "nenhuma_alteracao_real" for e in errors))
 
     # --- Regras gerais (não dependem de código específico) ---
 

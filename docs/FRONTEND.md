@@ -162,7 +162,8 @@ frontend/
         DadosBasicosTable.tsx    - tabela De/Para de um material (dados básicos SAP)
         OrdemClienteSection.tsx / OrdemClienteEditor.tsx - bloco de ordem_cliente[] (POP Nota 10)
         SetorBadge.tsx / StatusBadge.tsx / SetoresBanner.tsx - badges/banners de status e setor
-        EdicaoBottomBar.tsx      - barra fixa (BITin/ZBPP009/Lista Técnica + Enviar)
+        EdicaoBottomBar.tsx      - barra fixa (BITin/ZBPP009/Lista Técnica + Enviar, com
+                                    confirmação antes de enviar de verdade, 2026-07-21)
         ErrosEnvioBanner.tsx     - lista de erros de validação ao tentar enviar
         AvisoSairModal.tsx       - modal "sair sem salvar"
       settings/

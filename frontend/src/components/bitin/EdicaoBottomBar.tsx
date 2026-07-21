@@ -51,7 +51,16 @@ export default function EdicaoBottomBar({
       <div className="mx-1 h-6 w-px bg-line" />
       <button
         type="button"
-        onClick={onEnviar}
+        onClick={() => {
+          // Confirmação antes de enviar (2026-07-21, pedido explícito) -- depois de
+          // "Enviar" o BITin fica travado pra sempre (só volta a mudar de mãos pelos fluxos
+          // de Cadastro/Processos), então vale um clique a mais de segurança. Um botão só na
+          // barra (não em cada página) -- as 3 páginas (BITin/ZBPP009/Lista Técnica) chamam a
+          // mesma `EdicaoBottomBar`.
+          if (window.confirm('Enviar este BITin? Depois de enviado, ele fica travado -- não dá mais pra editar.')) {
+            onEnviar()
+          }
+        }}
         disabled={enviando}
         className="rounded-lg bg-brand-orange px-5 py-2 text-sm font-semibold text-white transition-colors hover:brightness-95 disabled:cursor-not-allowed disabled:opacity-60"
       >

@@ -15,7 +15,6 @@ import type { AdminUserCreateRequest, AdminUserCreateResponse, Subgrupo, User } 
 export default function CriarUsuarioForm({ subgrupos, onCriado }: { subgrupos: Subgrupo[]; onCriado: (u: User) => void }) {
   const [email, setEmail] = useState('')
   const [nome, setNome] = useState('')
-  const [numeroEng, setNumeroEng] = useState('')
   // Vários subgrupos marcáveis (2026-07-15, era um <select> de escolha única -- "um usuário
   // poder ser tanto armazenagem tanto quanto proteina").
   const [subgrupoIds, setSubgrupoIds] = useState<number[]>([])
@@ -64,7 +63,10 @@ export default function CriarUsuarioForm({ subgrupos, onCriado }: { subgrupos: S
       const body: AdminUserCreateRequest = {
         email: email.trim(),
         nome,
-        numero_eng: numeroEng.trim() || null,
+        // Campo "ID" tirado do formulário por pedido do usuário (2026-07-21, "pode remover da
+        // parte de cadastrar usuários, depois colocamos de volta se necessário") -- sempre
+        // null por enquanto; volta a virar um TextInput se for readicionado.
+        numero_eng: null,
         subgrupo_ids: subgrupoIds,
         permission_level: permissionLevel,
         setor,
@@ -86,7 +88,6 @@ export default function CriarUsuarioForm({ subgrupos, onCriado }: { subgrupos: S
       window.location.href = montarMailtoSenhaTemporaria(gerada)
       setEmail('')
       setNome('')
-      setNumeroEng('')
       setSubgrupoIds([])
       setPermissionLevel(77)
       setSetor('engenharia')
@@ -152,10 +153,6 @@ export default function CriarUsuarioForm({ subgrupos, onCriado }: { subgrupos: S
         <div>
           <FormLabel htmlFor="novo-nome">Nome</FormLabel>
           <TextInput id="novo-nome" type="text" required value={nome} onChange={(e) => setNome(e.target.value)} />
-        </div>
-        <div>
-          <FormLabel htmlFor="novo-numero-eng">ID</FormLabel>
-          <TextInput id="novo-numero-eng" type="text" value={numeroEng} onChange={(e) => setNumeroEng(e.target.value)} />
         </div>
         <div>
           {/* Checkbox group em vez de <select> de escolha única (2026-07-15) -- um usuário
