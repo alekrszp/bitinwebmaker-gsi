@@ -195,7 +195,8 @@ v0.9.0 → v0.10.0 → v0.10.1 sem pular nenhuma).
 - `sap_paste_parser.py` — parser do texto colado do SAP (TAB-delimited)
 - `csv_safety.py` — sanitização contra CSV/formula injection
 - `bitin_errors.py` — formato de erro estruturado (`{field, code, message}`)
-- `migrar_niveis_permissao.py` — script one-off de migração de dados do esquema antigo de permissão (0/1/99) pro atual (66/77/88/89/99)
+- `resetar_usuarios_setores_2026_07_20.py` — utilitário de dev: recria um conjunto de contas de teste do zero (permissões atuais)
+- `limpar_banco_2026_07_21.py` — utilitário de dev: apaga todos os usuários (exceto o super-admin) e todos os BITins
 
 **Config (`config/`)**: `vba_mapping.json`, `bitin_document_mapping.json`, `lista_tecnica_mapping.json`
 
@@ -208,7 +209,7 @@ v0.9.0 → v0.10.0 → v0.10.1 sem pular nenhuma).
 
 **Documentação (`docs/`)**: `BITIN_MODEL.md`, `VBA_EXPORT_MAPPING.md`, `VBA_MIGRATION_GUIDE.md`, `BACKEND.md`, `FRONTEND.md`, `CHANGELOG.md`
 
-**Arquivos de exemplo/dados reais (`examples/`, `bitinsparaexemplo/`)**: `Novo_template_BITin_V2 TESTE.xlsm` (template original), `exported_winshuttle.csv` (referência), `bitin teste.xlsm`, `bitin teste 2.xlsm`, `bitinsparaexemplo/*.xlsm` (4 BITins reais usados pra auditar as automações do VBA), `POP_ENG_7 3 7_002.pdf`
+**Arquivos de exemplo/dados reais (`examples/`, `bitinsparaexemplo/`)**: `Novo_template_BITin_V2 TESTE.xlsm` (template original), `exported_winshuttle.csv` (referência), `bitin teste.xlsm`, `bitin teste 2.xlsm`, `bitinsparaexemplo/*.xlsm` (4 BITins reais usados pra auditar as automações do VBA), `POP_ENG_7 3 7_002.pdf`. Usados de verdade por `tests/test_vba_port_export.py`/`test_winshuttle_export.py` — não remover.
 
 **PoC legado (`scripts/legacy_poc/`)**: scripts e saídas do PoC leve original (v0.1.0), superados pelo motor atual — mantidos como histórico documentado, não usar para trabalho novo.
 

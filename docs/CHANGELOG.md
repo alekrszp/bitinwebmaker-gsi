@@ -2,6 +2,19 @@
 
 All notable changes to this project will be documented in this file.
 
+## [Unreleased] - Limpeza de repositório (2026-07-21)
+
+Sem mudança de código de produto — só arrumação. Removidos do repositório: dumps de pesquisa
+VBA superados (`docs/codes_found.md`, `context.md`, `inventory.md`, `vba_catalog.md`/`.json`,
+`zbpp009_sample.md` — substituídos por
+`VBA_EXPORT_MAPPING.md`/`VBA_MIGRATION_GUIDE.md`/`BITIN_MODEL.md`), 2 scripts de migração já
+aplicados e obsoletos (`migrar_niveis_permissao.py`, `migrar_setores_2026_07_20.py` — o esquema
+de permissão já mudou de novo desde então), backups de SQLite antigos e caches locais.
+`examples/`/`bitinsparaexemplo/` (arquivos `.xlsm`/`.pdf` reais usados como referência durante
+o desenvolvimento) foram mantidos — ainda são usados de verdade por
+`tests/test_vba_port_export.py::RealWorkbookTest` e
+`tests/test_winshuttle_export.py::test_matches_reference_export`.
+
 ## [v0.10.1] - 2026-07-21
 
 Bloqueio de envio de BITin sem nenhuma alteração real, confirmação antes de enviar, e

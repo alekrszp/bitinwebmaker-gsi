@@ -432,15 +432,14 @@ e-mail contra esse set, usada em `update_user_permission` e `delete_user`
 (`backend/api/users.py::create_user_by_admin`, mesma "voz" de erro de `_resolve_setores`).
 Admin (99) é o único nível que pode ficar sem setor nenhum.
 
-**Migração de dados dos usuários existentes**: `permission_level` é uma coluna `Integer` simples
-— não precisou de migração de *schema*, só de *dados* pros usuários já cadastrados no esquema
-antigo. `scripts/migrar_niveis_permissao.py` remapeia `0→66` e `1→77` (`99` fica como está) via
-`UPDATE`, dry-run por padrão (mesmo padrão de segurança de `backend/purge_db.py`):
-
-```bash
-.venv/Scripts/python.exe scripts/migrar_niveis_permissao.py            # dry-run
-.venv/Scripts/python.exe scripts/migrar_niveis_permissao.py --confirm  # aplica de verdade
-```
+**Migração de dados dos usuários existentes**: `permission_level`/`setor` são colunas simples
+— nunca precisaram de migração de *schema*, só de *dados* pros usuários já cadastrados no
+esquema anterior a cada revisão do modelo de permissões (esse esquema já mudou duas vezes
+desde então — ver "Revisão do modelo de permissões (2ª revisão)" mais abaixo). Os scripts
+one-off usados nessas migrações (`migrar_niveis_permissao.py`, `migrar_setores_2026_07_20.py`)
+já cumpriram o papel e foram removidos do repositório (2026-07-21, limpeza geral) — o
+`scripts/resetar_usuarios_setores_2026_07_20.py` continua existindo como utilitário de dev
+(recria um conjunto de contas de teste do zero, mesmo padrão dry-run/`--confirm`).
 
 ### Cadastro de usuário só por admin (adicionado em 2026-07-15)
 
