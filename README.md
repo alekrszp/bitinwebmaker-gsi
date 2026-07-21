@@ -34,10 +34,12 @@ topbar + Home), "Meus Bitins" (listagem escopada por permissão), edição compl
 Gestão de usuários (admin), e a fila do setor Cadastro (`/cadastro`) que substitui o e-mail
 manual que existia no processo original.
 
-**Níveis de permissão** (`Usuario.permission_level`): 66 Usuário, 77 Gestor, 88 Cadastro
-(recebe todo BITin enviado, decide se precisa de roteiro), 89 Processos (revisa quando
-precisa, única exceção a "enviado é travado pra sempre"), 99 Admin. Detalhes completos em
-`docs/BACKEND.md`.
+**Modelo de permissões** (2ª revisão, 2026-07-20): `Usuario.permission_level` é só o RANK — 77
+Individual, 88 Gestor, 99 Admin — cruzado com `Usuario.setor` (`"cadastro"`/`"processos"`/
+`"engenharia"`), que controla acesso de verdade. Cadastro recebe todo BITin enviado e decide se
+precisa de roteiro; Processos revisa quando precisa (única exceção a "enviado é travado pra
+sempre"); Admin vê tudo. Subgrupo (Proteína Animal/Armazenagem de Grãos) só existe pra
+Engenharia. Detalhes completos em `docs/BACKEND.md`.
 
 ## Uso rápido (motor Python — `scripts/`)
 
@@ -127,6 +129,11 @@ npm run dev
 Releases são criadas manualmente no GitHub, usando `docs/RELEASE_vX.Y.Z.md` como corpo de
 cada release. O processo não é automatizado — a publicação é feita pelo GitHub web interface.
 
+- v0.12.0 — BITex de volta ao cabeçalho (com automação de checklist), hints e pop-ups
+  revisados um a um, PDF com logo/paleta oficial e layout reordenado, CSV protegido contra
+  injection, Subgrupo restrito à Engenharia, busca única no Painel geral, busca de campo na
+  ZBPP009, validação de domínio nos campos de alteração:
+  `docs/RELEASE_v0.12.0.md` — <https://github.com/alekrszp/bitinwebmaker-gsi/releases/tag/v0.12.0>
 - v0.11.0 — admin reseta senha de qualquer usuário ("esqueci minha senha" sem SMTP), Painel
   geral com paginação real no servidor:
   `docs/RELEASE_v0.11.0.md` — <https://github.com/alekrszp/bitinwebmaker-gsi/releases/tag/v0.11.0>
@@ -181,7 +188,7 @@ cada release. O processo não é automatizado — a publicação é feita pelo G
 - v0.1.0 — PoC inicial: `docs/RELEASE_v0.1.0.md` — <https://github.com/alekrszp/bitinwebmaker-gsi/releases/tag/v0.1.0>
 
 Veja também `docs/CHANGELOG.md` para as notas de release completas (inclui v0.7.2 → v0.8.0 →
-v0.9.0 → v0.10.0 → v0.10.1 → v0.11.0 sem pular nenhuma).
+v0.9.0 → v0.10.0 → v0.10.1 → v0.11.0 → v0.12.0 sem pular nenhuma).
 
 ## Arquivos principais
 

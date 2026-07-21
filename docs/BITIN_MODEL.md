@@ -18,6 +18,10 @@ produto             - hierarquia de produto (SAP)
 motivo              - motivo da alteração (SPN, SPE, melhoria, correção, ...)
 solicitante         - engenheiro responsável
 data_solicitacao    - data de emissão do BITin
+bitex               - "SIM"/"NÃO", opcional -- indica se o BITin está ligado ao processo
+                      "Atualizar BITex" (checklist id 11). Preenchido manualmente pelo
+                      engenheiro; aciona automaticamente o item 11 do checklist quando "SIM"
+                      (ver regra 9 em scripts/bitin_document.py::_checklist_ids_auto_sugeridos)
 ordem_cliente[]     - itens que afetam ordens de cliente (acrescentar/retirar do pedido)
 checklist[]         - 22 itens fixos de responsabilidade pós-aprovação (Quadro 01 do POP)
 materiais[]:
@@ -235,12 +239,16 @@ ativa automaticamente, nem na macro real, apesar de serem código de item de che
 como os outros. Além deles: DPO-PAN, Atualizar manual, Atualizar instrução de montagem,
 Elétrica/Embalagem/Montagem/Helicoides, Estamparia, Madeira ou Plástico, Atualizar custos —
 nenhuma regra no `Módulo4` lido determina esses automaticamente a partir dos campos que temos
-hoje; continuam dependendo de marcação manual. "Atualizar BITex" (id 11) é coberto parcialmente,
-só via o campo `bitex` do cabeçalho — mas nem esse campo aciona nada sozinho (bitex não faz
-parte das 8 regras confirmadas), fica 100% manual também.
+hoje; continuam dependendo de marcação manual.
 
-**Campo `bitex` adicionado ao cabeçalho do BITin** (visto no `Template apresentação` real,
-linha 2: `"BITex" / "NÃO"`) — não estava em `schema.json`; usado só para o checklist id 11.
+**Campo `bitex` do cabeçalho do BITin** (visto no `Template apresentação` real, linha 2:
+`"BITex" / "NÃO"`) — não estava em `schema.json`; string `"SIM"`/`"NÃO"`, preenchido
+manualmente pelo engenheiro (não há campo no schema que permita inferir esse valor
+automaticamente). **Regra 9, adicionada em 2026-07-21** (pedido explícito do usuário, fora da
+macro original — mesma categoria das regras 13/14 acima, campo já existente usado pra acionar
+o checklist sem inventar heurística nova): `bitex == "SIM"` → id 11 ("Atualizar BITex"). O
+próprio valor de `bitex` continua 100% manual; só o reflexo dele no checklist virou automático,
+igual às demais regras (override do engenheiro sempre vence, nos dois sentidos).
 
 ## Validação estrutural de `ordem_cliente[]` (adicionado em 2026-07-10)
 
@@ -337,6 +345,33 @@ ou futuro):
 | Alt inconsistente com mudanças | `alt == "-"` mas há `dados_basicos` com `para` preenchido | se declarou "sem alteração" mas hay mudança registrada, o Alt provavelmente está errado |
 | Alt de desenho sem revisão | `alt` começa com `"D"` mas não há mudança em `nivel_revisao` | alteração de desenho sem bater com nenhum campo de desenho mudando é sinal de Alt errado |
 | Nenhuma alteração de verdade | nenhum material tem `dados_basicos` com mudança efetiva, `impactos_operacionais` fora do padrão `"-"`, `atualizar_dwg_sat` marcado, nem `lista_tecnica` | BITin sem propósito nenhum (2026-07-21, pedido explícito: "o sistema deixa enviar bitin sem nenhuma alteração") — mesmo que a estrutura passe em `validate_bitin` (código/centro/tipo preenchidos), não é um envio válido se nada foi realmente alterado |
+
+### Domínio de valores por campo de `dados_basicos` (2026-07-21, pedido explícito: "coloca
+validação em cada campo de alteração"... "pega as informações de campo que tu já tem, e
+aplica essa validação em cima dos campos")
+
+Antes, os ~30 campos de `dados_basicos` (De/Para, tanto na aba BITin quanto na ZBPP009) não
+tinham NENHUMA validação de tipo/formato — só obrigatoriedade nos ~7 campos de cabeçalho/
+identificação. Cobertos nesta rodada (`scripts/bitin_business_rules.py::
+_validar_dominio_dados_basicos`, roda só no envio; espelhado no frontend como aviso em tempo
+real não-bloqueante, `frontend/src/lib/dadosBasicosValidacao.ts`):
+
+| Campo | Domínio válido | Observação |
+|---|---|---|
+| `nivel_revisao` | 1 letra maiúscula (A-Z) | achado real ao planejar esta regra: pelo nome parece número, mas o BITin real usa letra de revisão SAP (`"C"` → `"D"`) — validar como número quebraria dado real |
+| `producao_interna` | `X` ou `-` | mesmo domínio já usado por `impactos_operacionais.esp` (ANEXO A do POP) |
+| `marcacao_eliminar_nivel_mandante` | `X` ou `-` | idem |
+| `marcacao_eliminar_nivel_centro` | `X` ou `-` | idem |
+
+Campo vazio nunca é erro (ainda não foi preenchido). Os outros ~26 campos (`descricao`,
+`grupo_mercadorias`, `status`, `hierarquia`, `peso_bruto`, `peso_liquido`, `volume`, `ncm`,
+`documento`, etc.) continuam string livre, sem restrição — decisão explícita do usuário de não
+tentar inferir tipo numérico/data por esses campos sem confirmação de negócio real.
+
+**Centro na ZBPP009**: continua editável como texto livre (decisão de 2026-07-17, réplica da
+grade real do SAP), mas agora mostra um aviso visual (sem bloquear) se o valor final não for
+`2001`/`2005` — mesmo domínio já validado como obrigatório na aba BITin e no envio
+(`validate_bitin`).
 
 ## Ciclo de vida do BITin (rascunho → enviado)
 

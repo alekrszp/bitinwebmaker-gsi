@@ -137,17 +137,9 @@ function BitinsConcluidosTab() {
       title={
         <div className="flex items-center gap-2">
           Lista dos bitins concluídos
-          <AjudaPopover titulo="Sobre esta lista">
-            <p>
-              BITin cai aqui quando o Cadastro baixa o PDF final e marca como concluído
-              (Status="Concluído", último passo do fluxo, ver Windchill). É uma pasta trancada,
-              por isso ela vive só aqui, não mais em Cadastro.
-            </p>
-            <p>
-              <strong>"Voltar bitin"</strong> desfaz esse último passo -- ele volta pra
-              "Pendência de envio" na fila do Cadastro, pra baixar o PDF de novo se precisar
-              (ex.: erro no envio ao Windchill).
-            </p>
+          <AjudaPopover titulo="Hint">
+            <p>Tela de onde fica guardado os bitins com status concluído.</p>
+            <p>"Voltar bitin" serve pra caso algum bitin precise voltar pra fila de cadastro.</p>
           </AjudaPopover>
         </div>
       }

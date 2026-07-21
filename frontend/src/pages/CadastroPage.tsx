@@ -117,7 +117,7 @@ export default function CadastroPage() {
   async function baixarPdfEConcluir(bitin: Bitin) {
     const confirmado = window.confirm(
       `Baixar o PDF do BITin ${bitin.codigo ?? '—'} e marcar como concluído?\n\n` +
-        'Ele sai da fila do Cadastro. Só um admin pode reverter, em Configurações.',
+        'Ele sai da fila do Cadastro.',
     )
     if (!confirmado) return
     setErro(null)
@@ -181,7 +181,7 @@ export default function CadastroPage() {
     <div className="mx-auto max-w-6xl">
       <div className="flex flex-wrap items-center gap-3">
         <h1 className="text-2xl font-semibold text-ink">Cadastro</h1>
-        <AjudaPopover titulo="Como funciona a fila de Cadastro">
+        <AjudaPopover titulo="Hint">
           <p>
             Um BITin chega aqui sozinho, sem triagem manual: ao ser enviado pelo engenheiro, o
             sistema já decide se precisa passar por Processos (roteiro) ou não. Quem não precisa
@@ -197,7 +197,7 @@ export default function CadastroPage() {
             <strong>Etapa "Pendência de envio"</strong>: falta só baixar o PDF final e mandar pro
             Windchill. O botão <strong>"Baixar PDF"</strong> faz as duas coisas juntas (baixa e
             marca como concluído) -- por isso pede confirmação antes: depois disso o BITin sai
-            desta fila e só um admin consegue reverter, em Configurações → "Bitins Concluídos".
+            desta fila.
           </p>
           <p>
             <strong>Etapa "Todas"</strong> mostra os dois grupos juntos, cada linha com o botão

@@ -57,7 +57,7 @@ export default function EdicaoBottomBar({
           // de Cadastro/Processos), então vale um clique a mais de segurança. Um botão só na
           // barra (não em cada página) -- as 3 páginas (BITin/ZBPP009/Lista Técnica) chamam a
           // mesma `EdicaoBottomBar`.
-          if (window.confirm('Enviar este BITin? Depois de enviado, ele fica travado -- não dá mais pra editar.')) {
+          if (window.confirm('Enviar BITin? Não vai mais conseguir alterá-lo.')) {
             onEnviar()
           }
         }}

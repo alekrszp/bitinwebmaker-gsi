@@ -136,7 +136,7 @@ export default function MeusBitins() {
             não soar enganoso pra quem vê BITins de outras pessoas (gestor/admin, 2026-07-15). */}
         <div className="flex flex-wrap items-center gap-3">
           <h1 className="text-2xl font-semibold text-ink">{ehGestorOuAdmin ? 'BITins' : 'Meus Bitins'}</h1>
-          <AjudaPopover titulo="Como funciona esta tela">
+          <AjudaPopover titulo="Hint">
             <p>
               Abas <strong>Todos/Rascunhos/Enviados</strong> filtram por Status. Rascunho é livre
               pra editar; depois de Enviado, o BITin fica travado (só volta a mudar de mãos pelos
@@ -144,9 +144,8 @@ export default function MeusBitins() {
             </p>
             <p>A busca aceita motivo, número ou solicitante -- escolha o campo no seletor ao lado da lupa.</p>
             <p>
-              O "×" na última coluna só aparece pra quem pode excluir: o próprio autor de um
-              rascunho, ou quando o BITin já foi enviado (libera o número sequencial -- ação
-              irreversível).
+              O "×" na última coluna exclui o BITin -- libera o número sequencial se já tiver
+              sido enviado. Ação irreversível.
             </p>
           </AjudaPopover>
         </div>

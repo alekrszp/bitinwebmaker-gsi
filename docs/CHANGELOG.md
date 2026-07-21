@@ -2,6 +2,64 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v0.12.0] - 2026-07-21
+
+Revisão item a item de uma lista de pedidos: campo BITex de volta ao cabeçalho (com
+automação de checklist), as 9 hints ("?") e os pop-ups de confirmação revisados um a um, CSV/PDF
+polidos (PDF ganhou logo real da marca + paleta oficial + layout reordenado), Subgrupo restrito
+à Engenharia (com limpeza automática ao trocar setor), barra de busca única no Painel geral,
+busca de campo na ZBPP009, e validação de domínio (tempo real + envio) nos campos de alteração.
+
+### Added
+
+- Campo `bitex` (`"SIM"`/`"NÃO"`) de volta ao cabeçalho do BITin, com regra 9 de automação:
+  `bitex == "SIM"` aciona o item 11 do checklist ("Atualizar BITex") automaticamente.
+- Busca de campo na ZBPP009 (`CodigosSapPage.tsx`) — barra de busca filtra as ~30 colunas De/
+  Novo em tempo real, mesma busca tolerante a acento/maiúscula do combobox "+ Campo alterado"
+  da aba BITin (`lib/texto.ts`, extraída de `MaterialEditorCard.tsx`).
+- Validação de domínio em `dados_basicos` (`nivel_revisao` = 1 letra A-Z; `producao_interna`/
+  `marcacao_eliminar_nivel_mandante`/`marcacao_eliminar_nivel_centro` = `X`/`-`) — aviso em
+  tempo real no frontend, bloqueio de verdade no envio (`bitin_business_rules.py`). Centro na
+  ZBPP009 ganhou aviso visual (sem bloquear) se fora de `2001`/`2005`.
+- Barra de busca única no Painel geral — motivo/solicitante/número/e-mail do criador num campo
+  só, com dropdown de resultados ao vivo (clique abre o BITin direto).
+- `GET /bitins` ganhou `incluir_criado_por_no_termo` (opt-in) pra unificar a busca acima.
+- `POST /users/{id}/setor` limpa os subgrupos atribuídos ao trocar pra fora de Engenharia.
+
+### Changed
+
+- Subgrupo só aparece na UI (`CriarUsuarioForm.tsx`/`GestaoUsuarios.tsx`) pra usuários de
+  Engenharia — Cadastro/Processos deixam de mostrar o campo.
+- PDF do BITin (`scripts/bitin_pdf.py`) restilizado: logo real da marca no cabeçalho, paleta
+  trocada pros tokens oficiais do frontend, layout reordenado (cabeçalho → setores acionados →
+  checklist → materiais), nova seção "Setores acionados" (antes não existia no PDF).
+- CSV do Painel geral (`lib/csv.ts`) — protegido contra formula/CSV injection, CRLF (RFC 4180).
+- As 9 hints ("?") do sistema revisadas uma a uma: título padronizado pra "Hint", conteúdo
+  segmentado por papel (Home/Painel geral), textos simplificados.
+- Pop-ups de confirmação (`window.confirm`) revisados um a um: textos simplificados, sem
+  menção a detalhes internos (admin/Configurações) que o usuário comum não precisa saber.
+
+### Fixed
+
+- `AjudaPopover.tsx` herdava `uppercase` do título do `Card` quando usado dentro dele (só
+  acontecia em `Settings.tsx`) — corrigido com `normal-case` no próprio popover.
+
+## [Unreleased] - Limpeza de repositório (2026-07-21)
+
+Sem mudança de código de produto — só arrumação. Removidos do repositório: dumps de pesquisa
+VBA superados (`docs/codes_found.md`, `context.md`, `inventory.md`, `vba_catalog.md`/`.json`,
+`zbpp009_sample.md` — substituídos por
+`VBA_EXPORT_MAPPING.md`/`VBA_MIGRATION_GUIDE.md`/`BITIN_MODEL.md`), 2 scripts de migração já
+aplicados e obsoletos (`migrar_niveis_permissao.py`, `migrar_setores_2026_07_20.py` — o esquema
+de permissão já mudou de novo desde então), backups de SQLite antigos e caches locais.
+`examples/`/`bitinsparaexemplo/` (arquivos `.xlsm`/`.pdf` reais usados como referência durante
+o desenvolvimento) foram mantidos — ainda são usados de verdade por
+`tests/test_vba_port_export.py::RealWorkbookTest` e
+`tests/test_winshuttle_export.py::test_matches_reference_export`.
+
+Incorporado na v0.12.0 acima (era um commit já feito mas ainda não tinha entrado numa release
+tagueada).
+
 ## [v0.11.0] - 2026-07-21
 
 Admin reseta a senha de qualquer usuário direto em Gestão de usuários ("esqueci minha senha"

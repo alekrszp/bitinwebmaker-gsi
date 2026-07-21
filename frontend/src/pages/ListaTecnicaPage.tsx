@@ -478,24 +478,19 @@ export default function ListaTecnicaPage() {
         <h1 className="text-2xl font-semibold text-ink">{bitin?.codigo || 'Rascunho sem código'}</h1>
         {bitin && <StatusBadge status={bitin.status} windchillEnviado={bitin.windchill_enviado} />}
         <span className="text-sm text-ink-muted">— Lista Técnica</span>
-        <AjudaPopover titulo="Como usar a Lista Técnica">
+        <AjudaPopover titulo="Hint">
           <p>
             Cada linha é um componente filho -- <strong>Código pai</strong> é texto livre, não
-            precisa existir ainda em BITin/ZBPP009 (se não existir, um material novo é criado
-            automaticamente ao salvar, com <strong>Centro</strong> e <strong>Descrição</strong>{' '}
-            já preenchidos com o que você digitar aqui, pra não ficar um bloco incompleto). Se o
-            código pai já existe, esses dois campos só completam o que estiver em branco --
-            nunca sobrescrevem o que já foi preenchido antes.
+            precisa existir ainda em BITin/ZBPP009.
           </p>
           <p>
-            Sem campo de <strong>Operação</strong> pra escolher -- é deduzido sozinho pelo que
-            você preenche: só "Quantidade para" = item novo (Inserir); só "Quantidade de" =
-            item removido (Excluir); os dois preenchidos = alteração normal (Alterar).
+            Regra de preenchimento: preencha os dois campos de <strong>Quantidade</strong> (De/
+            Para) numa alteração normal; pra excluir, deixe "Para" vazio; pra inserir, deixe
+            "De" vazio.
           </p>
           <p>
             <strong>Salvar</strong> guarda sem sair da tela. <strong>Importar</strong> salva e já
-            leva pra aba BITin -- lá a checklist "Alteração lista técnica" é marcada
-            automaticamente.
+            leva pra aba BITin.
           </p>
         </AjudaPopover>
         <div className="ml-auto flex gap-2">

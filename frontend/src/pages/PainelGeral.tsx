@@ -1,12 +1,13 @@
-import { useEffect, useState } from 'react'
-import { Link } from 'react-router-dom'
+import { useEffect, useRef, useState } from 'react'
+import { Link, useNavigate } from 'react-router-dom'
 import AjudaPopover from '../components/bitin/AjudaPopover'
 import StatusBadge from '../components/bitin/StatusBadge'
 import { useAuth } from '../hooks/useAuth'
 import { useDebouncedValue } from '../hooks/useDebouncedValue'
 import { api } from '../lib/api'
+import { baixarCsv as baixarCsvArquivo } from '../lib/csv'
 import { ETAPAS, RESPONSAVEL_POR_ETAPA, etapaDoBitin, statusDoBitin, type Etapa, type StatusBitin } from '../lib/bitinEtapa'
-import { isAdmin, isGestor } from '../lib/permissions'
+import { SETOR_CADASTRO, SETOR_PROCESSOS, ehDoSetor, isAdmin, isGestor } from '../lib/permissions'
 import type { Bitin } from '../lib/types'
 
 // Painel geral (2026-07-20, pedido explícito: "abaixo de gestão de usuários coloca 'painel
@@ -85,26 +86,49 @@ function paraFiltros(status: StatusBitin | '', etapa: Etapa | '', setor: string)
 
 export default function PainelGeral() {
   const { user } = useAuth()
+  const navigate = useNavigate()
   const admin = isAdmin(user?.permission_level)
+  // Gestor só vê a fila do próprio setor (o backend já escopa, ver comentário acima) -- a hint
+  // segmenta o texto de Etapa pra mostrar só o que faz sentido pra quem está vendo, mesma
+  // regra usada em Home.tsx.
+  const souCadastro = ehDoSetor(user?.permission_level, user?.setor, SETOR_CADASTRO)
+  const souProcessos = ehDoSetor(user?.permission_level, user?.setor, SETOR_PROCESSOS)
+  const souEngenhariaGestor = isGestor(user?.permission_level) && !admin && !souCadastro && !souProcessos
   const [bitins, setBitins] = useState<Bitin[] | null>(null)
   const [temProximaPagina, setTemProximaPagina] = useState(false)
   const [pagina, setPagina] = useState(1)
   const [erro, setErro] = useState<string | null>(null)
+  // Barra única (2026-07-21, pedido explícito: "apenas 1 barra de pesquisa para tudo...
+  // solicitante, numero e motivo") -- substitui os campos separados de busca por
+  // motivo/solicitante/número e de Usuário (e-mail), unificados numa coisa só. Backend
+  // combina os 4 num $or via incluir_criado_por_no_termo (ver backend/api/bitins.py).
   const [busca, setBusca] = useState('')
   const termo = useDebouncedValue(busca.trim())
-  const [usuarioFiltro, setUsuarioFiltro] = useState('')
-  const usuarioTermo = useDebouncedValue(usuarioFiltro.trim())
   const [setorFiltro, setSetorFiltro] = useState('')
   const [statusFiltro, setStatusFiltro] = useState<StatusBitin | ''>('')
   const [etapaFiltro, setEtapaFiltro] = useState<Etapa | ''>('')
+  // Dropdown de resultados da busca (2026-07-21, pedido explícito: "vai cair um dropdown
+  // separadinho com tudo que tem de acordo com a minha pesquisa... quando eu clicko abre o
+  // bitin") -- clicar fora fecha, mesmo padrão de AjudaPopover.tsx.
+  const [dropdownAberto, setDropdownAberto] = useState(false)
+  const buscaContainerRef = useRef<HTMLDivElement>(null)
 
   const podeAcessar = isAdmin(user?.permission_level) || isGestor(user?.permission_level)
+
+  useEffect(() => {
+    if (!dropdownAberto) return
+    function aoClicarFora(e: MouseEvent) {
+      if (buscaContainerRef.current && !buscaContainerRef.current.contains(e.target as Node)) setDropdownAberto(false)
+    }
+    document.addEventListener('mousedown', aoClicarFora)
+    return () => document.removeEventListener('mousedown', aoClicarFora)
+  }, [dropdownAberto])
 
   // Volta pra página 1 sempre que um filtro muda -- senão a página 5 de um filtro anterior
   // podia ficar selecionada num filtro novo que só tem 1 página de resultado.
   useEffect(() => {
     setPagina(1)
-  }, [termo, usuarioTermo, setorFiltro, statusFiltro, etapaFiltro])
+  }, [termo, setorFiltro, statusFiltro, etapaFiltro])
 
   useEffect(() => {
     if (!podeAcessar) return
@@ -117,8 +141,10 @@ export default function PainelGeral() {
       limit: TAMANHO_PAGINA,
       skip: (pagina - 1) * TAMANHO_PAGINA,
     }
-    if (termo) params.termo = termo
-    if (usuarioTermo) params.criado_por = usuarioTermo
+    if (termo) {
+      params.termo = termo
+      params.incluir_criado_por_no_termo = true
+    }
 
     api
       .get('/bitins', { params })
@@ -126,6 +152,7 @@ export default function PainelGeral() {
         if (cancelado) return
         setBitins(resp.data)
         setTemProximaPagina(resp.data.length === TAMANHO_PAGINA)
+        setDropdownAberto(termo.length > 0 && resp.data.length > 0)
       })
       .catch(() => {
         if (!cancelado) setErro('Não foi possível carregar os BITins.')
@@ -133,7 +160,7 @@ export default function PainelGeral() {
     return () => {
       cancelado = true
     }
-  }, [podeAcessar, pagina, termo, usuarioTermo, setorFiltro, statusFiltro, etapaFiltro])
+  }, [podeAcessar, pagina, termo, setorFiltro, statusFiltro, etapaFiltro])
 
   if (!podeAcessar) {
     return (
@@ -155,40 +182,61 @@ export default function PainelGeral() {
       etapa ? RESPONSAVEL_POR_ETAPA[etapa] : '',
       b.updated_at,
     ])
-    const csv = [cabecalho, ...corpo]
-      .map((linha) => linha.map((campo) => `"${String(campo).replace(/"/g, '""')}"`).join(';'))
-      .join('\n')
-    const blob = new Blob([`﻿${csv}`], { type: 'text/csv;charset=utf-8;' })
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = url
-    a.download = `painel-geral-pagina-${pagina}-${new Date().toISOString().slice(0, 10)}.csv`
-    document.body.appendChild(a)
-    a.click()
-    a.remove()
-    URL.revokeObjectURL(url)
+    baixarCsvArquivo(`painel-geral-pagina-${pagina}-${new Date().toISOString().slice(0, 10)}.csv`, [cabecalho, ...corpo])
   }
 
   return (
     <div className="mx-auto max-w-6xl">
       <div className="flex flex-wrap items-center gap-3">
         <h1 className="text-2xl font-semibold text-ink">Painel geral</h1>
-        <AjudaPopover titulo="Como funciona o Painel geral">
+        <AjudaPopover titulo="Hint">
           <p>
             É uma visão de leitura -- sem ações, sem mover BITin de lugar. Serve pra achar
-            rápido onde qualquer BITin está e com quem, sem precisar entrar em Cadastro,
-            Processos e Meus Bitins separadamente.
+            rápido onde qualquer BITin está e com quem
+            {admin
+              ? ', sem precisar entrar em Cadastro, Processos e Meus Bitins separadamente.'
+              : ' na fila do seu setor.'}
           </p>
+          {admin && (
+            <p>
+              <strong>Status</strong> (Rascunho/Enviado/Concluído) é o estado geral do BITin.
+              <strong> Etapa</strong> só existe pra Status=Enviado -- é onde ele está parado
+              DENTRO de um setor (Com Processos/Aguardando cadastro/Pendência de envio). Os
+              dois filtros são independentes: combine os dois pra achar, por exemplo, todo
+              BITin "Enviado" parado em "Com Processos".
+            </p>
+          )}
+          {souCadastro && (
+            <p>
+              <strong>Status</strong> (Rascunho/Enviado/Concluído) é o estado geral do BITin.
+              <strong> Etapa</strong> só existe pra Status=Enviado -- pra Cadastro, mostra se o
+              BITin está "Aguardando cadastro" (liberar no SAP) ou em "Pendência de envio"
+              (baixar PDF/mandar pro Windchill).
+            </p>
+          )}
+          {souProcessos && (
+            <p>
+              <strong>Status</strong> (Rascunho/Enviado/Concluído) é o estado geral do BITin.
+              <strong> Etapa</strong> só existe pra Status=Enviado -- pra Processos, mostra os
+              BITins "Com Processos" (aguardando revisão de roteiro).
+            </p>
+          )}
+          {souEngenhariaGestor && (
+            <p>
+              <strong>Status</strong> (Rascunho/Enviado/Concluído) é o estado geral do BITin do
+              seu setor -- Etapa não se aplica aqui, já que esta visão só traz os rascunhos e
+              enviados dos seus colegas de Engenharia.
+            </p>
+          )}
           <p>
-            <strong>Status</strong> (Rascunho/Enviado/Concluído) é o estado geral do BITin.
-            <strong> Etapa</strong> só existe pra Status=Enviado -- é onde ele está parado DENTRO
-            de um setor (Com Processos/Aguardando cadastro/Pendência de envio). Os dois
-            filtros são independentes: combine os dois pra achar, por exemplo, todo BITin
-            "Enviado" parado em "Com Processos".
-          </p>
-          <p>
-            Filtros de <strong>Setor</strong> e <strong>Usuário</strong> restringem por quem
-            criou o BITin -- Usuário aceita um pedaço do e-mail, não precisa ser exato.
+            A barra de busca aceita motivo, solicitante, número ou um pedaço do e-mail de quem
+            criou -- os resultados caem num dropdown, clique num deles pra abrir o BITin direto.
+            {admin && (
+              <>
+                {' '}
+                Filtro de <strong>Setor</strong> restringe por Engenharia/Cadastro/Processos.
+              </>
+            )}{' '}
             "Exportar CSV" baixa a página atual (50 por vez).
           </p>
         </AjudaPopover>
@@ -210,13 +258,6 @@ export default function PainelGeral() {
           <option value="Cadastro">Cadastro</option>
           <option value="Processos">Processos</option>
         </select>
-        <input
-          type="text"
-          value={usuarioFiltro}
-          onChange={(e) => setUsuarioFiltro(e.target.value)}
-          placeholder="Usuário (parte do e-mail)..."
-          className="w-48 rounded-lg border border-line bg-surface px-3 py-1.5 text-sm text-ink placeholder:text-ink-faint"
-        />
         <select
           value={statusFiltro}
           onChange={(e) => setStatusFiltro(e.target.value as StatusBitin | '')}
@@ -239,13 +280,38 @@ export default function PainelGeral() {
             </option>
           ))}
         </select>
-        <input
-          type="text"
-          value={busca}
-          onChange={(e) => setBusca(e.target.value)}
-          placeholder="Buscar por motivo, solicitante ou número..."
-          className="w-64 rounded-lg border border-line bg-surface px-3 py-1.5 text-sm text-ink placeholder:text-ink-faint"
-        />
+        <div ref={buscaContainerRef} className="relative w-72">
+          <input
+            type="text"
+            value={busca}
+            onChange={(e) => setBusca(e.target.value)}
+            onFocus={() => setDropdownAberto(termo.length > 0 && linhas.length > 0)}
+            placeholder="Buscar por motivo, solicitante, número ou usuário..."
+            className="w-full rounded-lg border border-line bg-surface px-3 py-1.5 text-sm text-ink placeholder:text-ink-faint"
+          />
+          {dropdownAberto && (
+            <div className="absolute left-0 top-9 z-30 max-h-80 w-full overflow-y-auto rounded-lg border border-line bg-surface shadow-lg">
+              {linhas.map(({ bitin: b, status, etapa }) => (
+                <button
+                  key={b.mongo_id}
+                  type="button"
+                  onClick={() => {
+                    setDropdownAberto(false)
+                    navigate(`/bitins/${b.mongo_id}`)
+                  }}
+                  className="block w-full border-b border-line px-3 py-2 text-left text-sm last:border-b-0 hover:bg-surface-alt"
+                >
+                  <span className="font-medium text-ink">{b.codigo ?? '—'}</span>{' '}
+                  <span className="text-ink-muted">{String(b.content?.motivo ?? '—')}</span>
+                  <span className="block text-xs text-ink-faint">
+                    {String(b.content?.solicitante ?? '—')} -- {status}
+                    {etapa ? ` -- ${etapa}` : ''}
+                  </span>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
         <button
           type="button"
           onClick={baixarCsv}

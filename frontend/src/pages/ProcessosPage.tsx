@@ -135,23 +135,19 @@ export default function ProcessosPage() {
     <div className="mx-auto max-w-6xl">
       <div className="flex flex-wrap items-center gap-3">
         <h1 className="text-2xl font-semibold text-ink">Processos</h1>
-        <AjudaPopover titulo="Como funciona a fila de Processos">
+        <AjudaPopover titulo="Hint">
           <p>
             Só chega aqui um BITin que precisa mesmo de revisão de roteiro (algum material com
-            alteração D/P, D/- ou -/P). BITins que não precisam disso (ex.: só troca de
-            fornecedor, -/F) vão direto pra "Aguardando cadastro" no Cadastro, sem passar por
-            Processos -- por isso não aparecem nem em "Pendente" nem em "Revisado" aqui.
+            alteração D/P, D/- ou -/P).
           </p>
           <p>
             <strong>Etapa "Pendente"</strong>: aguardando você revisar o roteiro. Abra o BITin e
             use os botões "Atualizar processos"/"Concluir" na própria tela dele.
           </p>
           <p>
-            <strong>Etapa "Revisado"</strong>: você já concluiu e devolveu pro Cadastro seguir o
-            fluxo (cadastrar no SAP, depois baixar PDF e mandar pro Windchill) -- fica aqui só
-            como histórico, sem ação pendente sua.
+            <strong>Etapa "Revisado"</strong>: você já concluiu e devolveu -- fica aqui só como
+            histórico, sem ação pendente sua.
           </p>
-          <p>O Status de todo BITin aqui é sempre "Enviado" -- só o Cadastro fecha o BITin de vez.</p>
         </AjudaPopover>
       </div>
 

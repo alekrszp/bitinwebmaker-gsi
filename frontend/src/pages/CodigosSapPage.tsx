@@ -9,6 +9,8 @@ import StatusBadge from '../components/bitin/StatusBadge'
 import { useAvisoSairSemSalvar } from '../hooks/useAvisoSairSemSalvar'
 import { api } from '../lib/api'
 import { materialVazio, normalizarMaterial } from '../lib/bitinDefaults'
+import { erroDominioCampo } from '../lib/dadosBasicosValidacao'
+import { normalizar } from '../lib/texto'
 import { useEnviarBitin } from '../lib/useEnviarBitin'
 import type { Bitin, CampoSchema, MateriaisSchema, MaterialEditavel } from '../lib/types'
 
@@ -137,10 +139,15 @@ const CelulaTexto = memo(function CelulaTexto({
   valor,
   onCommit,
   onPaste,
+  erro,
 }: {
   valor: string
   onCommit: (novoValor: string) => void
   onPaste?: (e: ClipboardEvent<HTMLInputElement>) => void
+  // Aviso em tempo real (2026-07-21, pedido explícito) -- nunca bloqueia a digitação, só
+  // sinaliza (borda vermelha + mensagem abaixo). Calculado pelo chamador (LinhaSapRow), não
+  // aqui, porque o domínio válido depende de QUAL campo é essa célula (centro vs dados_basicos).
+  erro?: string | null
 }) {
   const [local, setLocal] = useState(valor)
 
@@ -151,23 +158,26 @@ const CelulaTexto = memo(function CelulaTexto({
   }, [valor])
 
   return (
-    <input
-      type="text"
-      value={local}
-      onChange={(e) => setLocal(e.target.value)}
-      onBlur={() => {
-        if (local !== valor) onCommit(local)
-      }}
-      onPaste={onPaste}
-      // w-full + min-w (2026-07-17, pedido explícito: "ta muito espaçado as células, se o nome
-      // do campo for longo aumenta a célula junto") -- antes era largura fixa (w-28/112px)
-      // pra TODA célula, então uma coluna com rótulo curto ("OC") ficava larga igual a uma com
-      // rótulo longo ("Marcação eliminar nível mandante") só porque o cabeçalho (sem quebra de
-      // linha) forçava a coluna a crescer, sobrando espaço vazio ao redor do input. Sem
-      // largura fixa, o input preenche a coluna inteira (que já cresce/encolhe sozinha
-      // acompanhando o texto do cabeçalho) -- min-w só evita ficar pequeno demais pra digitar.
-      className="w-full min-w-[5rem] rounded border border-line bg-surface px-2 py-1.5 text-sm text-ink focus:border-brand-navy focus:outline-none"
-    />
+    <div>
+      <input
+        type="text"
+        value={local}
+        onChange={(e) => setLocal(e.target.value)}
+        onBlur={() => {
+          if (local !== valor) onCommit(local)
+        }}
+        onPaste={onPaste}
+        // w-full + min-w (2026-07-17, pedido explícito: "ta muito espaçado as células, se o nome
+        // do campo for longo aumenta a célula junto") -- antes era largura fixa (w-28/112px)
+        // pra TODA célula, então uma coluna com rótulo curto ("OC") ficava larga igual a uma com
+        // rótulo longo ("Marcação eliminar nível mandante") só porque o cabeçalho (sem quebra de
+        // linha) forçava a coluna a crescer, sobrando espaço vazio ao redor do input. Sem
+        // largura fixa, o input preenche a coluna inteira (que já cresce/encolhe sozinha
+        // acompanhando o texto do cabeçalho) -- min-w só evita ficar pequeno demais pra digitar.
+        className={`w-full min-w-[5rem] rounded border bg-surface px-2 py-1.5 text-sm text-ink focus:outline-none ${erro ? 'border-red-600 focus:border-red-600' : 'border-line focus:border-brand-navy'}`}
+      />
+      {erro && <p className="mt-0.5 text-xs text-red-600">{erro}</p>}
+    </div>
   )
 })
 
@@ -217,34 +227,49 @@ const LinhaSapRow = memo(function LinhaSapRow({
       {/* Centro voltou a ser texto livre aqui (2026-07-17, pedido explícito: "tem uma dropbar
           no centro? tira isso") -- a restrição a 2001/2005 continua valendo na aba BITin
           (MaterialEditorCard.tsx), mas a ZBPP009 é a réplica da grade real do SAP, então o
-          campo aqui aceita qualquer coisa que o engenheiro cole/digite, igual antes. */}
-      {camposIdentificacao.map((campo) => (
-        <td key={campo.key} className="p-1.5">
-          <CelulaTexto
-            valor={String(linha[campo.key as keyof MaterialEditavel] ?? '')}
-            onCommit={(valor) => onIdentificacaoCommit(linha._id, campo.key as keyof MaterialEditavel, valor)}
-            onPaste={handlePaste}
-          />
-        </td>
-      ))}
-      {/* De/Para lado a lado (2026-07-17) -- ver comentário no topo do arquivo. */}
-      {camposDadosBasicos.map((campo) => (
-        <Fragment key={campo.key}>
-          <td className="p-1.5">
+          campo aqui aceita qualquer coisa que o engenheiro cole/digite, igual antes. Aviso em
+          tempo real sem bloquear (2026-07-21, pedido explícito) -- continua editável livre,
+          só sinaliza se o valor final não for 2001/2005. */}
+      {camposIdentificacao.map((campo) => {
+        const valor = String(linha[campo.key as keyof MaterialEditavel] ?? '')
+        const erro = campo.key === 'centro' && valor !== '' && valor !== '2001' && valor !== '2005'
+          ? 'Centro esperado: 2001 ou 2005'
+          : null
+        return (
+          <td key={campo.key} className="p-1.5">
             <CelulaTexto
-              valor={linha.alteracoes.dados_basicos[campo.key]?.de ?? ''}
-              onCommit={(valor) => onDadoBasicoDeCommit(linha._id, campo.key, valor)}
+              valor={valor}
+              onCommit={(valor) => onIdentificacaoCommit(linha._id, campo.key as keyof MaterialEditavel, valor)}
               onPaste={handlePaste}
+              erro={erro}
             />
           </td>
-          <td className="p-1.5">
-            <CelulaTexto
-              valor={linha.alteracoes.dados_basicos[campo.key]?.para ?? ''}
-              onCommit={(valor) => onDadoBasicoParaCommit(linha._id, campo.key, valor)}
-            />
-          </td>
-        </Fragment>
-      ))}
+        )
+      })}
+      {/* De/Para lado a lado (2026-07-17) -- ver comentário no topo do arquivo. */}
+      {camposDadosBasicos.map((campo) => {
+        const valorDe = linha.alteracoes.dados_basicos[campo.key]?.de ?? ''
+        const valorPara = linha.alteracoes.dados_basicos[campo.key]?.para ?? ''
+        return (
+          <Fragment key={campo.key}>
+            <td className="p-1.5">
+              <CelulaTexto
+                valor={valorDe}
+                onCommit={(valor) => onDadoBasicoDeCommit(linha._id, campo.key, valor)}
+                onPaste={handlePaste}
+                erro={erroDominioCampo(campo.key, valorDe)}
+              />
+            </td>
+            <td className="p-1.5">
+              <CelulaTexto
+                valor={valorPara}
+                onCommit={(valor) => onDadoBasicoParaCommit(linha._id, campo.key, valor)}
+                erro={erroDominioCampo(campo.key, valorPara)}
+              />
+            </td>
+          </Fragment>
+        )
+      })}
       <td className="p-1.5 text-center">
         <button
           type="button"
@@ -276,6 +301,12 @@ export default function CodigosSapPage() {
   const [carregando, setCarregando] = useState(true)
   const [salvando, setSalvando] = useState(false)
   const [erro, setErro] = useState<string | null>(null)
+  // Filtro de campos (2026-07-21, pedido explícito: "opção de pesquisa de campo na zbpp009,
+  // como é na tela de bitin") -- a grade tem ~30 campos de dados_basicos x 2 colunas cada,
+  // sem paginação; digitar aqui esconde as colunas De/Novo que não combinam (identificação
+  // continua sempre visível). Mesma função `normalizar` (tolerante a acento/maiúscula) usada
+  // pelo combobox "+ Campo alterado" de MaterialEditorCard.tsx.
+  const [buscaCampo, setBuscaCampo] = useState('')
   // Seleção por _id estável, não índice (2026-07-17) -- índice desloca a cada remoção/colagem,
   // podia selecionar a linha errada depois de uma edição.
   const [selecionadas, setSelecionadas] = useState<Set<string>>(new Set())
@@ -516,6 +547,18 @@ export default function CodigosSapPage() {
     [schema],
   )
 
+  // Campo de busca vazio = mostra tudo (comportamento de sempre); digitando, filtra por label
+  // normalizada -- identificação (Código/Centro/Tipo) nunca é afetada, só os pares De/Novo de
+  // dados_basicos.
+  const buscaNormalizada = normalizar(buscaCampo.trim())
+  const camposDadosBasicosFiltrados = useMemo(
+    () =>
+      buscaNormalizada
+        ? (schema?.dados_basicos.filter((campo) => normalizar(campo.label).includes(buscaNormalizada)) ?? [])
+        : (schema?.dados_basicos ?? []),
+    [schema, buscaNormalizada],
+  )
+
   if (carregando || !schema) {
     return <p className="text-sm text-ink-muted">Carregando...</p>
   }
@@ -551,14 +594,8 @@ export default function CodigosSapPage() {
         <h1 className="text-2xl font-semibold text-ink">{bitin?.codigo || 'Rascunho sem código'}</h1>
         {bitin && <StatusBadge status={bitin.status} windchillEnviado={bitin.windchill_enviado} />}
         <span className="text-sm text-ink-muted">— ZBPP009</span>
-        <AjudaPopover titulo="Como usar a ZBPP009">
-          <p>
-            Cole em <strong>qualquer célula</strong> da linha um trecho copiado do SAP -- se tiver
-            TAB ou várias linhas, o sistema reconhece e distribui cada valor na coluna certa
-            automaticamente (não precisa colar na primeira célula). Colar um valor isolado se
-            comporta como colar normal, só naquele campo. Sempre sobra uma linha em branco no
-            final pra continuar colando; "+ Nova linha" adiciona espaço extra.
-          </p>
+        <AjudaPopover titulo="Hint">
+          <p>Cole em qualquer célula da linha um trecho copiado do SAP.</p>
           <p>
             Cada campo tem 2 colunas lado a lado -- ex. <strong>Descrição</strong> (como está
             hoje no SAP) e <strong>Descrição nova</strong> (o que muda). Os dois continuam
@@ -568,6 +605,7 @@ export default function CodigosSapPage() {
             <strong>Salvar</strong> grava sem sair da tela. <strong>Importar pra BITin</strong>{' '}
             salva e leva direto pra aba BITin, com os materiais já prontos.
           </p>
+          <p>O campo de busca acima da tabela filtra as colunas pelo nome, pra achar mais rápido entre os ~30 campos.</p>
         </AjudaPopover>
         <div className="ml-auto flex gap-2">
           <button
@@ -594,6 +632,13 @@ export default function CodigosSapPage() {
 
       <Card title="Materiais">
         <div className="mt-4 flex flex-wrap items-center gap-2 rounded-lg bg-surface-alt px-3 py-2">
+          <input
+            type="text"
+            value={buscaCampo}
+            onChange={(e) => setBuscaCampo(e.target.value)}
+            placeholder="Buscar campo (ex.: nível revisão)..."
+            className="w-64 rounded-lg border border-line bg-surface px-3 py-1.5 text-sm text-ink placeholder:text-ink-faint"
+          />
           <span className="text-xs font-medium text-ink-muted">
             {selecionadas.size > 0 ? `${selecionadas.size} selecionada(s)` : 'Nenhuma linha selecionada'}
           </span>
@@ -646,7 +691,7 @@ export default function CodigosSapPage() {
                     {campo.label}
                   </th>
                 ))}
-                {schema.dados_basicos.map((campo) => (
+                {camposDadosBasicosFiltrados.map((campo) => (
                   <Fragment key={campo.key}>
                     <th className="whitespace-nowrap px-3 py-2 font-medium">{campo.label}</th>
                     <th className="whitespace-nowrap px-3 py-2 font-medium">
@@ -664,7 +709,7 @@ export default function CodigosSapPage() {
                   linha={linha}
                   selecionada={selecionadas.has(linha._id)}
                   camposIdentificacao={camposIdentificacao}
-                  camposDadosBasicos={schema.dados_basicos}
+                  camposDadosBasicos={camposDadosBasicosFiltrados}
                   onIdentificacaoCommit={atualizarIdentificacao}
                   onDadoBasicoDeCommit={atualizarDadoBasicoDe}
                   onDadoBasicoParaCommit={atualizarDadoBasicoPara}

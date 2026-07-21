@@ -1,17 +1,9 @@
 import { memo, useId, useMemo, useState } from 'react'
 import Card from '../Card'
 import ListaTecnicaInline from './ListaTecnicaInline'
+import { erroDominioCampo } from '../../lib/dadosBasicosValidacao'
+import { normalizar } from '../../lib/texto'
 import type { ItemListaTecnica, MateriaisSchema, MaterialEditavel } from '../../lib/types'
-
-// Ignora acento/maiúscula pra busca tolerante (2026-07-16) -- movida pro escopo do módulo
-// (2026-07-17) pra ser reaproveitada tanto por adicionarCampo (confirma o campo escolhido)
-// quanto pelas sugestões ao vivo da busca (ver `sugestoesCampo` abaixo) -- antes só existia
-// dentro de adicionarCampo, então as sugestões usavam o <datalist> nativo do navegador, que
-// NÃO ignora acento (buscar "ni" não achava "Nível de Revisão" porque o "í" acentuado não bate
-// como substring de "ni" sem acento).
-function normalizar(s: string): string {
-  return s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase()
-}
 
 const COLUNAS_IMPACTO = [
   { chave: 'alt', label: 'Alt' },
@@ -314,37 +306,43 @@ const MaterialEditorCard = memo(function MaterialEditorCard({
               </tr>
             </thead>
             <tbody className="divide-y divide-line">
-              {entradasSap.map(([campo, { de, para }]) => (
-                <tr key={campo}>
-                  <td className="px-3 py-2 text-ink">{labelDoCampo(campo)}</td>
-                  <td className="px-3 py-2">
-                    <input
-                      type="text"
-                      value={de}
-                      onChange={(e) => setDadoBasico(campo, e.target.value, para)}
-                      className="w-full rounded border border-line bg-surface px-2 py-1 text-sm text-ink focus:border-brand-navy focus:outline-none"
-                    />
-                  </td>
-                  <td className="px-3 py-2">
-                    <input
-                      type="text"
-                      value={para}
-                      onChange={(e) => setDadoBasico(campo, de, e.target.value)}
-                      className="w-full rounded border border-line bg-surface px-2 py-1 text-sm text-ink focus:border-brand-navy focus:outline-none"
-                    />
-                  </td>
-                  <td className="px-3 py-2 text-center">
-                    <button
-                      type="button"
-                      onClick={() => removerDadoBasico(campo)}
-                      className="text-ink-faint hover:text-red-600"
-                      aria-label={`Remover ${labelDoCampo(campo)}`}
-                    >
-                      ×
-                    </button>
-                  </td>
-                </tr>
-              ))}
+              {entradasSap.map(([campo, { de, para }]) => {
+                const erroDe = erroDominioCampo(campo, de)
+                const erroPara = erroDominioCampo(campo, para)
+                return (
+                  <tr key={campo}>
+                    <td className="px-3 py-2 text-ink">{labelDoCampo(campo)}</td>
+                    <td className="px-3 py-2">
+                      <input
+                        type="text"
+                        value={de}
+                        onChange={(e) => setDadoBasico(campo, e.target.value, para)}
+                        className={`w-full rounded border bg-surface px-2 py-1 text-sm text-ink focus:outline-none ${erroDe ? 'border-red-600 focus:border-red-600' : 'border-line focus:border-brand-navy'}`}
+                      />
+                      {erroDe && <p className="mt-0.5 text-xs text-red-600">{erroDe}</p>}
+                    </td>
+                    <td className="px-3 py-2">
+                      <input
+                        type="text"
+                        value={para}
+                        onChange={(e) => setDadoBasico(campo, de, e.target.value)}
+                        className={`w-full rounded border bg-surface px-2 py-1 text-sm text-ink focus:outline-none ${erroPara ? 'border-red-600 focus:border-red-600' : 'border-line focus:border-brand-navy'}`}
+                      />
+                      {erroPara && <p className="mt-0.5 text-xs text-red-600">{erroPara}</p>}
+                    </td>
+                    <td className="px-3 py-2 text-center">
+                      <button
+                        type="button"
+                        onClick={() => removerDadoBasico(campo)}
+                        className="text-ink-faint hover:text-red-600"
+                        aria-label={`Remover ${labelDoCampo(campo)}`}
+                      >
+                        ×
+                      </button>
+                    </td>
+                  </tr>
+                )
+              })}
             </tbody>
           </table>
         </div>

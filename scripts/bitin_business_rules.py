@@ -23,10 +23,40 @@ impossível sempre que a condição de gatilho ocorresse. Ficam só como lembret
 ajuda ("?") da tela do BITin -- responsabilidade do engenheiro confirmar antes de enviar.
 """
 
+import re
 from typing import Any
 
 import bitin_document
 from bitin_errors import BitinError, make_error
+
+# Domínio de valores válidos por campo de dados_basicos (2026-07-21, pedido explícito: "pega
+# as informações de campo que tu já tem, e aplica essa validação em cima dos campos") -- só
+# roda no envio, igual ao resto deste módulo (nunca bloqueia a edição). Campo vazio nunca é
+# erro (ainda não foi preenchido). Espelha frontend/src/lib/dadosBasicosValidacao.ts -- QUALQUER
+# mudança de domínio precisa ser replicada nos dois lados.
+_NIVEL_REVISAO_RE = re.compile(r"^[A-Z]$")
+_CAMPOS_BOOLEAN_X_TRACO = {"producao_interna", "marcacao_eliminar_nivel_mandante", "marcacao_eliminar_nivel_centro"}
+
+
+def _validar_dominio_dados_basicos(dados_basicos: dict[str, Any], material_field: str, prefix: str) -> list[BitinError]:
+    errors: list[BitinError] = []
+    for campo, entry in dados_basicos.items():
+        for lado in ("de", "para"):
+            valor = entry.get(lado, "")
+            if valor == "":
+                continue
+            campo_field = f"{material_field}.alteracoes.dados_basicos.{campo}.{lado}"
+            if campo == "nivel_revisao" and not _NIVEL_REVISAO_RE.match(valor):
+                errors.append(make_error(
+                    campo_field, "invalid_nivel_revisao_value",
+                    f"{prefix}: nivel_revisao ({lado})={valor!r} inválido — precisa ser 1 letra maiúscula (A-Z)",
+                ))
+            elif campo in _CAMPOS_BOOLEAN_X_TRACO and valor not in ("X", "-"):
+                errors.append(make_error(
+                    campo_field, f"invalid_{campo}_value",
+                    f"{prefix}: {campo} ({lado})={valor!r} inválido — valores aceitos: X, -",
+                ))
+    return errors
 
 
 def _validar_enums(
@@ -80,6 +110,9 @@ def validate_business_rules(
 
         # Enum: alt/est/esp/lp/pre/oc/of precisam ser um dos valores do ANEXO A do POP.
         errors.extend(_validar_enums(impactos, valores_validos, material_field))
+
+        # Domínio: nivel_revisao (letra A-Z) e os 3 campos booleanos X/- de dados_basicos.
+        errors.extend(_validar_dominio_dados_basicos(dados_basicos, material_field, prefix))
 
         # Geral: (código de material, centro) duplicado no mesmo BITin. Um mesmo código
         # pode legitimamente precisar de alteração em vários centros (ex.: 2001/2003/2005);

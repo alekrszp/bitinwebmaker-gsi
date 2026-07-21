@@ -154,32 +154,39 @@ export default function CriarUsuarioForm({ subgrupos, onCriado }: { subgrupos: S
           <FormLabel htmlFor="novo-nome">Nome</FormLabel>
           <TextInput id="novo-nome" type="text" required value={nome} onChange={(e) => setNome(e.target.value)} />
         </div>
-        <div>
-          {/* Checkbox group em vez de <select> de escolha única (2026-07-15) -- um usuário
-              pode pertencer a mais de um subgrupo ao mesmo tempo. Não hardcoda os 2 subgrupos
-              conhecidos hoje: itera `subgrupos`, continua correto se um 3º for cadastrado. */}
-          <span className="mb-1.5 block text-xs uppercase tracking-wide text-ink-muted">
-            Subgrupo {exigeSubgrupo ? '(obrigatório, pode marcar mais de um)' : '(opcional, pode marcar mais de um)'}
-          </span>
-          <div className="flex flex-wrap gap-x-4 gap-y-1.5 rounded-lg border border-line bg-surface px-3 py-2">
-            {subgrupos.length === 0 && <span className="text-sm text-ink-faint">Nenhum subgrupo cadastrado</span>}
-            {subgrupos.map((s) => (
-              <label key={s.id} className="flex items-center gap-1.5 text-sm text-ink">
-                <input
-                  type="checkbox"
-                  checked={subgrupoIds.includes(s.id)}
-                  onChange={(e) =>
-                    setSubgrupoIds((atual) =>
-                      e.target.checked ? [...atual, s.id] : atual.filter((id) => id !== s.id),
-                    )
-                  }
-                  className="rounded border-line text-brand-navy focus:ring-brand-navy/20"
-                />
-                {s.nome}
-              </label>
-            ))}
+        {/* Subgrupo só existe pra Engenharia (2026-07-21, pedido explícito: "cadastro e
+            processos não fazem parte disso") -- Cadastro/Processos são times centrais, sem
+            recorte de subgrupo, então o campo nem aparece pra esses setores (antes aparecia
+            pros 3, só com "(obrigatório)"/"(opcional)" mudando o texto). Ver setSetor abaixo,
+            que já limpa subgrupoIds ao trocar pra fora de Engenharia. */}
+        {setor === 'engenharia' && (
+          <div>
+            {/* Checkbox group em vez de <select> de escolha única (2026-07-15) -- um usuário
+                pode pertencer a mais de um subgrupo ao mesmo tempo. Não hardcoda os 2 subgrupos
+                conhecidos hoje: itera `subgrupos`, continua correto se um 3º for cadastrado. */}
+            <span className="mb-1.5 block text-xs uppercase tracking-wide text-ink-muted">
+              Subgrupo {exigeSubgrupo ? '(obrigatório, pode marcar mais de um)' : '(opcional, pode marcar mais de um)'}
+            </span>
+            <div className="flex flex-wrap gap-x-4 gap-y-1.5 rounded-lg border border-line bg-surface px-3 py-2">
+              {subgrupos.length === 0 && <span className="text-sm text-ink-faint">Nenhum subgrupo cadastrado</span>}
+              {subgrupos.map((s) => (
+                <label key={s.id} className="flex items-center gap-1.5 text-sm text-ink">
+                  <input
+                    type="checkbox"
+                    checked={subgrupoIds.includes(s.id)}
+                    onChange={(e) =>
+                      setSubgrupoIds((atual) =>
+                        e.target.checked ? [...atual, s.id] : atual.filter((id) => id !== s.id),
+                      )
+                    }
+                    className="rounded border-line text-brand-navy focus:ring-brand-navy/20"
+                  />
+                  {s.nome}
+                </label>
+              ))}
+            </div>
           </div>
-        </div>
+        )}
         <div>
           <FormLabel htmlFor="novo-permissao">Permissão</FormLabel>
           <select
@@ -206,7 +213,10 @@ export default function CriarUsuarioForm({ subgrupos, onCriado }: { subgrupos: S
             id="novo-setor"
             value={setor}
             required
-            onChange={(e) => setSetor(e.target.value)}
+            onChange={(e) => {
+              setSetor(e.target.value)
+              if (e.target.value !== 'engenharia') setSubgrupoIds([])
+            }}
             className="w-full rounded-lg border border-line bg-surface px-3 py-2 text-sm text-ink focus:border-brand-navy focus:outline-none focus:ring-2 focus:ring-brand-navy/20"
           >
             <option value="cadastro">Cadastro</option>

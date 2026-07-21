@@ -82,27 +82,41 @@ o BITin (achado da revisão do `GPT_Engineering_authAPI`: a tabela `Bitin` de re
 id numérico porque agora a tabela `usuarios` mora no mesmo Postgres — não custa nada exibir um
 valor legível direto, sem o frontend precisar resolver id→nome.
 
-**Postgres — tabelas `usuarios`/`setores`** (`backend/auth/models.py`):
+**Postgres — tabelas `usuarios`/`subgrupos`** (`backend/auth/models.py`, corrigido 2026-07-21 --
+o bloco antigo aqui ainda citava o esquema pré-2ª-revisão, `setores`/`usuario_setores` e
+`permission_level` incluindo o nível 66/89 que não existem mais, ver "Autenticação" abaixo pro
+esquema completo e atual):
 
 ```text
-usuarios:         id, email (único), nome, hashed_password, ativo, permission_level (66/77/88/99,
-                  ver seção "Autenticação" -- era 0/1/99 antes de 2026-07-16),
-                  network_id (nullable), created_at
-setores:          id, nome (único), descricao
-usuario_setores:  usuario_id (FK usuarios), setor_id (FK setores) -- PK composta
+usuarios:          id, email (único), nome, hashed_password, ativo,
+                   permission_level (77 Individual / 88 Gestor / 99 Admin -- RANK puro, sem
+                   função de acesso sozinho, ver "Autenticação"),
+                   setor (string: "cadastro"/"processos"/"engenharia" -- cruzado com
+                   permission_level pra controlar acesso de verdade),
+                   network_id (nullable), numero_eng (nullable), email_verificado,
+                   senha_temporaria, created_at
+subgrupos:         id, nome (único), descricao
+usuario_subgrupos: usuario_id (FK usuarios), subgrupo_id (FK subgrupos) -- PK composta
 ```
 
-`setores` aqui é o **departamento do usuário** (Engenharia, RH, TI, ...) — conceito diferente
-do `setor` do BITin em si (`"Proteína Animal"`/`"Armazenagem de Grãos"`, que define o prefixo
-`P`/`A` do número, ver `backend/bitin_number.py`). Os dois não têm relação hoje.
+`subgrupos` aqui é o **departamento do usuário** (Proteína Animal/Armazenagem de Grãos) --
+conceito diferente do `setor` do BITin em si (`"Proteína Animal"`/`"Armazenagem de Grãos"`, que
+define o prefixo `P`/`A` do número, ver `backend/bitin_number.py`) e também diferente de
+`Usuario.setor` (rótulo de cargo/domínio de trabalho -- cadastro/processos/engenharia). Três
+conceitos parecidos no nome, sem relação direta entre si.
+
+**Subgrupo só é obrigatório/exibido pra Engenharia** (2026-07-21, pedido explícito: "deixar
+campo de subgrupo SÓ para gestores da engenharia e usuarios normais da engenharia") --
+`exige_subgrupo()` (`backend/auth/schemas.py`) já só exigia pra Engenharia; a UI
+(`CriarUsuarioForm.tsx`/`GestaoUsuarios.tsx`) parou de mostrar o campo pra Cadastro/Processos, e
+trocar o `setor` de um usuário pra fora de Engenharia (`PATCH /users/{id}/setor`) limpa os
+subgrupos atribuídos automaticamente.
 
 **Many-to-many desde 2026-07-15** (era `sector_id`, FK única nullable em `usuarios`): pedido
 explícito do usuário, "um usuário poder ser tanto armazenagem tanto quanto proteina" — um
-usuário agora pode pertencer a mais de um `Setor` ao mesmo tempo. `Usuario.setores`
-(`relationship` via a tabela de associação pura `usuario_setores`, sem colunas extras) substitui
-a antiga coluna. `UserOut.sector_ids: list[int]` expõe os ids pro frontend; migração
-`dd1208ae65a6` faz o backfill de `sector_id` -> `usuario_setores` e derruba a coluna antiga
-(SQLite exige `batch_alter_table` pra isso).
+usuário agora pode pertencer a mais de um Subgrupo ao mesmo tempo. `Usuario.subgrupos`
+(`relationship` via a tabela de associação pura `usuario_subgrupos`, sem colunas extras).
+`UserOut.subgrupo_ids: list[int]` expõe os ids pro frontend.
 
 **MongoDB — coleção `bitin_contents`** (rascunho e enviado, documento inteiro):
 o conteúdo é exatamente a estrutura de `docs/BITIN_MODEL.md` (não o modelo antigo
@@ -121,14 +135,14 @@ tabela é que ficou pra trás).
 
 | Método | Rota | O que faz |
 |---|---|---|
-| POST | `/bitins/draft` | Cria ou atualiza um rascunho — **sem validação de negócio** (liberdade de edição). Se `mongo_id` vier no corpo, atualiza; senão, cria novo. Nível Processos (89) recebe 403 tentando criar (sem `mongo_id`) — não cria BITin, só revisa o que chega encaminhado (ver "Endpoints de roteamento pós-envio" abaixo). |
+| POST | `/bitins/draft` | Cria ou atualiza um rascunho — **sem validação de negócio** (liberdade de edição). Se `mongo_id` vier no corpo, atualiza; senão, cria novo. Setor Processos recebe 403 tentando criar (sem `mongo_id`) — não cria BITin, só revisa o que chega encaminhado (ver "Endpoints de roteamento pós-envio" abaixo). |
 | GET | `/bitins/{mongo_id}` | Busca um BITin (rascunho ou enviado) pelo id do Mongo — inclui `pode_editar`, `precisa_roteiro`, `encaminhado_roteiro`, `processos_concluido`, `sem_necessidade_roteiro` calculados na resposta. |
-| GET | `/bitins` | Lista, escopada por **nível de permissão** (alimenta `MeusBitins.tsx`/`CadastroPage.tsx`/`PainelGeral.tsx`), com filtros por `status`/`termo`/`campo`/`encaminhado_roteiro`/`processos_concluido`/`bitin_cadastrado`/`windchill_enviado`/`sem_necessidade_roteiro`/`criado_por` (substring case-insensitive, 2026-07-21) + `limit`/`skip` pra paginação de verdade. Ver tabela de permissões acima pro escopo exato de cada nível — mudou bastante desde a versão original desta rota (2026-07-15): 4→5 níveis, Cadastro/Processos viraram visibilidade global. |
+| GET | `/bitins` | Lista, escopada por **rank (`permission_level`) cruzado com `setor`** (alimenta `MeusBitins.tsx`/`CadastroPage.tsx`/`PainelGeral.tsx`), com filtros por `status`/`termo`/`campo`/`encaminhado_roteiro`/`processos_concluido`/`bitin_cadastrado`/`windchill_enviado`/`sem_necessidade_roteiro`/`criado_por` (substring case-insensitive) + `incluir_criado_por_no_termo` (2026-07-21, `termo` passa a casar também com `criado_por` -- opt-in, só usado pela barra de busca única do Painel geral) + `limit`/`skip` pra paginação de verdade. Ver tabela de permissões acima pro escopo exato. |
 | DELETE | `/bitins/{mongo_id}` | Apaga um rascunho (dono/admin). Um BITin já enviado só pode ser apagado por admin (`permission_level >= 99`) — nesse caso também apaga a linha `BitinSQL` correspondente (mesma ressalva de "sem transação real cobrindo os 2 bancos" do fluxo de `/enviar` abaixo). |
 | POST | `/bitins/{mongo_id}/enviar` | **O ponto-chave**: chama `bitin_lifecycle.enviar_bitin` (todas as validações de uma vez). Se falhar, devolve **200 com `ok=false` e a lista de erros estruturados** (`{field, code, message}`) no corpo — não é um erro HTTP, é um resultado de validação de negócio. Se passar, gera o número sequencial (com retry seguro), cria a linha no Postgres, atualiza o Mongo. |
 | GET | `/bitins/{mongo_id}/resumo` | `bitin_view.render_bitin_summary` — pré-visualização/tela final (checklist, setores acionados, sugestões, diffs). |
 | POST | `/bitins/preview-resumo` | Mesmo cálculo de `/resumo`, mas a partir de um `content` mandado no corpo (não de um `mongo_id` salvo) — sem persistir nada. Alimenta o recálculo ao vivo da checklist/setores em `BitinDetail.tsx` (debounce, sem autosave real). Adicionado em 2026-07-17. |
-| GET | `/bitins/{mongo_id}/pdf` | Gera o PDF do BITin (`scripts/bitin_pdf.py`) — mesma checagem de acesso de `GET /{mongo_id}` (só exige estar autenticado, sem restrição de dono/nível). Usado pela aba "Retornados de roteiro" de `CadastroPage.tsx` pro registro externo. |
+| GET | `/bitins/{mongo_id}/pdf` | Gera o PDF do BITin (`scripts/bitin_pdf.py`, restilizado 2026-07-21: logo real da marca + paleta oficial + layout reordenado pra bater com a tela de edição -- cabeçalho → setores acionados → checklist → materiais/alterações) — mesma checagem de acesso de `GET /{mongo_id}` (só exige estar autenticado, sem restrição de dono/nível). Usado pela etapa "Pendência de envio" de `CadastroPage.tsx` (botão "Baixar PDF", que baixa e já marca como concluído na mesma ação) pro registro externo. |
 | GET | `/bitins/schema/materiais` | `bitin_model.build_materiais_schema` — colunas do grid de materiais (identificação, `dados_basicos` com os 31 campos reais da ZBPP009, `impactos_operacionais` com as opções válidas do POP) derivadas do `bitin_schema_crosswalk` (`config/vba_mapping.json`) e do `valores_validos` (`config/bitin_document_mapping.json`). |
 | POST | `/bitins/parse-sap-paste` | `sap_paste_parser.parse_sap_paste_to_materiais` — recebe o texto colado do SAP (`{"raw_text": "..."}`) e devolve `materiais[]` prontos (identificação + `dados_basicos_atual`, o "de" dos campos, via `plan1_dados_basicos_columns`) pro frontend inserir na tabela de Códigos SAP. |
 | GET | `/bitins/schema/checklist` | `bitin_document.build_checklist_schema` — os 22 itens fixos do checklist (id + etapa, do Quadro 01 do POP), pra tela de cadastro montar a tabela de checklist editável. Mesma fonte que `bitin_document.build_checklist` usa pra calcular `afeta` na tela de resumo, só sem o cálculo em si. |
@@ -578,6 +592,37 @@ nessa cópia, e confirmei que (a) as 3 tabelas antigas continuaram com as mesmas
 apareceram, e (c) o schema final é byte-a-byte igual ao de um banco vazio rodando só
 `upgrade head` (mesmo `pragma table_info`) — os dois caminhos convergem. **Nunca rode
 migração nenhuma direto no `bitin_backend.db` original sem copiar primeiro.**
+
+## Mudanças 2026-07-21 (revisão item a item de uma lista de pedidos)
+
+- **Campo `bitex` do cabeçalho** (`"SIM"`/`"NÃO"`, opcional) volta a existir no modelo/checklist
+  -- regra 9 nova em `_checklist_ids_auto_sugeridos` (`scripts/bitin_document.py`): `bitex ==
+  "SIM"` aciona automaticamente o item 11 do checklist ("Atualizar BITex"), mesma categoria das
+  regras 13/14 (campo de cabeçalho existente, usado sem inventar heurística nova). O valor de
+  `bitex` em si continua 100% manual. Exposto em `bitin_view.render_bitin_summary`.
+- **Validação de domínio em `dados_basicos`** (`scripts/bitin_business_rules.py::
+  _validar_dominio_dados_basicos`, roda no envio): `nivel_revisao` precisa ser 1 letra
+  maiúscula (A-Z); `producao_interna`/`marcacao_eliminar_nivel_mandante`/
+  `marcacao_eliminar_nivel_centro` só aceitam `X`/`-`. Campo vazio nunca é erro. Espelhado no
+  frontend (`frontend/src/lib/dadosBasicosValidacao.ts`) como aviso em tempo real, não
+  bloqueante -- o backend é quem realmente barra o envio.
+- **Subgrupo restrito a Engenharia** -- ver "Modelo de dados" acima (`exige_subgrupo` já só
+  exigia pra Engenharia; a novidade é a UI parar de mostrar o campo pra Cadastro/Processos, e
+  `PATCH /users/{id}/setor` limpar subgrupos ao sair de Engenharia).
+- **`GET /bitins` ganhou `incluir_criado_por_no_termo`** (bool, opt-in) -- quando `true`, o `$or`
+  de `termo` passa a casar também com `criado_por` (e-mail de quem criou). Usado só pela barra
+  de busca única do Painel geral (`PainelGeral.tsx`), que substituiu os campos separados
+  "Buscar por motivo/solicitante/número" + "Usuário (e-mail)" por um só, com dropdown de
+  resultados ao vivo (clicar abre o BITin direto).
+- **PDF restilizado** (`scripts/bitin_pdf.py`) -- logo real da marca (`frontend/public/brand/
+  gpt-color.png`) no cabeçalho, paleta trocada pros tokens oficiais de `frontend/src/index.css`
+  (antes eram cores calculadas à mão, sem relação com o resto do sistema), e layout reordenado
+  pra bater com a tela de edição: cabeçalho → setores acionados (seção nova, espelha
+  `SetoresBanner.tsx`) → checklist → materiais/alterações (antes pulava direto de cabeçalho pra
+  materiais).
+- **CSV do Painel geral** (`frontend/src/lib/csv.ts`) -- trocada a montagem manual de string por
+  um helper com proteção contra formula/CSV injection (mesmo espírito de
+  `scripts/csv_safety.py`) e CRLF (RFC 4180); colunas/formato visível não mudaram.
 
 ## Rodando localmente (sem Postgres/MongoDB reais)
 

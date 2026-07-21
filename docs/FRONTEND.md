@@ -538,11 +538,16 @@ em `docs/BITIN_MODEL.md`/`docs/BACKEND.md` — aqui só o que muda na UI.
   nunca precisaram de roteiro (`sem_necessidade_roteiro=true`) são excluídos das duas, porque
   Processos nunca teve contato real com eles.
 - **Painel geral** (`PainelGeral.tsx`, rota `/painel-geral`, Gestor/Admin): visão de leitura
-  sem ações, todo BITin com Status/Etapa (`lib/bitinEtapa.ts`) + com quem está, filtros de
-  Setor/Usuário/Status/Etapa + export CSV.
+  sem ações, todo BITin com Status/Etapa (`lib/bitinEtapa.ts`) + com quem está, filtro de Setor
+  (admin) + Status/Etapa + **barra de busca única** (2026-07-21, substitui os campos separados
+  "motivo/solicitante/número" e "Usuário/e-mail" -- busca os 4 juntos, `incluir_criado_por_no_termo`
+  no backend), com dropdown de resultados ao vivo (clicar abre o BITin direto, tanto no
+  dropdown quanto na tabela) + export CSV.
 - **Gestão de usuários**: `CriarUsuarioForm.tsx`/`GestaoUsuarios.tsx` usam os seletores de
   Nível (77/88/99) e Setor (Cadastro/Processos/Engenharia) do modelo atual — só Engenharia
-  exige Subgrupo.
+  exige Subgrupo, e (2026-07-21) só Engenharia MOSTRA o campo de Subgrupo (Cadastro/Processos
+  nem veem mais o checkbox group); trocar o setor de um usuário existente pra fora de
+  Engenharia limpa os subgrupos atribuídos automaticamente.
 - **Performance** (pedido explícito, "usa como base o frontend antigo que tinha uma
   otimização feita"): `React.memo` + padrão de estado local/commit-on-blur em
   `MaterialEditorCard.tsx`, ids estáveis por material (`crypto.randomUUID()` client-side em
@@ -576,9 +581,18 @@ com Playwright nas contas reais (ver `docs/RELEASE_v0.10.0.md`/`v0.10.1.md`).
 - **BITin/ZBPP009/Lista Técnica** (`/bitins/:mongoId`, `/bitins/:mongoId/codigos-sap`,
   `/bitins/:mongoId/lista-tecnica`): as três telas de edição de um rascunho — cadastro completo
   de material, colar do SAP em qualquer célula, checklist com sugestão automática e recálculo
-  ao vivo, lista técnica independente (com autocompletar de Código pai e Centro/Descrição pra
-  material novo), aviso de alterações não salvas, confirmação antes de enviar, envio com
-  validação de regras de negócio (inclui bloqueio se nenhum material tem alteração real).
+  ao vivo (inclui a regra 9 de `bitex`, ver `docs/BITIN_MODEL.md`), lista técnica independente
+  (com autocompletar de Código pai e Centro/Descrição pra material novo), aviso de alterações
+  não salvas, confirmação antes de enviar, envio com validação de regras de negócio (inclui
+  bloqueio se nenhum material tem alteração real). **Busca de campo na ZBPP009** (2026-07-21,
+  pedido explícito: "opção de pesquisa de campo na zbpp009, como é na tela de bitin") — barra
+  de busca acima da tabela filtra em tempo real as ~30 colunas De/Novo pelo nome do campo
+  (identificação nunca é escondida), mesma função `normalizar()` tolerante a acento/maiúscula
+  do combobox "+ Campo alterado" (`lib/texto.ts`, extraída de `MaterialEditorCard.tsx` pra ser
+  reaproveitada). **Validação de domínio em tempo real** (2026-07-21) nos campos de
+  `dados_basicos` e no Centro da ZBPP009 — aviso visual (borda vermelha + mensagem), nunca
+  bloqueia a digitação; o backend é quem barra de verdade no envio (ver `docs/BITIN_MODEL.md`,
+  seção "Domínio de valores por campo de dados_basicos").
 - **Fila do setor Cadastro** (`/cadastro`): recebe todo BITin enviado, decide se precisa de
   roteiro (regra automática) ou conclui direto. Etapas "Aguardando cadastro" (botão "Concluir
   BITIN") e "Pendência de envio" (botão "Baixar PDF", que baixa e já manda pro Windchill na
@@ -587,18 +601,36 @@ com Playwright nas contas reais (ver `docs/RELEASE_v0.10.0.md`/`v0.10.1.md`).
   Cadastro (única exceção do sistema a "enviado é travado pra sempre"), conclui quando termina.
   Etapas "Pendente"/"Revisado" — BITins que nunca precisaram de roteiro não aparecem aqui.
 - **Painel geral** (`/painel-geral`, Gestor/Admin): visão de leitura de todo BITin visível pro
-  usuário, Status x Etapa, filtros de Setor/Usuário (substring de e-mail)/Status/Etapa,
-  **paginação real no servidor** (2026-07-21, 50 por página, `GET /bitins`
-  `limit`/`skip`/`criado_por` — antes buscava até 5000 de uma vez e filtrava tudo no cliente),
-  export CSV da página atual.
+  usuário, Status x Etapa, filtro de Setor (admin) + Status/Etapa + **barra de busca única**
+  (2026-07-21, substitui os campos separados de motivo/solicitante/número e usuário/e-mail —
+  busca os 4 juntos, com dropdown de resultados ao vivo, clicar abre o BITin direto),
+  **paginação real no servidor** (50 por página, `GET /bitins` `limit`/`skip`/`criado_por` —
+  antes buscava até 5000 de uma vez e filtrava tudo no cliente), export CSV da página atual
+  (protegido contra formula/CSV injection, `lib/csv.ts`).
 - **Configurações**: "Minha conta" (+ troca de senha) pra qualquer nível; aba "Bitins
   Concluídos" (admin-only) — lista de BITins com Status="Concluído", botão "Voltar bitin"
   reverte o envio ao Windchill.
 - **Gestão de usuários** (`/usuarios`, só super-admin fixo): cadastro/reativação com senha
-  temporária, promover/rebaixar nível, atribuir setor/Subgrupo, soft-delete, **"Resetar
-  senha"** (2026-07-21, `POST /users/{id}/resetar-senha` — gera senha temporária nova pra
-  qualquer conta ativa, mesmo padrão de reativação; substitui um "esqueci minha senha"
-  self-service, que precisaria de SMTP configurado pra entregar algo de verdade).
+  temporária, promover/rebaixar nível, atribuir setor/Subgrupo (2026-07-21: só Engenharia
+  mostra o campo de Subgrupo; trocar o setor de um usuário existente pra fora de Engenharia
+  limpa os subgrupos automaticamente), soft-delete, **"Resetar senha"** (`POST
+  /users/{id}/resetar-senha` — gera senha temporária nova pra qualquer conta ativa, mesmo
+  padrão de reativação; substitui um "esqueci minha senha" self-service, que precisaria de SMTP
+  configurado pra entregar algo de verdade).
+- **PDF do BITin** (`GET /bitins/{id}/pdf`, botão "Baixar PDF" na fila do Cadastro):
+  restilizado (2026-07-21, pedido explícito: "colocar a logo seguir as cores da marca... layout
+  seguir o mesmo do bitin") — logo real da marca, paleta oficial (mesmos tokens do frontend),
+  layout reordenado pra bater com a tela de edição (cabeçalho → setores acionados → checklist →
+  materiais/alterações).
+- **Hints ("?")**: as 9 páginas com popover de ajuda foram revisadas uma a uma (2026-07-21) —
+  título padronizado pra "Hint" em todas, conteúdo segmentado por papel onde fazia sentido
+  (Home, Painel geral: cada setor só vê a explicação da própria fila), textos simplificados
+  (menos detalhe interno tipo "só admin reverte"). `AjudaPopover.tsx` ganhou `normal-case` no
+  conteúdo do popover (bug real: herdava `uppercase` de título de `Card` quando usado dentro
+  dele, ex. Settings.tsx).
+- **Pop-ups de confirmação** (`window.confirm`): revisados um a um (2026-07-21) — textos
+  simplificados, removidas menções a "admin"/"Configurações" que o usuário comum não precisa
+  saber.
 - Logout: volta pro login.
 - Tema claro/escuro (toggle no login E no topbar pós-login, padrão claro, escolha persiste no
   navegador).

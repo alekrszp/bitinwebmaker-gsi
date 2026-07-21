@@ -73,6 +73,7 @@ export default function BitinDetail() {
   const [motivo, setMotivoBase] = useState('')
   const [solicitante, setSolicitante] = useState('')
   const [setor, setSetorBase] = useState('')
+  const [bitex, setBitexBase] = useState('')
   // Wrappers que marcam "sujo" (2026-07-17) -- passados pra baixo em vez dos setters puros,
   // pra saber que existe alteração ainda não salva.
   function setProduto(v: string) {
@@ -85,6 +86,10 @@ export default function BitinDetail() {
   }
   function setSetor(v: string) {
     setSetorBase(v)
+    setSujo(true)
+  }
+  function setBitex(v: string) {
+    setBitexBase(v)
     setSujo(true)
   }
   const [materiais, setMateriais] = useState<MaterialComId[]>([])
@@ -152,6 +157,7 @@ export default function BitinDetail() {
         setMotivoBase(String(content.motivo ?? ''))
         setSolicitante(String(content.solicitante ?? user?.nome ?? ''))
         setSetorBase(String(content.setor ?? ''))
+        setBitexBase(String(content.bitex ?? ''))
         setMateriais(
           ((content.materiais as MaterialEditavel[] | undefined) ?? []).map((m) => ({
             ...normalizarMaterial(m),
@@ -280,7 +286,7 @@ export default function BitinDetail() {
     }, 500)
     return () => clearTimeout(id)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [produto, motivo, setor, materiais, checklistOverrides, checklistDescricoes, carregando, editavel])
+  }, [produto, motivo, setor, bitex, materiais, checklistOverrides, checklistDescricoes, carregando, editavel])
 
   // Pós-envio (2026-07-16, pedido do usuário: "coloque uma informação na tela de quando envia
   // bitin de confirmação que atualize a pagina e vai direto no bitin já enviado"). Mesma URL
@@ -355,6 +361,7 @@ export default function BitinDetail() {
       motivo,
       solicitante,
       setor,
+      bitex,
       materiais: materiaisPreenchidos,
       ordem_cliente: ordemClientePreenchida,
       checklist_overrides: checklistOverrides,
@@ -461,7 +468,7 @@ export default function BitinDetail() {
   // só-leitura (mais simples e mais confiável do que tentar reconciliar todo o estado local).
   async function handleConcluirProcessos() {
     if (!mongoId) return
-    if (!window.confirm('Concluir o processamento deste BITin? Ele volta a ficar travado depois disso.')) return
+    if (!window.confirm('Concluir a revisão desse BITin?')) return
     setSalvando(true)
     setErro(null)
     try {
@@ -526,7 +533,7 @@ export default function BitinDetail() {
         <h1 className="text-2xl font-semibold text-ink">{codigo || 'Rascunho sem código'}</h1>
         <StatusBadge status={status} windchillEnviado={windchillEnviado} />
         {editavel && (
-          <AjudaPopover titulo="Como usar a aba BITin">
+          <AjudaPopover titulo="Hint">
             <p>
               Preencha os dados gerais e, por material, marque os itens da checklist que se
               aplicam. Clicar num item sempre vale, mesmo que já venha marcado.
@@ -535,10 +542,7 @@ export default function BitinDetail() {
               Um material pode ser cadastrado inteiramente aqui ("+ Novo material") ou importado
               da tela ZBPP009.
             </p>
-            <p>
-              Se algum item da checklist exigir descrição, preencha-a antes de enviar. Confirme
-              também a aprovação de desenho técnico e de NCM antes de enviar.
-            </p>
+            <p>Se algum item da checklist exigir descrição, preencha-a antes de enviar.</p>
           </AjudaPopover>
         )}
 
@@ -603,10 +607,12 @@ export default function BitinDetail() {
         motivo={motivo}
         solicitante={solicitante}
         setor={setor}
+        bitex={bitex}
         setoresPermitidos={setoresPermitidos}
         onProdutoChange={setProduto}
         onMotivoChange={setMotivo}
         onSetorChange={setSetor}
+        onBitexChange={setBitex}
         resumo={resumo}
         onToggleChecklist={alternarChecklist}
         onChecklistDescricaoChange={alternarDescricaoChecklist}

@@ -61,6 +61,7 @@ def render_bitin_summary(
         "motivo": bitin.get("motivo", ""),
         "solicitante": bitin.get("solicitante", ""),
         "data_solicitacao": bitin.get("data_solicitacao", ""),
+        "bitex": bitin.get("bitex", ""),
         "materiais": [render_material_summary(m, vba_mapping_config, document_config) for m in materiais],
         "checklist": checklist,
         "checklist_pendencias": [item["etapa"] for item in checklist if item["afeta"]],

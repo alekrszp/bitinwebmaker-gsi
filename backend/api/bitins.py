@@ -473,6 +473,7 @@ async def list_bitins(
     windchill_enviado: bool | None = None,
     sem_necessidade_roteiro: bool | None = None,
     criado_por: str | None = None,
+    incluir_criado_por_no_termo: bool = False,
     limit: int = 20,
     skip: int = 0,
     current_user: Usuario = Depends(get_current_active_user),
@@ -541,13 +542,18 @@ async def list_bitins(
         if campo_mongo:
             condicoes.append({campo_mongo: {"$regex": termo_escapado, "$options": "i"}})
         else:
-            condicoes.append({
-                "$or": [
-                    {"content.motivo": {"$regex": termo_escapado, "$options": "i"}},
-                    {"content.solicitante": {"$regex": termo_escapado, "$options": "i"}},
-                    {"content.bitin": {"$regex": termo_escapado, "$options": "i"}},
-                ]
-            })
+            termo_or: list[dict[str, Any]] = [
+                {"content.motivo": {"$regex": termo_escapado, "$options": "i"}},
+                {"content.solicitante": {"$regex": termo_escapado, "$options": "i"}},
+                {"content.bitin": {"$regex": termo_escapado, "$options": "i"}},
+            ]
+            # Barra de busca única do Painel geral (2026-07-21, pedido explícito: "apenas 1
+            # barra de pesquisa para tudo... solicitante, numero e motivo") -- opt-in por
+            # parâmetro pra não mudar o comportamento de termo nas outras telas
+            # (CadastroPage/ProcessosPage/MeusBitins) que não pedem isso.
+            if incluir_criado_por_no_termo:
+                termo_or.append({"criado_por": {"$regex": termo_escapado, "$options": "i"}})
+            condicoes.append({"$or": termo_or})
     query: dict[str, Any] = {"$and": condicoes} if condicoes else {}
     cursor = collection.find(query).sort("updated_at", -1).skip(skip).limit(limit)
     docs = await cursor.to_list(length=limit)

@@ -235,7 +235,7 @@ def build_checklist_schema(config: dict[str, Any]) -> list[dict[str, str]]:
 _DWG_SAT_NOTAS = {"SALVAR DWG", "SALVAR SAT"}
 
 
-def _checklist_ids_auto_sugeridos(materiais: list[dict[str, Any]], config: dict[str, Any]) -> set[str]:
+def _checklist_ids_auto_sugeridos(bitin: dict[str, Any], materiais: list[dict[str, Any]], config: dict[str, Any]) -> set[str]:
     """Regras de automação REAIS do checklist, confirmadas em auditoria da macro VBA original
     (2026-07-16): `Módulo4.bas`, `Sub Preencher_Bitin`, é o ÚNICO lugar em todos os 20 módulos
     que escreve "SIM" na coluna de checklist de `Plan4` -- grep exaustivo por `, 3) = "SIM"`
@@ -267,14 +267,20 @@ def _checklist_ids_auto_sugeridos(materiais: list[dict[str, Any]], config: dict[
     14. `material.alteracoes.lista_tecnica` não vazia -> id 7 ("Alteração lista técnica"): a
         própria existência de itens na lista técnica do material já É o sinal de que ela foi
         alterada, não precisa de campo extra.
+    15. `bitin["bitex"] == "SIM"` -> id 11 ("Atualizar BITex") (2026-07-21, mesma categoria das
+        regras 13/14: campo de cabeçalho já existente, usado sem inventar heurística nova). O
+        valor de `bitex` em si continua 100% manual (não há campo que permita inferi-lo);
+        só o reflexo no checklist virou automático.
 
-    As outras 8 etapas manuais (9, 11-16, 21) continuam SEM automação -- não existe nenhum
-    campo no schema do BITin que sinalize DPO-PAN/BITex/manual/instrução de montagem/
+    As outras 7 etapas manuais (9, 12-16, 21) continuam SEM automação -- não existe nenhum
+    campo no schema do BITin que sinalize DPO-PAN/Atualizar manual/instrução de montagem/
     Elétrica/Estamparia/Madeira-Plástico/Atualizar custos; inventar uma regra sem lastro em
     dado real violaria o princípio já registrado no projeto (preferir regra robusta a
     heurística acoplada a algo instável, ver requirements.md)."""
     alt_to_id = config.get("alt_to_checklist_id", {})
     auto: set[str] = set()
+    if bitin.get("bitex") == "SIM":
+        auto.add("11")
     for material in materiais:
         impactos = read_impactos_operacionais(material)
 
@@ -318,7 +324,7 @@ def build_checklist(bitin: dict[str, Any], materiais: list[dict[str, Any]], conf
     resultado final daqui, então tanto a sugestão automática quanto um clique manual acionam
     os setores do mesmo jeito."""
     overrides = bitin.get("checklist_overrides", {})
-    auto_sugeridos = _checklist_ids_auto_sugeridos(materiais, config)
+    auto_sugeridos = _checklist_ids_auto_sugeridos(bitin, materiais, config)
     # Anotação livre por item (2026-07-15) -- ex.: "Centro de custo (se tem sucata)" (id 22)
     # usa isso pra registrar o centro de custo/conta razão do sucateamento (POP Nota 8), no
     # lugar de um campo estruturado por material (decisão do usuário: "isso é colocado no

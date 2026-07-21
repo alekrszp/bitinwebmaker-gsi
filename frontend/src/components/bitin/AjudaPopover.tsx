@@ -31,7 +31,9 @@ export default function AjudaPopover({ titulo, children }: { titulo: string; chi
       </button>
 
       {aberto && (
-        <div className="absolute left-0 top-7 z-30 w-80 rounded-lg border border-line bg-surface p-4 text-left shadow-lg sm:w-96">
+        // normal-case (2026-07-21): Settings.tsx usa este componente dentro do título
+        // uppercase do Card -- sem isso o texto do popover herdava o uppercase do ancestral.
+        <div className="absolute left-0 top-7 z-30 w-80 rounded-lg border border-line bg-surface p-4 text-left normal-case shadow-lg sm:w-96">
           <div className="flex items-center justify-between gap-2">
             <h3 className="text-sm font-semibold text-ink">{titulo}</h3>
             <button

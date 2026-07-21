@@ -11,6 +11,7 @@ from backend.auth.deps import (
 from backend.auth.models import Usuario, usuario_subgrupos
 from backend.auth.routes import _resolve_subgrupos
 from backend.auth.schemas import (
+    SETOR_ENGENHARIA,
     SETORES_VALIDOS,
     AdminUserCreate,
     AdminUserCreateOut,
@@ -277,6 +278,11 @@ def update_user_setor(
     if not user:
         raise HTTPException(status_code=404, detail="Usuário não encontrado")
     user.setor = payload.setor
+    # Limpa subgrupo(s) ao sair de Engenharia (2026-07-21, pedido explícito) -- Cadastro/
+    # Processos não usam subgrupo (nem mais aparece na UI, ver GestaoUsuarios.tsx), então
+    # deixar subgrupo_ids "órfão" no banco depois da troca de setor seria só lixo de dado.
+    if payload.setor != SETOR_ENGENHARIA:
+        user.subgrupos = []
     db.add(user)
     db.commit()
     db.refresh(user)

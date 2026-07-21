@@ -102,17 +102,34 @@ class BuildChecklistTest(unittest.TestCase):
         # preenchida em nap_0734 -> id 7 (regra nova, 2026-07-20).
         self.assertEqual(afeta_ids, {"8", "17", "2", "7"})
 
-    def test_bitex_sim_nao_ativa_checklist_id_11_sozinho(self) -> None:
-        # bitex não faz parte das 8 regras confirmadas na macro real -- id 11 continua
-        # 100% manual (checklist_overrides), mesmo com bitex=SIM.
+    def test_bitex_sim_ativa_checklist_id_11_automaticamente(self) -> None:
+        # Regra nova (2026-07-21): bitex=SIM aciona sozinho o item 11 do checklist, mesma
+        # categoria das regras 13/14 (campo de cabeçalho existente usado sem override manual).
         bitin = {"bitin": "P1/26", "produto": "x", "motivo": "x", "bitex": "SIM"}
         checklist = bd.build_checklist(bitin, [], self.config)
         afeta_ids = {item["id"] for item in checklist if item["afeta"]}
-        self.assertEqual(afeta_ids, set())
+        self.assertEqual(afeta_ids, {"11"})
 
-    def test_checklist_override_manual_liga_item_11_mesmo_com_bitex_sim(self) -> None:
+    def test_bitex_nao_ou_vazio_nao_ativa_checklist_id_11(self) -> None:
+        for valor in ("NÃO", "", None):
+            bitin = {"bitin": "P1/26", "produto": "x", "motivo": "x", "bitex": valor}
+            checklist = bd.build_checklist(bitin, [], self.config)
+            afeta_ids = {item["id"] for item in checklist if item["afeta"]}
+            self.assertNotIn("11", afeta_ids)
+
+    def test_checklist_override_manual_desliga_item_11_mesmo_com_bitex_sim(self) -> None:
+        # Override sempre vence a sugestão automática, nos dois sentidos.
         bitin = {
             "bitin": "P1/26", "produto": "x", "motivo": "x", "bitex": "SIM",
+            "checklist_overrides": {"11": False},
+        }
+        checklist = bd.build_checklist(bitin, [], self.config)
+        afeta_ids = {item["id"] for item in checklist if item["afeta"]}
+        self.assertNotIn("11", afeta_ids)
+
+    def test_checklist_override_manual_liga_item_11_mesmo_com_bitex_nao(self) -> None:
+        bitin = {
+            "bitin": "P1/26", "produto": "x", "motivo": "x", "bitex": "NÃO",
             "checklist_overrides": {"11": True},
         }
         checklist = bd.build_checklist(bitin, [], self.config)

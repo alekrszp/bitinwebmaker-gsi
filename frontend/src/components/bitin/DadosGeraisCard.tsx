@@ -18,10 +18,12 @@ export default function DadosGeraisCard({
   motivo,
   solicitante,
   setor,
+  bitex,
   setoresPermitidos,
   onProdutoChange,
   onMotivoChange,
   onSetorChange,
+  onBitexChange,
   resumo,
   onToggleChecklist,
   onChecklistDescricaoChange,
@@ -31,6 +33,8 @@ export default function DadosGeraisCard({
   motivo: string
   solicitante: string
   setor: string
+  // "SIM"/"NÃO"/"" -- ver docs/BITIN_MODEL.md (aciona automaticamente o checklist id 11)
+  bitex: string
   // Restrito ao(s) Subgrupo(s) do usuário logado (2026-07-17, pedido explícito, ver
   // BitinDetail.tsx) -- não é mais uma lista fixa. Só 1 subgrupo = trava sozinho (o pai já
   // preenche `setor` e o <select> fica desabilitado abaixo); admin sem subgrupo nenhum vê
@@ -39,6 +43,7 @@ export default function DadosGeraisCard({
   onProdutoChange: (v: string) => void
   onMotivoChange: (v: string) => void
   onSetorChange: (v: string) => void
+  onBitexChange: (v: string) => void
   resumo: BitinResumo | null
   onToggleChecklist?: (id: string, afeta: boolean) => void
   onChecklistDescricaoChange?: (id: string, descricao: string) => void
@@ -85,6 +90,19 @@ export default function DadosGeraisCard({
               ))}
             </select>
           </div>
+          <div>
+            <FormLabel htmlFor="bitex">BITex</FormLabel>
+            <select
+              id="bitex"
+              value={bitex}
+              onChange={(e) => onBitexChange(e.target.value)}
+              className="dark:[color-scheme:dark] [color-scheme:light] w-full rounded-lg border border-line bg-surface px-3 py-2 text-sm text-ink focus:border-brand-navy focus:outline-none focus:ring-2 focus:ring-brand-navy/20"
+            >
+              <option value="">Selecione...</option>
+              <option value="SIM">SIM</option>
+              <option value="NÃO">NÃO</option>
+            </select>
+          </div>
           <DetailField label="Data de envio" value={formatarDataEnvio(resumo?.data_envio)} />
         </div>
       ) : (
@@ -98,6 +116,7 @@ export default function DadosGeraisCard({
               <SetorBadge setor={resumo?.setor ?? ''} />
             </dd>
           </div>
+          <DetailField label="BITex" value={resumo?.bitex} />
           <DetailField label="Data de envio" value={formatarDataEnvio(resumo?.data_envio)} />
         </dl>
       )}

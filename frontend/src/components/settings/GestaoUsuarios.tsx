@@ -148,7 +148,7 @@ export default function GestaoUsuarios({ subgrupos }: { subgrupos: Subgrupo[] })
   // Ativados/Desativados abaixo), então atualiza o registro em vez de removê-lo do estado --
   // ele só migra de aba (some de "Ativados", aparece em "Desativados").
   async function excluirUsuario(userId: number, nome: string) {
-    if (!window.confirm(`Excluir o usuário "${nome}"? Ele não vai mais conseguir acessar o sistema.`)) return
+    if (!window.confirm(`Excluir o usuário "${nome}"?`)) return
     setExcluindoId(userId)
     setError(null)
     try {
@@ -206,7 +206,7 @@ export default function GestaoUsuarios({ subgrupos }: { subgrupos: Subgrupo[] })
   // Resetar senha (2026-07-21) -- POST /users/{id}/resetar-senha, mesmo padrão de
   // reativarUsuario acima, mas sem prompt de e-mail (não muda) e com confirmação simples.
   async function resetarSenha(userId: number, nome: string) {
-    if (!window.confirm(`Resetar a senha de "${nome}"? A senha atual para de funcionar na hora.`)) return
+    if (!window.confirm(`Resetar a senha de "${nome}"?`)) return
     setResetandoSenhaId(userId)
     setError(null)
     setSenhaResetada(null)
@@ -371,7 +371,11 @@ export default function GestaoUsuarios({ subgrupos }: { subgrupos: Subgrupo[] })
                       <td className="whitespace-nowrap px-3 py-2 text-ink">{u.nome}</td>
                       <td className="whitespace-nowrap px-3 py-2 text-ink-muted">{u.email}</td>
                       <td className="px-3 py-2 text-sm text-ink-faint">
-                        {subgrupos.filter((s) => u.subgrupo_ids.includes(s.id)).map((s) => s.nome).join(', ') || '—'}
+                        {/* Subgrupo só existe pra Engenharia (2026-07-21) -- Cadastro/Processos
+                            nunca têm subgrupo pra mostrar. */}
+                        {u.setor === 'engenharia'
+                          ? subgrupos.filter((s) => u.subgrupo_ids.includes(s.id)).map((s) => s.nome).join(', ') || '—'
+                          : '—'}
                       </td>
                       <td className="px-3 py-2 text-sm text-ink-faint">{u.setor}</td>
                       <td className="px-3 py-2 text-sm text-ink-faint">{u.permission_level}</td>
@@ -396,31 +400,37 @@ export default function GestaoUsuarios({ subgrupos }: { subgrupos: Subgrupo[] })
                       {/* Checkbox group (2026-07-16, pedido explícito do admin: "reassign de
                           subgrupo de um usuário já cadastrado") -- mesmo padrão de múltipla
                           escolha de CriarUsuarioForm.tsx, auto-save on change (PATCH
-                          /users/{id}/subgrupos) igual ao <select> de nível ao lado. */}
-                      <div className="flex flex-wrap gap-x-3 gap-y-1">
-                        {subgrupos.length === 0 && <span className="text-sm text-ink-faint">—</span>}
-                        {subgrupos.map((s) => (
-                          <label key={s.id} className="flex items-center gap-1 text-sm text-ink-muted">
-                            <input
-                              type="checkbox"
-                              checked={u.subgrupo_ids.includes(s.id)}
-                              disabled={salvandoSubgrupoId === u.id}
-                              onChange={(e) => {
-                                const novos = e.target.checked
-                                  ? [...u.subgrupo_ids, s.id]
-                                  : u.subgrupo_ids.filter((id) => id !== s.id)
-                                if (exigeSubgrupo(u.setor, u.permission_level) && novos.length === 0) {
-                                  setError('Este nível de permissão exige ao menos um subgrupo.')
-                                  return
-                                }
-                                alterarSubgrupos(u.id, novos)
-                              }}
-                              className="rounded border-line text-brand-navy focus:ring-brand-navy/20"
-                            />
-                            {s.nome}
-                          </label>
-                        ))}
-                      </div>
+                          /users/{id}/subgrupos) igual ao <select> de nível ao lado.
+                          Subgrupo só existe pra Engenharia (2026-07-21, pedido explícito) --
+                          Cadastro/Processos nem mostram o checkbox group. */}
+                      {u.setor === 'engenharia' ? (
+                        <div className="flex flex-wrap gap-x-3 gap-y-1">
+                          {subgrupos.length === 0 && <span className="text-sm text-ink-faint">—</span>}
+                          {subgrupos.map((s) => (
+                            <label key={s.id} className="flex items-center gap-1 text-sm text-ink-muted">
+                              <input
+                                type="checkbox"
+                                checked={u.subgrupo_ids.includes(s.id)}
+                                disabled={salvandoSubgrupoId === u.id}
+                                onChange={(e) => {
+                                  const novos = e.target.checked
+                                    ? [...u.subgrupo_ids, s.id]
+                                    : u.subgrupo_ids.filter((id) => id !== s.id)
+                                  if (exigeSubgrupo(u.setor, u.permission_level) && novos.length === 0) {
+                                    setError('Este nível de permissão exige ao menos um subgrupo.')
+                                    return
+                                  }
+                                  alterarSubgrupos(u.id, novos)
+                                }}
+                                className="rounded border-line text-brand-navy focus:ring-brand-navy/20"
+                              />
+                              {s.nome}
+                            </label>
+                          ))}
+                        </div>
+                      ) : (
+                        <span className="text-sm text-ink-faint">—</span>
+                      )}
                     </td>
                     <td className="px-3 py-2">
                       {/* Rótulo de papel "Setor" (2026-07-16, NOVO) -- <select> com auto-save,

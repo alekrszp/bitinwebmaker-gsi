@@ -115,14 +115,32 @@ export default function Home() {
             <h1 className="text-2xl font-semibold text-ink text-balance sm:text-3xl">
               {titulo ?? (primeiroNome ? `Bem-vindo, ${primeiroNome}` : 'Bem-vindo')}
             </h1>
-            <AjudaPopover titulo="Como ler esta tela">
-              <p>Os cartões abaixo são atalhos: cada um já abre a lista certa, filtrada.</p>
+            <AjudaPopover titulo="Hint">
               <p>
-                Na fila de Cadastro: "Aguardando cadastro" (liberar no SAP) e "Pendência de
-                envio" (baixar PDF/mandar pro Windchill). Na fila de Processos: "Pendentes"
-                (aguardando revisão de roteiro) e "Revisados" (já devolvidos pro Cadastro).
+                Os cartões abaixo são atalhos dos BITins em processo do seu próprio setor. Cada
+                um já abre a lista certa, filtrada.
               </p>
-              <p>"BITins recentes" lista os últimos criados no sistema, mais recente primeiro.</p>
+              {/* Cada bloco só aparece pra quem tem acesso àquela fila -- Cadastro só vê a
+                  explicação de Cadastro, Processos só a de Processos, e assim por diante
+                  (mesmo padrão pros outros StatCard acima). Admin vê tudo, já que enxerga o
+                  resumo de todos os setores. */}
+              {(souCadastro || admin) && (
+                <p>
+                  Na fila de Cadastro: "Aguardando cadastro" (liberar no SAP) e "Pendência de
+                  envio" (baixar PDF/mandar pro Windchill).
+                </p>
+              )}
+              {(souProcessos || admin) && (
+                <p>
+                  Na fila de Processos: "Pendentes" (aguardando revisão de roteiro) e
+                  "Revisados" (já devolvidos pro Cadastro).
+                </p>
+              )}
+              {souEngenhariaGestor && <p>"Rascunhos" e "Enviados" contam os BITins do seu setor.</p>}
+              {!souCadastro && !souProcessos && !souEngenhariaGestor && !admin && (
+                <p>"Rascunhos" e "Enviados" contam os seus próprios BITins.</p>
+              )}
+              <p>"Recentes" lista os últimos BITins criados, mais recente primeiro.</p>
             </AjudaPopover>
           </div>
           <p className="mt-1 text-sm text-ink-muted">

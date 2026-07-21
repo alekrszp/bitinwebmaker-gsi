@@ -80,6 +80,8 @@ export interface BitinResumo {
   produto: string
   motivo: string
   solicitante: string
+  // "SIM"/"NÃO"/"" -- ver docs/BITIN_MODEL.md (campo bitex do cabeçalho)
+  bitex: string
   materiais: MaterialResumo[]
   checklist: ChecklistItem[]
   setores_afetados: string[]

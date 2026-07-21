@@ -208,6 +208,56 @@ class ValidateBusinessRulesTest(unittest.TestCase):
         bitin["materiais"][0]["alteracoes"]["impactos_operacionais"]["alt"] = "D/-"
         self.assertEqual(self.validate(bitin), [])
 
+    # --- Domínio de dados_basicos (2026-07-21, pedido explícito: "pega as informações de
+    # campo que tu já tem, e aplica essa validação em cima dos campos") -- nivel_revisao (letra
+    # A-Z) e os 3 campos booleanos X/-. Campo vazio nunca é erro. ---
+
+    def test_dominio_nivel_revisao_letra_valida_passa(self) -> None:
+        bitin = make_bitin()
+        bitin["materiais"][0]["alteracoes"]["dados_basicos"] = {"nivel_revisao": {"de": "C", "para": "D"}}
+        errors = self.validate(bitin)
+        self.assertFalse(any(e["code"] == "invalid_nivel_revisao_value" for e in errors))
+
+    def test_dominio_nivel_revisao_invalido_falha(self) -> None:
+        bitin = make_bitin()
+        bitin["materiais"][0]["alteracoes"]["dados_basicos"] = {"nivel_revisao": {"de": "C", "para": "D2"}}
+        errors = self.validate(bitin)
+        self.assertTrue(any(
+            e["code"] == "invalid_nivel_revisao_value"
+            and e["field"] == "materiais[0].alteracoes.dados_basicos.nivel_revisao.para"
+            for e in errors
+        ))
+
+    def test_dominio_nivel_revisao_vazio_nao_falha(self) -> None:
+        bitin = make_bitin()
+        bitin["materiais"][0]["alteracoes"]["dados_basicos"] = {"nivel_revisao": {"de": "", "para": ""}}
+        errors = self.validate(bitin)
+        self.assertFalse(any(e["code"] == "invalid_nivel_revisao_value" for e in errors))
+
+    def test_dominio_campo_booleano_x_ou_traco_passa(self) -> None:
+        bitin = make_bitin()
+        bitin["materiais"][0]["alteracoes"]["dados_basicos"] = {
+            "producao_interna": {"de": "-", "para": "X"},
+        }
+        errors = self.validate(bitin)
+        self.assertFalse(any(e["code"] == "invalid_producao_interna_value" for e in errors))
+
+    def test_dominio_campo_booleano_valor_invalido_falha(self) -> None:
+        bitin = make_bitin()
+        bitin["materiais"][0]["alteracoes"]["dados_basicos"] = {
+            "marcacao_eliminar_nivel_mandante": {"de": "-", "para": "sim"},
+        }
+        errors = self.validate(bitin)
+        self.assertTrue(any(e["code"] == "invalid_marcacao_eliminar_nivel_mandante_value" for e in errors))
+
+    def test_dominio_campo_livre_sem_restricao_qualquer_valor_passa(self) -> None:
+        bitin = make_bitin()
+        bitin["materiais"][0]["alteracoes"]["dados_basicos"] = {
+            "descricao": {"de": "Anything goes here 123", "para": "!!!"},
+        }
+        errors = self.validate(bitin)
+        self.assertFalse(any(e["code"].startswith("invalid_") for e in errors))
+
 
 if __name__ == "__main__":
     unittest.main()
