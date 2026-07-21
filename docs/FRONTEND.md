@@ -553,33 +553,46 @@ em `docs/BITIN_MODEL.md`/`docs/BACKEND.md` — aqui só o que muda na UI.
   Técnica voltaram a ser `type="text"` + `inputMode="decimal"` (o seletor nativo de
   `type="number"` tinha ficado ruim visualmente).
 
-## O que já funciona
+## O que já funciona (estado atual, não histórico — atualizado 2026-07-21)
 
-Base validada com Playwright ad-hoc nas rodadas iniciais (login/shell/Meus Bitins); o restante
-(edição completa, fila Cadastro/Processos) validado pela suíte automatizada (backend + testes
-de ponta a ponta, ver `docs/BACKEND.md`) — sem uma passada de Playwright dedicada nesta sessão
-mais recente (ver nota em "Rodando localmente" abaixo).
+Diferente das seções acima (diário cronológico), esta lista é mantida como resumo do estado
+ATUAL — atualizar aqui sempre que algo mudar de verdade, não só quando uma seção nova for
+adicionada. Validado por `python -m unittest discover -s tests` (358 testes, inclui
+`test_bitin_workflow_e2e.py` ponta a ponta) + `tsc`/`lint`/`build` do frontend + testes ao vivo
+com Playwright nas contas reais (ver `docs/RELEASE_v0.10.0.md`/`v0.10.1.md`).
 
 - Login (`POST /auth/login`) → redireciona pra `/`, com validação visual de erro (credencial
-  errada) e estado de carregamento.
+  errada), estado de carregamento, e gate de senha temporária (`/definir-senha`) no primeiro
+  acesso de uma conta criada pelo admin.
 - Rota protegida: sem token, qualquer rota redireciona pro login.
-- Shell autenticado: sidebar de navegação (off-canvas no celular, itens condicionais por
-  permissão — "Cadastro" só pra nível 88/99, "Administração" só pra 99), topbar com
-  tema/configurações/usuário/sair, Home com boas-vindas + cartões de resumo pessoal.
-- "Meus Bitins" (`/bitins`): listagem escopada por permissão (ver `docs/BACKEND.md`), abas por
-  status, excluir rascunho direto na linha, clique na linha abre o BITin.
+- Shell autenticado: sidebar de navegação (off-canvas no celular), itens condicionais pelo
+  modelo de permissões atual (rank 77/88/99 cruzado com `Usuario.setor` — "Cadastro"/
+  "Processos" pra quem é desses setores ou admin; "Painel geral" pra Gestor/Admin; "Gestão de
+  usuários" só pro super-admin fixo), topbar com tema/configurações/usuário/sair, Home com
+  boas-vindas + resumo (fila do setor ou próprios BITins) + recentes.
+- "Meus Bitins" (`/bitins`): listagem escopada por permissão (próprio/Subgrupo/setor/sistema
+  inteiro conforme o papel, ver `docs/BACKEND.md`), abas Todos/Rascunhos/Enviados, excluir
+  rascunho (ou enviado, se admin) direto na linha, clique na linha abre o BITin.
 - **BITin/ZBPP009/Lista Técnica** (`/bitins/:mongoId`, `/bitins/:mongoId/codigos-sap`,
   `/bitins/:mongoId/lista-tecnica`): as três telas de edição de um rascunho — cadastro completo
   de material, colar do SAP em qualquer célula, checklist com sugestão automática e recálculo
-  ao vivo, lista técnica independente, aviso de alterações não salvas, envio com validação de
-  regras de negócio.
+  ao vivo, lista técnica independente (com autocompletar de Código pai e Centro/Descrição pra
+  material novo), aviso de alterações não salvas, confirmação antes de enviar, envio com
+  validação de regras de negócio (inclui bloqueio se nenhum material tem alteração real).
 - **Fila do setor Cadastro** (`/cadastro`): recebe todo BITin enviado, decide se precisa de
-  roteiro (regra automática) ou conclui direto, PDF final na aba "Retornados de roteiro" — ver
-  `docs/BITIN_MODEL.md`, seção "Roteamento pós-envio".
-- **Setor Processos**: reedita um BITin já enviado enquanto está na fila do Cadastro (única
-  exceção do sistema a "enviado é travado pra sempre"), conclui quando termina.
-- Gestão de usuários (admin): cadastro/reativação com senha temporária, promover/rebaixar
-  nível, atribuir Subgrupo, soft-delete.
+  roteiro (regra automática) ou conclui direto. Etapas "Aguardando cadastro" (botão "Concluir
+  BITIN") e "Pendência de envio" (botão "Baixar PDF", que baixa e já manda pro Windchill na
+  mesma ação) — ver `docs/BITIN_MODEL.md`, seção "Roteamento pós-envio".
+- **Setor Processos** (`/processos`): reedita um BITin já enviado enquanto está na fila do
+  Cadastro (única exceção do sistema a "enviado é travado pra sempre"), conclui quando termina.
+  Etapas "Pendente"/"Revisado" — BITins que nunca precisaram de roteiro não aparecem aqui.
+- **Painel geral** (`/painel-geral`, Gestor/Admin): visão de leitura de todo BITin visível pro
+  usuário, Status x Etapa, filtros de Setor/Usuário/Status/Etapa, export CSV.
+- **Configurações**: "Minha conta" (+ troca de senha) pra qualquer nível; aba "Bitins
+  Concluídos" (admin-only) — lista de BITins com Status="Concluído", botão "Voltar bitin"
+  reverte o envio ao Windchill.
+- **Gestão de usuários** (`/usuarios`, só super-admin fixo): cadastro/reativação com senha
+  temporária, promover/rebaixar nível, atribuir setor/Subgrupo, soft-delete.
 - Logout: volta pro login.
 - Tema claro/escuro (toggle no login E no topbar pós-login, padrão claro, escolha persiste no
   navegador).
@@ -591,6 +604,9 @@ mais recente (ver nota em "Rodando localmente" abaixo).
 - **RBAC visível na UI** além do que já existe — o backend recusa (`403`) quem tenta
   editar/excluir sem permissão; a UI não esconde botões preventivamente pra ações que vão
   falhar no backend.
+- **Painel geral sem paginação de verdade** — busca tudo em lotes de 500 (`PainelGeral.tsx`)
+  até esgotar; funciona, mas não escala indefinidamente. Filtros são todos client-side sobre a
+  lista carregada, não passados pro backend.
 
 ## Rodando localmente
 
