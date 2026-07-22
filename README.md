@@ -14,6 +14,9 @@ disponível pra registro externo — nenhuma etapa depende mais de e-mail/Excel 
 - `docs/BITIN_MODEL.md` — modelo de dados do BITin, regras de negócio, ciclo de vida completo
   (rascunho → enviado → roteamento Cadastro/Processos → PDF final).
 - `docs/BACKEND.md` — arquitetura da API (`backend/`), RBAC, endpoints.
+- `docs/DEPLOY.md` — deploy do sistema interno via Docker Compose (Postgres + MongoDB +
+  backend + frontend auto-hospedados, substituindo o MongoDB Atlas usado até a v0.12.0),
+  stacks separadas de teste e produção.
 - `docs/FRONTEND.md` — arquitetura do frontend web (`frontend/`), telas e decisões de UI.
 - `docs/VBA_EXPORT_MAPPING.md` — mapeamento de colunas do fluxo real `Módulo1`/`Módulo2`
   (referência histórica do motor de export, ainda válida).

@@ -1,0 +1,83 @@
+# Stack completa do sistema interno (2026-07-21) -- bancos (Postgres + MongoDB) + backend
+# (FastAPI) + frontend (build estático servido por nginx, proxy reverso pra /api). Pensado
+# pra rodar como DUAS stacks independentes no mesmo host (teste e produção), cada uma com seu
+# próprio arquivo de env e nome de projeto -- ver docs/DEPLOY.md pros comandos exatos
+# (`docker compose --env-file .env.test -p bitin-test up -d` /
+# `docker compose --env-file .env.prod -p bitin-prod up -d`). O nome de projeto isola
+# volumes/rede automaticamente (Compose prefixa tudo com ele), então as duas stacks nunca se
+# pisam mesmo compartilhando o mesmo `docker-compose.yml` -- só portas/nomes de banco
+# diferentes em cada `.env`, pra não colidir se rodarem no mesmo host.
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    ports:
+      - "127.0.0.1:${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  mongo:
+    image: mongo:7
+    restart: unless-stopped
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: ${MONGO_INITDB_ROOT_USERNAME}
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_INITDB_ROOT_PASSWORD}
+    ports:
+      - "127.0.0.1:${MONGO_PORT:-27017}:27017"
+    volumes:
+      - mongodata:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      mongo:
+        condition: service_healthy
+    environment:
+      ENVIRONMENT: ${ENVIRONMENT:-production}
+      SECRET_KEY: ${SECRET_KEY}
+      # Montada a partir das MESMAS credenciais dos serviços acima -- não duplica senha em
+      # variável separada (uma fonte só de verdade pra usuário/senha do banco).
+      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      MONGO_URL: mongodb://${MONGO_INITDB_ROOT_USERNAME}:${MONGO_INITDB_ROOT_PASSWORD}@mongo:27017/?authSource=admin
+      MONGO_DB_NAME: ${MONGO_DB_NAME:-bitin_db}
+      CORS_ORIGINS: ${CORS_ORIGINS}
+    ports:
+      # Acesso direto (debug/health-check) -- o tráfego normal do navegador vai por
+      # frontend/nginx (proxy /api/), não precisa bater aqui direto.
+      - "127.0.0.1:${API_PORT:-8000}:8000"
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        VITE_API_BASE_URL: /api/v1
+    restart: unless-stopped
+    depends_on:
+      - backend
+    ports:
+      - "${WEB_PORT:-80}:80"
+
+volumes:
+  pgdata:
+  mongodata:

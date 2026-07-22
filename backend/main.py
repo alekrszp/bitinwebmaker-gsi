@@ -53,13 +53,12 @@ app = FastAPI(
 
 # allow_origins=["*"] + allow_credentials=True é uma combinação inválida/insegura (achado da
 # revisão do GPT_Engineering_authAPI, que tinha exatamente esse bug) -- lista explícita das
-# origens do frontend em dev; trocar/expandir quando houver domínio de produção.
+# origens permitidas. Vem de CORS_ORIGINS (.env, ver backend/config.py) -- default cobre só as
+# portas de dev do Vite; qualquer deploy real (teste ou produção, ver docs/DEPLOY.md) precisa
+# setar essa variável com a URL de verdade do frontend.
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:5173", "http://127.0.0.1:5173",
-        "http://localhost:5174", "http://127.0.0.1:5174",
-    ],
+    allow_origins=settings.cors_origins_list,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

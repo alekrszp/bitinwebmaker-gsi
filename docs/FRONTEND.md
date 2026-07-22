@@ -664,8 +664,8 @@ Copie `frontend/.env.example` para `frontend/.env` se a API não estiver em
 
 **Se `MONGO_URL` não estiver configurado no `.env` desta máquina**: o backend sobe e
 login/registro funcionam (Postgres/SQLite), mas qualquer ação de `/bitins` (que depende do
-Mongo) devolve `500`. Desde a v0.8.2 o projeto já roda com **MongoDB Atlas real** em produção
-(ver `docs/RELEASE_v0.8.2.md`) — essa nota vale só pra uma máquina de dev sem esse `.env`
-configurado localmente. Pra testar o fluxo de BITin sem MongoDB real disponível, é preciso
-rodar o backend com `mongomock-motor` no lugar do cliente Mongo (mesma estratégia dos testes
-automatizados).
+Mongo) devolve `500`. Produção rodou com MongoDB Atlas (cloud) da v0.8.2 até a v0.12.0 (ver
+`docs/RELEASE_v0.8.2.md`); a partir daí o sistema virou interno e o banco (Postgres + MongoDB)
+passou a ser auto-hospedado via `docker-compose.yml` — ver `docs/DEPLOY.md`. Pra testar o
+fluxo de BITin sem MongoDB real disponível (esta máquina de dev), é preciso rodar o backend com
+`mongomock-motor` no lugar do cliente Mongo (mesma estratégia dos testes automatizados).

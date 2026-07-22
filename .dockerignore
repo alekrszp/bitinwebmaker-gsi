@@ -1,0 +1,24 @@
+# Contexto de build (raiz do repo, ver backend/Dockerfile) -- exclui tudo que nenhuma imagem
+# precisa: ambientes locais, artefatos de teste/dev, histórico git.
+.git/
+.venv/
+node_modules/
+frontend/node_modules/
+frontend/dist/
+__pycache__/
+*.pyc
+*.db
+*.db.bak*
+tmp_*
+.env
+.env.*
+!.env.*.example
+
+# Referências grandes (.xlsm/.pdf reais usados só pelos testes automatizados, ver
+# tests/test_vba_port_export.py) -- nenhuma imagem de runtime precisa disso.
+examples/
+bitinsparaexemplo/
+
+# Documentação/testes -- não fazem parte de nenhuma imagem de runtime.
+docs/
+tests/
