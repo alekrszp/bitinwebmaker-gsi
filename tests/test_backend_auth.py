@@ -29,7 +29,9 @@ from backend.main import app  # noqa: E402
 # de fora de propósito (ver test_admin_nao_pode_ser_rebaixado_nem_por_outro_admin /
 # test_admin_nao_pode_excluir_outro_admin, que agora esperam 403 antes de chegar na regra
 # antiga de "não mexe em admin").
-SUPER_ADMIN_EMAIL = "alessandro.pereiradarosafilho@grainproteintech.com"
+# 2026-07-22: trocado de alessandro.pereiradarosafilho@grainproteintech.com pra
+# admin@admin.com (ver backend/auth/security.py::CONTAS_SUPER_ADMIN).
+SUPER_ADMIN_EMAIL = "admin@admin.com"
 
 
 class AuthApiTest(unittest.TestCase):

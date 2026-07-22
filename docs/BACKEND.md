@@ -423,10 +423,12 @@ Engenharia/Admin, no mesmo escopo de `list_bitins` — substitui as até 7 chama
 
 Pedido explícito do usuário: "me coloca como admin TOTAL, eu posso fazer o que eu quiser,
 remover admins, tirar permissão etc, mas isso vai ser uma permissão escondida no front que só
-existe no back". `backend/auth/deps.py::CONTAS_SUPER_ADMIN` (hoje só
-`alessandro.pereiradarosafilho@grainproteintech.com`) + `eh_super_admin(user)` — checagem de
-e-mail contra esse set, usada em `update_user_permission` e `delete_user`
-(`backend/api/users.py`) pra pular a proteção "admin não mexe em admin".
+existe no back". `backend/auth/security.py::CONTAS_SUPER_ADMIN` (trocado em 2026-07-22, "quero
+só admin@admin.com como superadmin" — hoje só `admin@admin.com`, antes era o e-mail pessoal do
+usuário) + `eh_super_admin(user)` (`backend/auth/deps.py`) — checagem de e-mail contra esse
+set, usada em `update_user_permission`/`delete_user`/toda a Gestão de Usuários
+(`backend/api/users.py::_exigir_super_admin`) pra pular a proteção "admin não mexe em admin" e
+liberar a tela inteira.
 
 - **De propósito não existe NENHUM sinal disso no frontend** — nem campo em `UserOut`, nem
   lógica condicional no bundle JS. Um check client-side seria visível no DevTools/bundle,

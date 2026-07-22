@@ -301,12 +301,27 @@ export default function CodigosSapPage() {
   const [carregando, setCarregando] = useState(true)
   const [salvando, setSalvando] = useState(false)
   const [erro, setErro] = useState<string | null>(null)
-  // Filtro de campos (2026-07-21, pedido explícito: "opção de pesquisa de campo na zbpp009,
-  // como é na tela de bitin") -- a grade tem ~30 campos de dados_basicos x 2 colunas cada,
-  // sem paginação; digitar aqui esconde as colunas De/Novo que não combinam (identificação
-  // continua sempre visível). Mesma função `normalizar` (tolerante a acento/maiúscula) usada
-  // pelo combobox "+ Campo alterado" de MaterialEditorCard.tsx.
-  const [buscaCampo, setBuscaCampo] = useState('')
+  // Filtro fixo de campos (2026-07-21, pedido explícito: "colocar um filtro fixo. um dropdown
+  // com todos os campos onde o engenheiro escolhe quais ele quer e ficam todos fixos" --
+  // substitui a busca ao vivo de antes) -- a grade tem ~30 campos de dados_basicos x 2 colunas
+  // cada, sem paginação; por padrão nenhum aparece (só identificação), o engenheiro escolhe no
+  // dropdown quais quer ver, e a escolha fica fixa na tela (não é um filtro que muda sozinho
+  // digitando, é uma seleção deliberada que persiste até ele mudar de novo).
+  const [camposSelecionados, setCamposSelecionados] = useState<Set<string>>(new Set())
+  const [buscaCampoDropdown, setBuscaCampoDropdown] = useState('')
+  const [dropdownCamposAberto, setDropdownCamposAberto] = useState(false)
+  const dropdownCamposRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (!dropdownCamposAberto) return
+    function aoClicarFora(e: MouseEvent) {
+      if (dropdownCamposRef.current && !dropdownCamposRef.current.contains(e.target as Node)) {
+        setDropdownCamposAberto(false)
+      }
+    }
+    document.addEventListener('mousedown', aoClicarFora)
+    return () => document.removeEventListener('mousedown', aoClicarFora)
+  }, [dropdownCamposAberto])
   // Seleção por _id estável, não índice (2026-07-17) -- índice desloca a cada remoção/colagem,
   // podia selecionar a linha errada depois de uma edição.
   const [selecionadas, setSelecionadas] = useState<Set<string>>(new Set())
@@ -547,16 +562,21 @@ export default function CodigosSapPage() {
     [schema],
   )
 
-  // Campo de busca vazio = mostra tudo (comportamento de sempre); digitando, filtra por label
-  // normalizada -- identificação (Código/Centro/Tipo) nunca é afetada, só os pares De/Novo de
-  // dados_basicos.
-  const buscaNormalizada = normalizar(buscaCampo.trim())
+  // Só os campos marcados no dropdown aparecem como coluna -- identificação (Código/Centro/
+  // Tipo) nunca é afetada, só os pares De/Novo de dados_basicos.
   const camposDadosBasicosFiltrados = useMemo(
+    () => schema?.dados_basicos.filter((campo) => camposSelecionados.has(campo.key)) ?? [],
+    [schema, camposSelecionados],
+  )
+  // Filtro só dentro do dropdown (achar um campo entre ~30 rápido) -- não afeta as colunas já
+  // fixadas na tabela, só a lista de opções mostrada dentro do próprio dropdown.
+  const buscaDropdownNormalizada = normalizar(buscaCampoDropdown.trim())
+  const opcoesDropdown = useMemo(
     () =>
-      buscaNormalizada
-        ? (schema?.dados_basicos.filter((campo) => normalizar(campo.label).includes(buscaNormalizada)) ?? [])
+      buscaDropdownNormalizada
+        ? (schema?.dados_basicos.filter((campo) => normalizar(campo.label).includes(buscaDropdownNormalizada)) ?? [])
         : (schema?.dados_basicos ?? []),
-    [schema, buscaNormalizada],
+    [schema, buscaDropdownNormalizada],
   )
 
   if (carregando || !schema) {
@@ -632,13 +652,72 @@ export default function CodigosSapPage() {
 
       <Card title="Materiais">
         <div className="mt-4 flex flex-wrap items-center gap-2 rounded-lg bg-surface-alt px-3 py-2">
-          <input
-            type="text"
-            value={buscaCampo}
-            onChange={(e) => setBuscaCampo(e.target.value)}
-            placeholder="Buscar campo (ex.: nível revisão)..."
-            className="w-64 rounded-lg border border-line bg-surface px-3 py-1.5 text-sm text-ink placeholder:text-ink-faint"
-          />
+          <div ref={dropdownCamposRef} className="relative">
+            <button
+              type="button"
+              onClick={() => setDropdownCamposAberto((v) => !v)}
+              className="rounded-lg border border-line bg-surface px-3 py-1.5 text-sm text-ink hover:bg-surface-alt"
+            >
+              Campos visíveis {camposSelecionados.size > 0 ? `(${camposSelecionados.size})` : ''}
+            </button>
+            {dropdownCamposAberto && (
+              <div className="absolute left-0 top-9 z-30 w-72 rounded-lg border border-line bg-surface p-2 shadow-lg">
+                <input
+                  type="text"
+                  value={buscaCampoDropdown}
+                  onChange={(e) => setBuscaCampoDropdown(e.target.value)}
+                  placeholder="Achar campo (ex.: nível revisão)..."
+                  className="mb-2 w-full rounded border border-line bg-surface px-2 py-1 text-sm text-ink placeholder:text-ink-faint"
+                />
+                <div className="max-h-72 overflow-y-auto">
+                  {opcoesDropdown.length === 0 && (
+                    <p className="px-1 py-1 text-sm text-ink-faint">Nenhum campo encontrado.</p>
+                  )}
+                  {opcoesDropdown.map((campo) => (
+                    <label key={campo.key} className="flex items-center gap-2 rounded px-1 py-1 text-sm text-ink hover:bg-surface-alt">
+                      <input
+                        type="checkbox"
+                        checked={camposSelecionados.has(campo.key)}
+                        onChange={(e) =>
+                          setCamposSelecionados((atual) => {
+                            const novo = new Set(atual)
+                            if (e.target.checked) novo.add(campo.key)
+                            else novo.delete(campo.key)
+                            return novo
+                          })
+                        }
+                        className="rounded border-line text-brand-navy focus:ring-brand-navy/20"
+                      />
+                      {campo.label}
+                    </label>
+                  ))}
+                </div>
+                <div className="mt-2 flex gap-2">
+                  {/* "Selecionar todos" (2026-07-22, pedido explícito) -- marca todos os
+                      campos do SCHEMA inteiro (schema.dados_basicos), não só os que estão
+                      visíveis no momento por causa do filtro de texto do dropdown -- senão
+                      "selecionar todos" com uma busca ativa selecionaria só um subconjunto,
+                      surpreendendo quem limpasse a busca depois. */}
+                  <button
+                    type="button"
+                    onClick={() => setCamposSelecionados(new Set(schema?.dados_basicos.map((c) => c.key) ?? []))}
+                    className="flex-1 rounded border border-line px-2 py-1 text-xs font-medium text-ink-muted hover:bg-surface-alt"
+                  >
+                    Selecionar todos
+                  </button>
+                  {camposSelecionados.size > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => setCamposSelecionados(new Set())}
+                      className="flex-1 rounded border border-line px-2 py-1 text-xs font-medium text-ink-muted hover:bg-surface-alt"
+                    >
+                      Limpar seleção
+                    </button>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
           <span className="text-xs font-medium text-ink-muted">
             {selecionadas.size > 0 ? `${selecionadas.size} selecionada(s)` : 'Nenhuma linha selecionada'}
           </span>

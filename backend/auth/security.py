@@ -22,7 +22,12 @@ pwd_context = CryptContext(schemes=["pbkdf2_sha256"], deprecated="auto")
 # import circular: schemas.py <- deps.py, então deps.py não pode ser importado de volta por
 # schemas.py). Checa por e-mail, não por Usuario inteiro, justamente pra não puxar
 # backend.auth.models aqui.
-CONTAS_SUPER_ADMIN = {"alessandro.pereiradarosafilho@grainproteintech.com"}
+#
+# Trocado de alessandro.pereiradarosafilho@grainproteintech.com pra admin@admin.com
+# (2026-07-22, pedido explícito: "quero só admin@admin.com como superadmin. alessandro só é
+# cadastro.") -- o e-mail antigo virou uma conta de teste normal (nível Individual, setor
+# Cadastro), sem mais nenhum privilégio especial.
+CONTAS_SUPER_ADMIN = {"admin@admin.com"}
 
 
 def eh_super_admin_email(email: str) -> bool:
