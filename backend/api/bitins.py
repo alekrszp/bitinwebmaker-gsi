@@ -68,6 +68,17 @@ class AtualizarProcessosRequest(BaseModel):
     content: dict[str, Any]
 
 
+class HistoricoEvento(BaseModel):
+    """Item da linha do tempo de um BITin (2026-07-22, pedido explícito: "histórico/auditoria
+    por BITin -- quem mexeu, quando, o que mudou"). Nível de detalhe é EVENTO, não diff campo a
+    campo (decisão do usuário: "só os eventos principais... diff ficaria bem ruidoso pra
+    rascunho") -- salvar um rascunho não gera evento, só marcos do fluxo (criação, envio,
+    cada passo de Processos/Cadastro/Windchill)."""
+    usuario: str
+    data: str
+    acao: str
+
+
 class BitinResponse(BaseModel):
     mongo_id: str
     codigo: str | None = None
@@ -100,6 +111,7 @@ class BitinResponse(BaseModel):
     # Último passo de todos (2026-07-20) -- ver bitin_lifecycle.enviar_windchill.
     windchill_enviado: bool = False
     data_windchill_enviado: str | None = None
+    historico: list[HistoricoEvento] = []
 
 
 class EnviarResponse(BaseModel):
@@ -134,6 +146,12 @@ def _pode_editar(doc: dict[str, Any], current_user: Usuario) -> bool:
     return True
 
 
+def _evento_historico(usuario_email: str, acao: str) -> dict[str, Any]:
+    """Monta 1 item de `historico[]` -- ver HistoricoEvento acima. Função só pra não repetir a
+    forma do dict em cada endpoint que registra evento."""
+    return {"usuario": usuario_email, "data": datetime.now().isoformat(), "acao": acao}
+
+
 def _doc_to_response(doc: dict[str, Any], current_user: Usuario) -> BitinResponse:
     return BitinResponse(
         mongo_id=doc["_id"],
@@ -155,6 +173,10 @@ def _doc_to_response(doc: dict[str, Any], current_user: Usuario) -> BitinRespons
         data_cadastrado=doc.get("data_cadastrado"),
         windchill_enviado=doc.get("windchill_enviado", False),
         data_windchill_enviado=doc.get("data_windchill_enviado"),
+        # Vive dentro de content (não como campo irmão no Mongo) de propósito -- assim
+        # GET /{mongo_id}/resumo (que só recebe `content`, ver render_bitin_summary) também
+        # enxerga o histórico sem precisar de um segundo caminho de leitura.
+        historico=doc.get("content", {}).get("historico", []),
     )
 
 
@@ -352,6 +374,12 @@ async def create_or_update_draft(
         # segurança/integridade de dado é esta, não só a omissão do campo no formulário do
         # frontend, que qualquer requisição manual poderia contornar.
         solicitante = existing.get("content", {}).get("solicitante")
+        # Preserva o histórico já existente (vive em content.historico, não como campo irmão --
+        # ver comentário em _doc_to_response) -- este endpoint faz replace_one (documento
+        # inteiro novo), então qualquer campo que não seja recopiado aqui simplesmente some.
+        # Salvar um rascunho de novo NÃO gera evento próprio (decisão do usuário: só eventos
+        # principais, senão ficaria um evento por autosave).
+        historico = existing.get("content", {}).get("historico", [])
     else:
         mongo_id = str(uuid.uuid4())
         created_at = now
@@ -359,11 +387,17 @@ async def create_or_update_draft(
         # Idem ao comentário acima: na criação, o solicitante é sempre o nome de quem está
         # logado -- qualquer valor mandado pelo cliente pra esse campo é ignorado.
         solicitante = current_user.nome
+        historico = [_evento_historico(current_user.email, "criou o rascunho")]
 
     # data_solicitacao é carimbada pelo sistema (data em que o rascunho foi salvo pela
     # primeira vez), não escolhida livremente pelo engenheiro -- qualquer valor mandado pelo
     # cliente pra esse campo é ignorado. Ver docs/BITIN_MODEL.md, "Regras de campo".
-    content = {**draft_in.content, "data_solicitacao": created_at[:10], "solicitante": solicitante}
+    content = {
+        **draft_in.content,
+        "data_solicitacao": created_at[:10],
+        "solicitante": solicitante,
+        "historico": historico,
+    }
 
     doc = {
         "_id": mongo_id,
@@ -699,6 +733,12 @@ async def enviar_bitin_endpoint(
         campos_topo["data_processos_concluido"] = content["data_processos_concluido"]
     if "sem_necessidade_roteiro" in content:
         campos_topo["sem_necessidade_roteiro"] = content["sem_necessidade_roteiro"]
+    acao_evento = f"enviou o BITin ({bitin_sql.codigo})"
+    if content.get("encaminhado_roteiro") and not content.get("processos_concluido"):
+        acao_evento += " -- foi para revisão de roteiro (Processos)"
+    elif content.get("sem_necessidade_roteiro"):
+        acao_evento += " -- direto para Cadastro, sem necessidade de roteiro"
+    content.setdefault("historico", []).append(_evento_historico(current_user.email, acao_evento))
     try:
         await collection.update_one({"_id": mongo_id}, {"$set": campos_topo})
     except Exception:
@@ -836,13 +876,16 @@ async def atualizar_processos_endpoint(
     campos_do_sistema = (
         "bitin", "status", "data_envio", "encaminhado_roteiro", "data_encaminhado_roteiro",
         "processos_concluido", "data_processos_concluido", "sem_necessidade_roteiro",
-        "data_solicitacao", "solicitante",
+        "data_solicitacao", "solicitante", "historico",
     )
     doc_content = doc.get("content", {})
     content = {
         **payload.content,
         **{campo: doc_content[campo] for campo in campos_do_sistema if campo in doc_content},
     }
+    content.setdefault("historico", []).append(
+        _evento_historico(current_user.email, "atualizou os dados do BITin (Processos)")
+    )
     await collection.update_one(
         {"_id": mongo_id},
         {"$set": {"content": content, "updated_at": datetime.now().isoformat()}},
@@ -871,14 +914,19 @@ async def concluir_processos_endpoint(
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
+    content.setdefault("historico", []).append(
+        _evento_historico(current_user.email, "concluiu a revisão de roteiro (Processos)")
+    )
     await collection.update_one(
         {"_id": mongo_id},
-        {"$set": {
-            "content": content,
-            "processos_concluido": True,
-            "data_processos_concluido": content["data_processos_concluido"],
-            "updated_at": datetime.now().isoformat(),
-        }},
+        {
+            "$set": {
+                "content": content,
+                "processos_concluido": True,
+                "data_processos_concluido": content["data_processos_concluido"],
+                "updated_at": datetime.now().isoformat(),
+            },
+        },
     )
     updated_doc = await collection.find_one({"_id": mongo_id})
     return _doc_to_response(updated_doc, current_user)
@@ -905,14 +953,17 @@ async def concluir_bitin_endpoint(
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
+    content.setdefault("historico", []).append(_evento_historico(current_user.email, "concluiu o cadastro no SAP"))
     await collection.update_one(
         {"_id": mongo_id},
-        {"$set": {
-            "content": content,
-            "bitin_cadastrado": True,
-            "data_cadastrado": content["data_cadastrado"],
-            "updated_at": datetime.now().isoformat(),
-        }},
+        {
+            "$set": {
+                "content": content,
+                "bitin_cadastrado": True,
+                "data_cadastrado": content["data_cadastrado"],
+                "updated_at": datetime.now().isoformat(),
+            },
+        },
     )
     updated_doc = await collection.find_one({"_id": mongo_id})
     return _doc_to_response(updated_doc, current_user)
@@ -939,14 +990,19 @@ async def enviar_windchill_endpoint(
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
+    content.setdefault("historico", []).append(
+        _evento_historico(current_user.email, "baixou o PDF e enviou ao Windchill")
+    )
     await collection.update_one(
         {"_id": mongo_id},
-        {"$set": {
-            "content": content,
-            "windchill_enviado": True,
-            "data_windchill_enviado": content["data_windchill_enviado"],
-            "updated_at": datetime.now().isoformat(),
-        }},
+        {
+            "$set": {
+                "content": content,
+                "windchill_enviado": True,
+                "data_windchill_enviado": content["data_windchill_enviado"],
+                "updated_at": datetime.now().isoformat(),
+            },
+        },
     )
     updated_doc = await collection.find_one({"_id": mongo_id})
     return _doc_to_response(updated_doc, current_user)
@@ -976,14 +1032,19 @@ async def reverter_windchill_endpoint(
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
+    content.setdefault("historico", []).append(
+        _evento_historico(current_user.email, "reverteu o envio ao Windchill")
+    )
     await collection.update_one(
         {"_id": mongo_id},
-        {"$set": {
-            "content": content,
-            "windchill_enviado": False,
-            "data_windchill_enviado": None,
-            "updated_at": datetime.now().isoformat(),
-        }},
+        {
+            "$set": {
+                "content": content,
+                "windchill_enviado": False,
+                "data_windchill_enviado": None,
+                "updated_at": datetime.now().isoformat(),
+            },
+        },
     )
     updated_doc = await collection.find_one({"_id": mongo_id})
     return _doc_to_response(updated_doc, current_user)

@@ -5,6 +5,7 @@ import AvisoSairModal from '../components/bitin/AvisoSairModal'
 import DadosGeraisCard from '../components/bitin/DadosGeraisCard'
 import EdicaoBottomBar from '../components/bitin/EdicaoBottomBar'
 import ErrosEnvioBanner from '../components/bitin/ErrosEnvioBanner'
+import HistoricoCard from '../components/bitin/HistoricoCard'
 import MateriaisSection from '../components/bitin/MateriaisSection'
 import OrdemClienteEditor from '../components/bitin/OrdemClienteEditor'
 import OrdemClienteSection from '../components/bitin/OrdemClienteSection'
@@ -15,7 +16,8 @@ import { useVoltar } from '../hooks/useVoltar'
 import { api } from '../lib/api'
 import { materialVazio, normalizarMaterial } from '../lib/bitinDefaults'
 import type { BitinResumo } from '../lib/bitinTypes'
-import { isAdmin } from '../lib/permissions'
+import { duplicarBitinENavegar } from '../lib/duplicarBitin'
+import { SETOR_ENGENHARIA, ehDoSetor, isAdmin } from '../lib/permissions'
 import { useEnviarBitin } from '../lib/useEnviarBitin'
 import type { Bitin, MateriaisSchema, MaterialEditavel, OrdemClienteEditavel, Subgrupo } from '../lib/types'
 
@@ -114,6 +116,7 @@ export default function BitinDetail() {
   const [erro, setErro] = useState<string | null>(null)
   const [salvando, setSalvando] = useState(false)
   const [excluindo, setExcluindo] = useState(false)
+  const [duplicando, setDuplicando] = useState(false)
   const [confirmacaoEnvio, setConfirmacaoEnvio] = useState<string | null>(null)
 
   // Confia 100% em `podeEditar` (o servidor decide, ver backend/api/bitins.py::_pode_editar)
@@ -123,6 +126,10 @@ export default function BitinDetail() {
   // `status === 'rascunho'` diretamente, não `editavel`.
   const editavel = podeEditar
   const ehAdmin = isAdmin(user?.permission_level)
+  // "Duplicar" (2026-07-22) -- só quem cria BITin de verdade pode (mesma regra de POST
+  // /bitins/draft, ver backend/api/bitins.py::create_or_update_draft: Cadastro/Processos
+  // recebem 403 tentando criar/editar rascunho -- não faz sentido mostrar o botão pra eles).
+  const podeDuplicar = ehAdmin || ehDoSetor(user?.permission_level, user?.setor, SETOR_ENGENHARIA)
   // BITin "enviado" mas ainda editável só acontece no cenário Processos (ou admin fazendo a
   // mesma coisa) -- usado pra rotear salvar()/alternarChecklist() pra /atualizar-processos em
   // vez de /draft, e pra mostrar o botão "Concluir" (rótulo simplificado 2026-07-20, pedido
@@ -425,6 +432,21 @@ export default function BitinDetail() {
     if (id) await enviar()
   }
 
+  // "Duplicar" (2026-07-22) -- cria um rascunho novo com os dados deste BITin (ver
+  // lib/duplicarBitin.ts). Funciona em qualquer status (rascunho ou já enviado) -- é
+  // justamente pra reaproveitar um BITin PRONTO como ponto de partida.
+  async function handleDuplicar() {
+    if (!mongoId) return
+    setDuplicando(true)
+    setErro(null)
+    try {
+      await duplicarBitinENavegar(mongoId, navigate)
+    } catch {
+      setErro('Não foi possível duplicar este BITin. Tente novamente.')
+      setDuplicando(false)
+    }
+  }
+
   // Excluir um BITin já enviado é bem mais grave que excluir rascunho -- libera o número
   // sequencial (código pode ser reaproveitado por outro BITin depois), por isso o texto de
   // confirmação é mais explícito e só admin (isAdmin(permission_level)) vê o botão pra
@@ -546,12 +568,24 @@ export default function BitinDetail() {
           </AjudaPopover>
         )}
 
+        {podeDuplicar && (
+          <button
+            type="button"
+            onClick={handleDuplicar}
+            disabled={duplicando}
+            title="Cria um rascunho novo com os mesmos dados deste BITin"
+            className="ml-auto rounded-lg border border-line px-4 py-2 text-sm font-medium text-ink-muted transition-colors hover:bg-surface-alt disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {duplicando ? 'Duplicando...' : 'Duplicar'}
+          </button>
+        )}
+
         {editavel && status === 'rascunho' && (
           <button
             type="button"
             onClick={handleExcluir}
             disabled={excluindo || salvando || enviando}
-            className="ml-auto rounded-lg border border-red-600/40 px-4 py-2 text-sm font-medium text-red-600 transition-colors hover:bg-red-600/10 disabled:cursor-not-allowed disabled:opacity-60"
+            className="rounded-lg border border-red-600/40 px-4 py-2 text-sm font-medium text-red-600 transition-colors hover:bg-red-600/10 disabled:cursor-not-allowed disabled:opacity-60"
           >
             {excluindo ? 'Excluindo...' : 'Excluir rascunho'}
           </button>
@@ -565,7 +599,7 @@ export default function BitinDetail() {
             type="button"
             onClick={handleExcluirEnviado}
             disabled={excluindo || salvando || enviando}
-            className="ml-auto rounded-lg border border-red-600/40 px-4 py-2 text-sm font-medium text-red-600 transition-colors hover:bg-red-600/10 disabled:cursor-not-allowed disabled:opacity-60"
+            className="rounded-lg border border-red-600/40 px-4 py-2 text-sm font-medium text-red-600 transition-colors hover:bg-red-600/10 disabled:cursor-not-allowed disabled:opacity-60"
           >
             {excluindo ? 'Excluindo...' : 'Excluir BITin enviado'}
           </button>
@@ -641,6 +675,8 @@ export default function BitinDetail() {
         materiaisResumo={resumo?.materiais ?? null}
         mongoId={mongoId}
       />
+
+      {resumo && <HistoricoCard eventos={resumo.historico} />}
 
       {editavel && status === 'rascunho' && mongoId && (
         <EdicaoBottomBar mongoId={mongoId} enviando={enviando || salvando} onEnviar={handleEnviar} />

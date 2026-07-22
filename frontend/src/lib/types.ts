@@ -121,6 +121,16 @@ export interface Bitin {
   // Última etapa de todas (2026-07-20, ver scripts/bitin_lifecycle.py::enviar_windchill).
   windchill_enviado: boolean
   data_windchill_enviado: string | null
+  // Linha do tempo de eventos principais (2026-07-22, ver backend/api/bitins.py::
+  // _evento_historico) -- criação, envio, cada passo de Processos/Cadastro/Windchill. NÃO
+  // inclui salvar rascunho (ficaria ruidoso demais).
+  historico: HistoricoEvento[]
+}
+
+export interface HistoricoEvento {
+  usuario: string
+  data: string
+  acao: string
 }
 
 // Espelha scripts/bitin_model.py::build_materiais_schema -- devolvido por

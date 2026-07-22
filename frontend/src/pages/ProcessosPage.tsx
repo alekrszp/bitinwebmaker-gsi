@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import AjudaPopover from '../components/bitin/AjudaPopover'
 import BitinTableSection from '../components/bitin/BitinTableSection'
-import { COLUNAS_PADRAO_BITIN, type BitinColuna } from '../components/bitin/bitinColunas'
+import { COLUNAS_PADRAO_BITIN, COLUNA_TEMPO_ETAPA, type BitinColuna } from '../components/bitin/bitinColunas'
 import FiltroEtapaToolbar from '../components/bitin/FiltroEtapaToolbar'
 import { useAuth } from '../hooks/useAuth'
 import { useDebouncedValue } from '../hooks/useDebouncedValue'
@@ -80,6 +80,7 @@ const COLUNAS: BitinColuna[] = [
       </span>
     ),
   },
+  COLUNA_TEMPO_ETAPA,
 ]
 
 export default function ProcessosPage() {

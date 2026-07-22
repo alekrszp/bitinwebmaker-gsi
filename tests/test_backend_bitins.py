@@ -1507,6 +1507,41 @@ class BitinApiTest(unittest.TestCase):
         self.assertEqual(resp.status_code, 200, resp.text)
         self.assertEqual(resp.json()["geral_rascunhos"], 0)
 
+    # --- Histórico/auditoria (2026-07-22, pedido explícito: "quem mexeu, quando, o que
+    # mudou" -- nível de evento, não diff campo a campo) ---
+
+    def test_historico_criacao_rascunho_gera_1_evento(self) -> None:
+        resp = self.client.post("/api/v1/bitins/draft", json={"content": make_bitin_content()})
+        historico = resp.json()["historico"]
+        self.assertEqual(len(historico), 1)
+        self.assertIn("criou o rascunho", historico[0]["acao"])
+        self.assertEqual(historico[0]["usuario"], self.default_user.email)
+
+    def test_historico_salvar_rascunho_de_novo_nao_gera_evento_extra(self) -> None:
+        create_resp = self.client.post("/api/v1/bitins/draft", json={"content": make_bitin_content()})
+        mongo_id = create_resp.json()["mongo_id"]
+        update_resp = self.client.post(
+            "/api/v1/bitins/draft",
+            json={"mongo_id": mongo_id, "content": make_bitin_content(motivo="Outro motivo")},
+        )
+        self.assertEqual(len(update_resp.json()["historico"]), 1)
+
+    def test_historico_envio_gera_evento(self) -> None:
+        create_resp = self.client.post("/api/v1/bitins/draft", json={"content": make_bitin_content()})
+        mongo_id = create_resp.json()["mongo_id"]
+        resp = self.client.post(f"/api/v1/bitins/{mongo_id}/enviar")
+        self.assertTrue(resp.json()["ok"], resp.text)
+        historico = resp.json()["bitin"]["historico"]
+        self.assertEqual(len(historico), 2)
+        self.assertIn("enviou o BITin", historico[1]["acao"])
+
+    def test_historico_aparece_no_resumo(self) -> None:
+        create_resp = self.client.post("/api/v1/bitins/draft", json={"content": make_bitin_content()})
+        mongo_id = create_resp.json()["mongo_id"]
+        resp = self.client.get(f"/api/v1/bitins/{mongo_id}/resumo")
+        self.assertEqual(resp.status_code, 200, resp.text)
+        self.assertEqual(len(resp.json()["historico"]), 1)
+
 
 if __name__ == "__main__":
     unittest.main()

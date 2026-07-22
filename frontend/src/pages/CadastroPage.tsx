@@ -2,13 +2,15 @@ import { useEffect, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import AjudaPopover from '../components/bitin/AjudaPopover'
 import BitinTableSection from '../components/bitin/BitinTableSection'
-import { COLUNAS_PADRAO_BITIN } from '../components/bitin/bitinColunas'
+import { COLUNAS_PADRAO_BITIN, COLUNA_TEMPO_ETAPA } from '../components/bitin/bitinColunas'
 import FiltroEtapaToolbar from '../components/bitin/FiltroEtapaToolbar'
 import { useAuth } from '../hooks/useAuth'
 import { useDebouncedValue } from '../hooks/useDebouncedValue'
 import { api } from '../lib/api'
 import { isCadastro } from '../lib/permissions'
 import type { Bitin } from '../lib/types'
+
+const COLUNAS = [...COLUNAS_PADRAO_BITIN, COLUNA_TEMPO_ETAPA]
 
 // Fila de trabalho do setor Cadastro (2026-07-17, ajustada em 2026-07-20/21) -- substitui de
 // vez o e-mail/PDF manual que existia antes (Módulo12.bas na macro original, depois um botão
@@ -214,7 +216,7 @@ export default function CadastroPage() {
         onBuscaChange={setBusca}
       />
 
-      <BitinTableSection bitins={bitins} erro={erro} colunas={COLUNAS_PADRAO_BITIN} acoes={acoesLinha} />
+      <BitinTableSection bitins={bitins} erro={erro} colunas={COLUNAS} acoes={acoesLinha} />
     </div>
   )
 }

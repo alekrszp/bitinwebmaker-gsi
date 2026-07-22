@@ -86,4 +86,7 @@ export interface BitinResumo {
   checklist: ChecklistItem[]
   setores_afetados: string[]
   ordem_cliente: OrdemClienteItem[]
+  // Linha do tempo de eventos principais (2026-07-22, ver backend/api/bitins.py::
+  // _evento_historico) -- criação, envio, cada passo de Processos/Cadastro/Windchill.
+  historico: { usuario: string; data: string; acao: string }[]
 }

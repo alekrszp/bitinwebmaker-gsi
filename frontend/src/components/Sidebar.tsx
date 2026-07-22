@@ -1,6 +1,8 @@
+import { useEffect, useState } from 'react'
 import { NavLink } from 'react-router-dom'
 import { version as appVersion } from '../../package.json'
 import { useAuth } from '../hooks/useAuth'
+import { api } from '../lib/api'
 import {
   SETOR_CADASTRO,
   SETOR_ENGENHARIA,
@@ -10,6 +12,51 @@ import {
   isGestor,
 } from '../lib/permissions'
 import { GridIcon, HomeIcon, InboxIcon, ListIcon, UsersIcon } from './icons'
+
+// Badge de contagem nos links "Cadastro"/"Processos" (2026-07-22, pedido explícito: "aviso
+// dentro do sistema... indicador visual mostrando quantos BITins novos chegaram na sua fila")
+// -- reaproveita GET /bitins/resumo-painel (já existe, usado pela Home) em vez de criar
+// endpoint novo. Poll a cada 60s -- suficiente pra "perceber sem precisar atualizar a página
+// à força", sem exagerar em tráfego (não é tempo real via websocket, decisão consciente de
+// escopo: aviso simples, não chat).
+function useContagemFilas(ativo: boolean) {
+  const [contagem, setContagem] = useState<{ cadastro: number; processos: number } | null>(null)
+
+  useEffect(() => {
+    if (!ativo) return
+    let cancelado = false
+    function carregar() {
+      api
+        .get('/bitins/resumo-painel')
+        .then((resp) => {
+          if (cancelado) return
+          const d = resp.data
+          setContagem({
+            cadastro: (d.cadastro_aguardando ?? 0) + (d.cadastro_cadastrados ?? 0),
+            processos: d.processos_pendentes ?? 0,
+          })
+        })
+        .catch(() => {})
+    }
+    carregar()
+    const id = setInterval(carregar, 60_000)
+    return () => {
+      cancelado = true
+      clearInterval(id)
+    }
+  }, [ativo])
+
+  return contagem
+}
+
+function Badge({ valor }: { valor: number }) {
+  if (valor <= 0) return null
+  return (
+    <span className="ml-auto flex h-5 min-w-5 items-center justify-center rounded-full bg-brand-orange px-1 text-xs font-semibold text-white">
+      {valor > 99 ? '99+' : valor}
+    </span>
+  )
+}
 
 export default function Sidebar({ open, onClose }: { open: boolean; onClose: () => void }) {
   const { user } = useAuth()
@@ -34,6 +81,7 @@ export default function Sidebar({ open, onClose }: { open: boolean; onClose: () 
   const souProcessos = ehDoSetor(user?.permission_level, user?.setor, SETOR_PROCESSOS)
   const souEngenharia = ehDoSetor(user?.permission_level, user?.setor, SETOR_ENGENHARIA)
   const gestor = isGestor(user?.permission_level)
+  const contagem = useContagemFilas(admin || souCadastro || souProcessos)
   // "Início" é sempre "Início" no menu (2026-07-20, pedido explícito: "Coloca apenas Início.
   // Não Início cadastro") -- mesma rota "/" pra todo mundo, Home.tsx decide o conteúdo certo
   // sozinho. O rótulo dinâmico "Início cadastro"/"Início processos" continua só dentro da
@@ -150,6 +198,7 @@ export default function Sidebar({ open, onClose }: { open: boolean; onClose: () 
               >
                 <InboxIcon className="h-4 w-4 shrink-0" />
                 Cadastro
+                {contagem && <Badge valor={contagem.cadastro} />}
               </NavLink>
               {/* "Bitins Concluídos" saiu daqui (2026-07-21, pedido explícito: "aba de bitins
                   concluidos ainda junto de cadastro remove de lá e faz isso numa aba lá em
@@ -179,6 +228,7 @@ export default function Sidebar({ open, onClose }: { open: boolean; onClose: () 
               >
                 <ListIcon className="h-4 w-4 shrink-0" />
                 Processos
+                {contagem && <Badge valor={contagem.processos} />}
               </NavLink>
               {/* Sem "Processos Concluídos" separado (2026-07-20, pedido explícito: "não
                   precisa de uma tela de processos concluídos") -- Processos não tem uma
