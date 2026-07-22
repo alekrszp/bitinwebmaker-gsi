@@ -961,10 +961,10 @@ class BitinApiTest(unittest.TestCase):
 
     def test_envio_encaminha_automaticamente_quando_precisa_roteiro(self) -> None:
         """Roteamento automático (2026-07-20, pedido explícito: "se for pra processo vai
-        DIRETO pra processo") -- substitui a triagem manual do Cadastro (POST
-        /encaminhar-roteiro, ainda existe como escape hatch mas não é mais chamado no fluxo
-        normal, ver bitin_lifecycle.enviar_bitin). make_bitin_content() usa alt="-/P" por
-        padrão, que exige roteiro."""
+        DIRETO pra processo") -- substitui a triagem manual do Cadastro que existia antes
+        (endpoints POST /encaminhar-roteiro e /concluir-sem-roteiro, removidos em 2026-07-22
+        por serem código morto -- ver bitin_lifecycle.enviar_bitin, que já chama as mesmas
+        funções internamente). make_bitin_content() usa alt="-/P" por padrão, que exige roteiro."""
         mongo_id = self._criar_e_enviar(self.default_user)
 
         resp = self.client.get(f"/api/v1/bitins/{mongo_id}")
@@ -972,27 +972,6 @@ class BitinApiTest(unittest.TestCase):
         self.assertTrue(body["encaminhado_roteiro"])
         self.assertIsNotNone(body["data_encaminhado_roteiro"])
         self.assertFalse(body["processos_concluido"])
-
-    def test_usuario_comum_nao_pode_encaminhar_para_roteiro(self) -> None:
-        outro_usuario = self._create_user(2, permission_level=77)
-        mongo_id = self._criar_e_enviar(self.default_user)
-
-        resp = self.client.post(
-            f"/api/v1/bitins/{mongo_id}/encaminhar-roteiro",
-            headers={"Authorization": f"Bearer {self._token_for(outro_usuario)}"},
-        )
-        self.assertEqual(resp.status_code, 403)
-
-    def test_nao_encaminha_rascunho_para_roteiro(self) -> None:
-        cadastro = self._create_user(2, permission_level=77, setor="cadastro")
-        draft_resp = self.client.post("/api/v1/bitins/draft", json={"content": make_bitin_content()})
-        mongo_id = draft_resp.json()["mongo_id"]
-
-        resp = self.client.post(
-            f"/api/v1/bitins/{mongo_id}/encaminhar-roteiro",
-            headers={"Authorization": f"Bearer {self._token_for(cadastro)}"},
-        )
-        self.assertEqual(resp.status_code, 400)
 
     def test_filtro_encaminhado_roteiro_nunca_fica_pendente_apos_envio(self) -> None:
         """Não existe mais estado "enviado mas ainda não encaminhado" alcançável pelo fluxo
@@ -1219,9 +1198,9 @@ class BitinApiTest(unittest.TestCase):
     def test_envio_conclui_sem_roteiro_automaticamente_quando_nao_precisa(self) -> None:
         """Roteamento automático (2026-07-20, pedido explícito: "se não for necessário o
         pessoal de processo vai direto para aguardando cadastro") -- o PRÓPRIO envio já chama
-        concluir_sem_roteiro sozinho, sem precisar do Cadastro clicar em nada (POST
-        /concluir-sem-roteiro ainda existe como escape hatch, ver bitin_lifecycle.
-        enviar_bitin)."""
+        concluir_sem_roteiro sozinho, sem precisar do Cadastro clicar em nada (o endpoint
+        manual POST /concluir-sem-roteiro foi removido em 2026-07-22 por ser código morto,
+        ver bitin_lifecycle.enviar_bitin)."""
         mongo_id = self._criar_e_enviar_sem_precisar_roteiro(self.default_user)
 
         resp = self.client.get(f"/api/v1/bitins/{mongo_id}")
@@ -1246,31 +1225,6 @@ class BitinApiTest(unittest.TestCase):
             params={"status": "enviado", "processos_concluido": True, "sem_necessidade_roteiro": False},
         )
         self.assertNotIn(mongo_id, {b["mongo_id"] for b in revisados_processos.json()})
-
-    def test_concluir_sem_roteiro_manual_rejeitado_apos_roteamento_automatico(self) -> None:
-        """Escape hatch defensivo -- desde o roteamento automático (2026-07-20), QUALQUER
-        BITin enviado com sucesso já sai de `enviar_bitin` com encaminhado_roteiro=True (seja
-        via encaminhar_para_roteiro OU concluir_sem_roteiro), então chamar
-        /concluir-sem-roteiro manualmente depois disso sempre esbarra em "já foi
-        encaminhado", reforçando que o botão não existe mais na UI por um bom motivo."""
-        cadastro = self._create_user(2, permission_level=77, setor="cadastro")
-        mongo_id = self._criar_e_enviar(self.default_user)  # alt="-/P" por padrão, precisa
-
-        resp = self.client.post(
-            f"/api/v1/bitins/{mongo_id}/concluir-sem-roteiro",
-            headers={"Authorization": f"Bearer {self._token_for(cadastro)}"},
-        )
-        self.assertEqual(resp.status_code, 400)
-
-    def test_usuario_comum_nao_pode_concluir_sem_roteiro(self) -> None:
-        outro = self._create_user(2, permission_level=77)
-        mongo_id = self._criar_e_enviar_sem_precisar_roteiro(self.default_user)
-
-        resp = self.client.post(
-            f"/api/v1/bitins/{mongo_id}/concluir-sem-roteiro",
-            headers={"Authorization": f"Bearer {self._token_for(outro)}"},
-        )
-        self.assertEqual(resp.status_code, 403)
 
     # Processos não cria BITin (2026-07-17, pedido explícito: "processos não pode fazer
     # bitin, só fazer a parte da revisão de roteiro").

@@ -391,18 +391,6 @@ class SemRoteiroWorkflowTest(BitinWorkflowTestBase):
         self.assertEqual(reverter.status_code, 200, reverter.text)
         self.assertFalse(reverter.json()["windchill_enviado"])
 
-    def test_concluir_sem_roteiro_manual_rejeitado_apos_roteamento_automatico(self) -> None:
-        """Escape hatch defensivo (POST /concluir-sem-roteiro ainda existe, mas o roteamento
-        automático já resolveu tudo no envio) -- chamar de novo manualmente sempre esbarra em
-        "já foi encaminhado", não em "precisa de roteiro" (a checagem de precisa_roteiro nem
-        chega a rodar, o already-encaminhado bloqueia primeiro)."""
-        mongo_id = self._enviar_bitin(self.engenheiro, alt="D/P")
-        resp = self.client.post(
-            f"/api/v1/bitins/{mongo_id}/concluir-sem-roteiro", headers=self._auth(self.cadastro),
-        )
-        self.assertEqual(resp.status_code, 400)
-
-
 class SemAlteracaoRealNaoEnviaTest(BitinWorkflowTestBase):
     """Regra de negócio nova (2026-07-21, pedido explícito: "o sistema deixa enviar bitin
     sem nenhuma alteração") -- ponta a ponta via POST /enviar de verdade, não só a função de

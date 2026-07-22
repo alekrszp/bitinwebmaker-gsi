@@ -208,8 +208,6 @@ v0.9.0 → v0.10.0 → v0.10.1 → v0.11.0 → v0.12.0 sem pular nenhuma).
 - `sap_paste_parser.py` — parser do texto colado do SAP (TAB-delimited)
 - `csv_safety.py` — sanitização contra CSV/formula injection
 - `bitin_errors.py` — formato de erro estruturado (`{field, code, message}`)
-- `resetar_usuarios_setores_2026_07_20.py` — utilitário de dev: recria um conjunto de contas de teste do zero (permissões atuais)
-- `limpar_banco_2026_07_21.py` — utilitário de dev: apaga todos os usuários (exceto o super-admin) e todos os BITins
 
 **Config (`config/`)**: `vba_mapping.json`, `bitin_document_mapping.json`, `lista_tecnica_mapping.json`
 

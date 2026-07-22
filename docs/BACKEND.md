@@ -453,10 +453,9 @@ Admin (99) é o único nível que pode ficar sem setor nenhum.
 — nunca precisaram de migração de *schema*, só de *dados* pros usuários já cadastrados no
 esquema anterior a cada revisão do modelo de permissões (esse esquema já mudou duas vezes
 desde então — ver "Revisão do modelo de permissões (2ª revisão)" mais abaixo). Os scripts
-one-off usados nessas migrações (`migrar_niveis_permissao.py`, `migrar_setores_2026_07_20.py`)
-já cumpriram o papel e foram removidos do repositório (2026-07-21, limpeza geral) — o
-`scripts/resetar_usuarios_setores_2026_07_20.py` continua existindo como utilitário de dev
-(recria um conjunto de contas de teste do zero, mesmo padrão dry-run/`--confirm`).
+one-off usados nessas migrações (`migrar_niveis_permissao.py`, `migrar_setores_2026_07_20.py`,
+e mais recentemente `resetar_usuarios_setores_2026_07_20.py`/`limpar_banco_2026_07_21.py`) já
+cumpriram o papel e foram removidos do repositório (2026-07-21/22, limpeza geral).
 
 ### Cadastro de usuário só por admin (adicionado em 2026-07-15)
 

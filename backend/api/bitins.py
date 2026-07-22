@@ -343,10 +343,10 @@ async def create_or_update_draft(
 
     # Cadastro e Processos não usam esta rota (2026-07-20, pedido explícito: "usuário de
     # cadastro tem somente a tela cadastro, igual processos. não pode criar novo bitin nem
-    # alterá-lo") -- os dois trabalham só pelas rotas dedicadas de cada fila
-    # (encaminhar-roteiro/concluir-sem-roteiro/concluir-bitin pro Cadastro,
-    # atualizar-processos/concluir-processos pro Processos), nunca por aqui. Bloqueia tanto
-    # criar (sem mongo_id) quanto atualizar (com mongo_id) -- diferente do bloqueio anterior
+    # alterá-lo") -- os dois trabalham só pelas rotas dedicadas de cada fila (concluir-bitin/
+    # enviar-windchill pro Cadastro, atualizar-processos/concluir-processos pro Processos --
+    # o roteamento em si é automático no envio, ver enviar_bitin_endpoint), nunca por aqui.
+    # Bloqueia tanto criar (sem mongo_id) quanto atualizar (com mongo_id) -- diferente do bloqueio anterior
     # do Processos, que só cobria criação. Admin continua liberado (não é nível operacional
     # restrito, mesmo padrão dos outros gates). Checado por SETOR agora (2026-07-20, 2ª
     # revisão do modelo de permissões), não mais por nível fixo -- vale pra Gestor de
@@ -766,82 +766,6 @@ async def enviar_bitin_endpoint(
     return EnviarResponse(ok=True, errors=[], bitin=_doc_to_response(updated_doc, current_user))
 
 
-@router.post("/{mongo_id}/encaminhar-roteiro", response_model=BitinResponse)
-async def encaminhar_roteiro_endpoint(
-    mongo_id: str,
-    current_user: Usuario = Depends(check_setor(SETOR_CADASTRO)),
-    mongo_db=Depends(get_mongo_db),
-):
-    """Substitui o e-mail automático do Módulo12.bas: quem é do Cadastro (ou admin) marca
-    aqui que terminou de processar o BITin e encaminhou pro setor Roteiro -- alimenta a fila
-    em CadastroPage.tsx (aba "Enviados para roteiro"). Ver bitin_lifecycle.encaminhar_para_roteiro."""
-    collection = mongo_db["bitin_contents"]
-    doc = await collection.find_one({"_id": mongo_id})
-    if not doc:
-        raise HTTPException(status_code=404, detail="BITin não encontrado")
-
-    content = doc.get("content", {})
-    try:
-        bitin_lifecycle.encaminhar_para_roteiro(content)
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-
-    await collection.update_one(
-        {"_id": mongo_id},
-        {"$set": {
-            "content": content,
-            "encaminhado_roteiro": True,
-            "data_encaminhado_roteiro": content["data_encaminhado_roteiro"],
-            "updated_at": datetime.now().isoformat(),
-        }},
-    )
-    updated_doc = await collection.find_one({"_id": mongo_id})
-    return _doc_to_response(updated_doc, current_user)
-
-
-@router.post("/{mongo_id}/concluir-sem-roteiro", response_model=BitinResponse)
-async def concluir_sem_roteiro_endpoint(
-    mongo_id: str,
-    current_user: Usuario = Depends(check_setor(SETOR_CADASTRO)),
-    mongo_db=Depends(get_mongo_db),
-):
-    """Alternativa a /encaminhar-roteiro quando o BITin não precisa passar pelo Processos
-    (2026-07-17, ver bitin_document.precisa_roteiro) -- chega direto no estado final (PDF
-    liberado, aba "Retornados de roteiro" em CadastroPage.tsx), sem abrir a janela de
-    reedição do Processos. Reforça a regra no servidor (não confia só no frontend esconder o
-    botão errado): 400 se o BITin na verdade precisa de roteiro."""
-    collection = mongo_db["bitin_contents"]
-    doc = await collection.find_one({"_id": mongo_id})
-    if not doc:
-        raise HTTPException(status_code=404, detail="BITin não encontrado")
-
-    content = doc.get("content", {})
-    if bitin_document.precisa_roteiro(content):
-        raise HTTPException(
-            status_code=400,
-            detail="Este BITin tem alteração de Alt que exige revisão de roteiro -- use Encaminhar para roteiro.",
-        )
-    try:
-        bitin_lifecycle.concluir_sem_roteiro(content)
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-
-    await collection.update_one(
-        {"_id": mongo_id},
-        {"$set": {
-            "content": content,
-            "encaminhado_roteiro": True,
-            "data_encaminhado_roteiro": content["data_encaminhado_roteiro"],
-            "processos_concluido": True,
-            "data_processos_concluido": content["data_processos_concluido"],
-            "sem_necessidade_roteiro": True,
-            "updated_at": datetime.now().isoformat(),
-        }},
-    )
-    updated_doc = await collection.find_one({"_id": mongo_id})
-    return _doc_to_response(updated_doc, current_user)
-
-
 @router.post("/{mongo_id}/atualizar-processos", response_model=BitinResponse)
 async def atualizar_processos_endpoint(
     mongo_id: str,
@@ -900,9 +824,11 @@ async def concluir_processos_endpoint(
     current_user: Usuario = Depends(check_setor(SETOR_PROCESSOS)),
     mongo_db=Depends(get_mongo_db),
 ):
-    """Fecha a janela de reedição aberta por /encaminhar-roteiro -- depois disso o BITin
-    volta a ficar travado pra todo mundo, inclusive Processos. Ver
-    bitin_lifecycle.concluir_processamento."""
+    """Fecha a janela de reedição aberta automaticamente no envio quando o BITin precisa de
+    roteiro (2026-07-22: os endpoints manuais /encaminhar-roteiro e /concluir-sem-roteiro
+    foram removidos -- código morto desde que o roteamento virou automático em
+    enviar_bitin_endpoint, 2026-07-20) -- depois disso o BITin volta a ficar travado pra todo
+    mundo, inclusive Processos. Ver bitin_lifecycle.concluir_processamento."""
     collection = mongo_db["bitin_contents"]
     doc = await collection.find_one({"_id": mongo_id})
     if not doc:

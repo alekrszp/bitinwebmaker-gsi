@@ -139,7 +139,7 @@ def eh_do_setor(user: Usuario, *setores: str) -> bool:
 
 
 def check_setor(*setores_permitidos: str):
-    """Dependency pras rotas de fila de um setor (encaminhar-roteiro, atualizar-processos,
+    """Dependency pras rotas de fila de um setor (concluir-bitin, atualizar-processos,
     etc, ver backend/api/bitins.py) -- substitui `check_permission(NIVEL_CADASTRO,
     NIVEL_ADMIN)` / `check_permission(NIVEL_PROCESSOS, NIVEL_ADMIN)` de antes de 2026-07-20.
     Admin sempre passa (bypass total, mesmo padrão de sempre); INDIVIDUAL/GESTOR passam só se
