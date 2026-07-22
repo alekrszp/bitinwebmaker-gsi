@@ -148,6 +148,10 @@ def _header_block(summary: dict[str, Any]) -> list:
             "Data de solicitação", summary.get("data_solicitacao", ""),
             "Data de envio", summary.get("data_envio") or "-",
         ],
+        # BITex (2026-07-22, campo adicionado ao modelo depois da última rodada de polimento
+        # do PDF -- estava faltando aqui, já aparece na tela) -- só ocupa o par esquerdo da
+        # linha, direita fica em branco (não há um 8º campo de cabeçalho pra parear).
+        ["BITex", summary.get("bitex") or "-", " ", " "],
     ]
     label_style = ParagraphStyle("BitinHeaderLabel", parent=_NORMAL, fontSize=8, textColor=_INK_MUTED)
     value_style = ParagraphStyle(
