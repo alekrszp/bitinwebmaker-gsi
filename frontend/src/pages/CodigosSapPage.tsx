@@ -115,12 +115,26 @@ function novaLinhaSap(): LinhaSap {
   return { ...materialVazio(), tipo_material: '', _id: crypto.randomUUID() }
 }
 
-function paraMaterialEditavel(bruto: Partial<MaterialEditavel> & { dados_basicos_atual?: Record<string, string> }): LinhaSap {
-  const { dados_basicos_atual, ...identificacao } = bruto
+function paraMaterialEditavel(
+  bruto: Partial<MaterialEditavel> & {
+    dados_basicos_atual?: Record<string, string>
+    // Só vem preenchido quando a colagem tinha cabeçalho reconhecível (2026-07-22, ver
+    // scripts/sap_paste_parser.py::parse_com_cabecalho) -- a planilha de origem já tinha os
+    // dois lados (De/Novo), diferente da colagem bruta do SAP (só "de", "para" fica pro
+    // engenheiro digitar aqui mesmo).
+    dados_basicos_novo?: Record<string, string>
+  },
+): LinhaSap {
+  const { dados_basicos_atual, dados_basicos_novo, ...identificacao } = bruto
+  const camposComValor = new Set([
+    ...Object.keys(dados_basicos_atual ?? {}).filter((c) => dados_basicos_atual?.[c] !== ''),
+    ...Object.keys(dados_basicos_novo ?? {}).filter((c) => dados_basicos_novo?.[c] !== ''),
+  ])
   const dadosBasicos = Object.fromEntries(
-    Object.entries(dados_basicos_atual ?? {})
-      .filter(([, valor]) => valor !== '')
-      .map(([campo, de]) => [campo, { de, para: '' }]),
+    [...camposComValor].map((campo) => [
+      campo,
+      { de: dados_basicos_atual?.[campo] ?? '', para: dados_basicos_novo?.[campo] ?? '' },
+    ]),
   )
   return {
     ...materialVazio(),
@@ -487,7 +501,10 @@ export default function CodigosSapPage() {
     try {
       const resp = await api.post('/bitins/parse-sap-paste', { raw_text: texto })
       const brutos = resp.data.materiais as Array<
-        Partial<MaterialEditavel> & { dados_basicos_atual?: Record<string, string> }
+        Partial<MaterialEditavel> & {
+          dados_basicos_atual?: Record<string, string>
+          dados_basicos_novo?: Record<string, string>
+        }
       >
       const novosMateriais = brutos.map(paraMaterialEditavel)
       if (novosMateriais.length > 0) {
@@ -615,7 +632,11 @@ export default function CodigosSapPage() {
         {bitin && <StatusBadge status={bitin.status} windchillEnviado={bitin.windchill_enviado} />}
         <span className="text-sm text-ink-muted">— ZBPP009</span>
         <AjudaPopover titulo="Hint">
-          <p>Cole em qualquer célula da linha um trecho copiado do SAP.</p>
+          <p>
+            Cole em qualquer célula da linha um trecho copiado do SAP ou de outra planilha --
+            se a colagem tiver uma linha de cabeçalho com os nomes dos campos, o sistema
+            reconhece cada coluna pelo nome, mesmo em ordem diferente.
+          </p>
           <p>
             Cada campo tem 2 colunas lado a lado -- ex. <strong>Descrição</strong> (como está
             hoje no SAP) e <strong>Descrição nova</strong> (o que muda). Os dois continuam

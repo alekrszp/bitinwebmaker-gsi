@@ -549,6 +549,27 @@ identificação + snapshot "atual" (`tipo_material`, `codigo_material`, `centro`
 com um `centro` diferente (ex.: material `8661` em 2001/2003/2005/2006) — são materiais
 distintos no BITin, não duplicata (ver correção na regra geral de duplicidade abaixo).
 
+### Colagem com cabeçalho reconhecível (`parse_com_cabecalho`, 2026-07-22)
+
+Pedido explícito do usuário: "o mapeamento da zbpp009 deve funcionar de qualquer copia e cola
+que o usuário faz, independente da ordem". O parser posicional acima assume a ordem FIXA das
+36 colunas da grade real do SAP — se o texto vier de outra fonte (ex.: uma planilha de
+terceiro já em formato De/Novo, com colunas em ordem diferente), o mapeamento desalinha
+silenciosamente. **Sem cabeçalho, isso é impossível de resolver com segurança** — não dá pra
+saber que um valor solto tipo `"2001"` é Centro sem inventar uma heurística de conteúdo, e
+adivinhar errado num sistema que alimenta upload real no SAP é pior que travar (ver
+`requirements.md`, "preferir regra robusta a heurística acoplada a algo instável").
+
+O que É seguro: se a 1ª linha colada tem uma linha de cabeçalho reconhecível (nomes de campo
+batendo com `bitin_model.DADOS_BASICOS_LABELS`, tolerante a acento/maiúscula, sufixo
+"Novo"/"Nova" pro lado "para"), o mapeamento passa a ser por NOME da coluna, não por posição —
+funciona em qualquer ordem. `parse_sap_paste_to_materiais` tenta esse caminho primeiro
+(`parse_com_cabecalho`); se a 1ª linha não parecer cabeçalho (menos de 3 rótulos reconhecidos),
+cai no parser posicional de sempre, sem quebrar o fluxo original de colagem direta do SAP GUI
+(que nunca tem cabeçalho). Diferente do caminho posicional, esse novo caminho já preenche
+`para` também quando a planilha de origem trouxer os dois lados prontos (De/Novo) — o parser
+posicional só preenche `de` porque o dump bruto do SAP nunca tem `para`.
+
 ## Sanitização de exports (`csv_safety.py`)
 
 Toda célula escrita nos exports (`vba_port_export.py`, `lista_tecnica_export.py`,
