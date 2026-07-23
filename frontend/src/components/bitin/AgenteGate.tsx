@@ -1,5 +1,7 @@
+import { useState } from 'react'
 import AjudaPopover from './AjudaPopover'
 import AgenteLogoIcon from './AgenteLogoIcon'
+import { abrirAgenteViaProtocolo, consultarStatusAgente } from '../../lib/sapAgent'
 
 // Tela exibida ao abrir um BITin novo (rascunho 100% vazio) sem o agente SAP identificado
 // (2026-07-23, pedido explícito do usuário). Só pergunta uma vez -- clicar "Sim" libera o modo
@@ -17,10 +19,34 @@ import AgenteLogoIcon from './AgenteLogoIcon'
 export default function AgenteGate({
   onConfirmarManual,
   onAbrirInstalacao,
+  onAcessarComAgente,
 }: {
   onConfirmarManual: () => void
   onAbrirInstalacao: () => void
+  // Separado de `onConfirmarManual` (2026-07-23, achado real corrigindo a persistência do modo
+  // manual): os dois botões chamavam a MESMA função, então "Acessar bitin" (agente confirmado
+  // conectado) marcava esta tela como "manual pra sempre" junto -- bug real, o BITin ficava
+  // preso no modo manual mesmo com o agente funcionando. `onAcessarComAgente` só dispensa a
+  // tela desta vez, sem persistir nada -- o agente conectado é quem decide o resto sozinho.
+  onAcessarComAgente: () => void
 }) {
+  // "Verificar conexão" (2026-07-23, pedido explícito) -- pra quem já tem o agente instalado e
+  // ativo mas caiu nesta tela (1ª checagem ainda não resolveu, ou o agente acabou de ser
+  // ativado agora mesmo); evita ter que clicar em "Instalar o agente SAP" só pra confirmar que
+  // já está tudo certo. Não decide nada sozinho -- `useAgenteSapConectado.ts` continua sendo a
+  // fonte única de verdade que faz esta tela sumir sozinha (poll ~4s); isso aqui é só feedback
+  // imediato pro clique, mesmo padrão já usado em InstalarAgenteCard.tsx.
+  const [verificando, setVerificando] = useState(false)
+  const [resultado, setResultado] = useState<'ok' | 'falhou' | null>(null)
+
+  async function verificarConexao() {
+    setVerificando(true)
+    setResultado(null)
+    const ok = await consultarStatusAgente()
+    setResultado(ok ? 'ok' : 'falhou')
+    setVerificando(false)
+  }
+
   return (
     <div className="flex min-h-[60vh] items-center justify-center px-4 py-10">
       {/* Sem overflow-hidden no card inteiro (2026-07-23, achado real: cortava o popover de
@@ -30,7 +56,7 @@ export default function AgenteGate({
         <div className="h-1.5 w-full rounded-t-2xl bg-gradient-to-r from-brand-navy via-brand-green to-brand-gold" />
 
         <div className="flex items-center gap-5 p-7">
-          <AgenteLogoIcon size={64} />
+          <AgenteLogoIcon size={64} status={resultado === 'ok' ? 'conectado' : resultado === 'falhou' ? 'desligado' : undefined} />
           <div>
             <div className="flex items-center gap-2">
               <h1 className="text-lg font-semibold text-ink">Agente SAP não identificado</h1>
@@ -64,10 +90,47 @@ export default function AgenteGate({
           </button>
         </div>
 
-        <p className="px-7 pb-6 pt-3 text-xs text-ink-muted">
-          Se não tiver instalado, clique em "Instalar o agente SAP". Com o agente rodando, o
-          preenchimento dos materiais e da lista técnica é automático.
-        </p>
+        <div className="px-7 pb-6 pt-3">
+          <p className="text-xs text-ink-muted">
+            Se não tiver instalado, clique em "Instalar o agente SAP". Caso já tenha instalado,
+            clique em "Abrir agente", para ativá-lo. Com ele ativado pode verificar a conexão em
+            "Verificar conexão", com ele validado, pode acessar o bitin no botão abaixo.
+          </p>
+          <div className="mt-3 flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={abrirAgenteViaProtocolo}
+              className="rounded-lg border border-line px-3 py-1.5 text-xs font-medium text-ink transition-colors hover:bg-surface-alt"
+            >
+              Abrir agente
+            </button>
+            <button
+              type="button"
+              onClick={verificarConexao}
+              disabled={verificando}
+              className="rounded-lg border border-line px-3 py-1.5 text-xs font-medium text-ink transition-colors hover:bg-surface-alt disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {verificando ? 'Verificando...' : 'Verificar conexão'}
+            </button>
+            {resultado === 'falhou' && (
+              <p className="text-xs text-red-600">Não encontrou o agente ainda.</p>
+            )}
+          </div>
+          {/* "Acessar bitin" (2026-07-23, pedido explícito) -- só aparece depois de verificar
+              com sucesso, pra não convidar a pular a checagem. */}
+          {resultado === 'ok' && (
+            <div className="mt-3 rounded-lg border border-brand-green/30 bg-brand-green/10 p-3">
+              <p className="text-xs text-brand-green">Agente encontrado!</p>
+              <button
+                type="button"
+                onClick={onAcessarComAgente}
+                className="mt-2 rounded-lg bg-brand-green px-3 py-1.5 text-xs font-semibold text-white transition-colors hover:opacity-90"
+              >
+                Acessar bitin
+              </button>
+            </div>
+          )}
+        </div>
       </div>
     </div>
   )

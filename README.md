@@ -156,6 +156,9 @@ npm run dev
 Releases são criadas manualmente no GitHub, usando `docs/releases/RELEASE_vX.Y.Z.md` como corpo de
 cada release. O processo não é automatizado — a publicação é feita pelo GitHub web interface.
 
+- v0.14.0 — aba Preenchimento (bulk-fill sem agente), agente SAP vira aplicativo Windows de
+  verdade (Menu Iniciar, só 1 instância, desinstalar), redesign da logo:
+  `docs/releases/RELEASE_v0.14.0.md` — <https://github.com/alekrszp/bitinwebmaker-gsi/releases/tag/v0.14.0>
 - v0.13.0 — agente SAP local opcional (`sap-agent/`, integração com SAP GUI Scripting),
   ZBPP009 e Lista Técnica deixam de ser páginas separadas (tudo na aba BITin + aba Automação
   quando o agente está conectado):

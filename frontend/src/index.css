@@ -85,3 +85,36 @@ input,
 select {
   accent-color: var(--color-brand-navy);
 }
+
+/* "Respiração" da logo do Agente SAP (2026-07-23, pedido explícito: "conseguimos fazer alguma
+   coisa elaborada?" -- animações da AgenteLogoIcon.tsx) -- scale sutil em loop, duração/atraso
+   aleatórios por instância (ver AgenteLogoIcon.tsx), pra não sincronizar entre os vários
+   lugares onde a logo aparece na tela ao mesmo tempo. `prefers-reduced-motion` desliga tudo. */
+@keyframes agente-respirar {
+  0%,
+  100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.035);
+  }
+}
+
+/* Entrada do toast de conexão do agente (2026-07-23, ver AgenteConexaoToast.tsx) -- só
+   desliza/aparece, sem chamar mais atenção que isso. */
+@keyframes agente-toast-entrar {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .agente-logo-respirar {
+    animation: none !important;
+  }
+}

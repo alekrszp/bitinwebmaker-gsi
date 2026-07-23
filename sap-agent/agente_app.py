@@ -19,19 +19,24 @@ README).
 import os
 import sys
 import tkinter as tk
+import winreg
 from pathlib import Path
-from tkinter import ttk
+from tkinter import messagebox, ttk
 
 import pystray
 from PIL import Image, ImageTk
 
+import atalho_windows
 import config_agente
 import estado_agente
+import instancia_unica
 import logo_agente
 import servidor
 import startup_windows
 
-NOME_EXIBIDO = "Agente SAP — BITin"
+# Fonte única do título da janela (instancia_unica.py precisa do MESMO valor pra achar a
+# janela pelo texto quando uma 2ª instância tenta abrir, ver `main()` abaixo).
+NOME_EXIBIDO = instancia_unica.NOME_JANELA
 COR_NAVY = "#32464d"
 COR_FUNDO = "#f7f8fa"
 COR_TEXTO_MUTED = "#5b6b74"
@@ -259,7 +264,48 @@ def montar_icone(janela: JanelaAgente) -> pystray.Icon:
     return pystray.Icon("agente_sap_bitin", _gerar_icone(), NOME_EXIBIDO, menu)
 
 
+def _desinstalar() -> None:
+    """Chamado via `AgenteSAP.exe --desinstalar` -- é o `UninstallString` registrado em
+    "Programas e Recursos" (ver `atalho_windows.registrar_em_programas_e_recursos`), pra
+    desinstalar como qualquer aplicativo de verdade, não só apagar uma pasta na mão. Remove
+    registro do Windows/atalho/protocolo; NÃO apaga a própria pasta de instalação (um processo
+    não consegue apagar o `.exe` que está rodando dele mesmo no Windows) -- avisa o caminho pra
+    remoção manual no final."""
+    startup_windows.remover()
+    atalho_windows.remover_atalho_menu_iniciar()
+    atalho_windows.remover_de_programas_e_recursos()
+    try:
+        winreg.DeleteKey(winreg.HKEY_CURRENT_USER, r"Software\Classes\bitinsap\shell\open\command")
+        winreg.DeleteKey(winreg.HKEY_CURRENT_USER, r"Software\Classes\bitinsap\shell\open")
+        winreg.DeleteKey(winreg.HKEY_CURRENT_USER, r"Software\Classes\bitinsap\shell")
+        winreg.DeleteKey(winreg.HKEY_CURRENT_USER, r"Software\Classes\bitinsap")
+    except OSError:
+        pass
+
+    pasta = Path(sys.executable).parent if getattr(sys, "frozen", False) else Path(_caminho_executavel_atual())
+    root_temp = tk.Tk()
+    root_temp.withdraw()
+    messagebox.showinfo(
+        "Agente SAP desinstalado",
+        f"Atalhos e registros removidos.\n\nPode apagar esta pasta manualmente:\n{pasta}",
+    )
+    root_temp.destroy()
+
+
 def main() -> None:
+    # `--desinstalar` (2026-07-23, ver `_desinstalar` acima) roda mesmo sem checar instância
+    # única -- é uma operação de manutenção pontual, não o modo normal do agente.
+    if "--desinstalar" in sys.argv:
+        _desinstalar()
+        return
+
+    # Só 1 instância por vez nesta máquina (2026-07-23, pedido explícito, ver
+    # instancia_unica.py) -- se já tem uma rodando, só traz a janela dela pra frente e encerra
+    # esta tentativa nova, sem criar janela/bandeja/servidor duplicados.
+    if not instancia_unica.adquirir():
+        instancia_unica.mostrar_instancia_existente()
+        return
+
     servidor_agente = servidor.ServidorAgente()
 
     root = tk.Tk()

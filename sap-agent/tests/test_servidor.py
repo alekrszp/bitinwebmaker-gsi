@@ -16,6 +16,21 @@ import servidor
 PORTA_TESTE = 39218
 
 
+def test_origens_permitidas_inclui_dev_por_padrao():
+    assert "http://localhost:5173" in servidor._origens_permitidas()
+
+
+def test_origens_permitidas_le_env_var_extra(monkeypatch):
+    # Achado real (2026-07-23, revisão de segurança): sem isso, o agente ficava inutilizável em
+    # qualquer deploy que não fosse localhost -- mesmo bug que backend/config.py já tinha
+    # corrigido antes (CORS_ORIGINS via env var).
+    monkeypatch.setenv("BITIN_AGENTE_CORS_ORIGENS", "https://bitin.empresa.exemplo, https://outra.exemplo")
+    origens = servidor._origens_permitidas()
+    assert "https://bitin.empresa.exemplo" in origens
+    assert "https://outra.exemplo" in origens
+    assert "http://localhost:5173" in origens  # dev continua funcionando junto
+
+
 def test_identificar_usuario_guarda_no_estado_compartilhado():
     cliente = servidor.app.test_client()
     resp = cliente.post(

@@ -1,5 +1,6 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
+import AgenteConexaoToast from '../components/bitin/AgenteConexaoToast'
 import AgenteGate from '../components/bitin/AgenteGate'
 import AjudaPopover from '../components/bitin/AjudaPopover'
 import AvisoSairModal from '../components/bitin/AvisoSairModal'
@@ -15,12 +16,14 @@ import StatusBadge from '../components/bitin/StatusBadge'
 import { useAgenteSapConectado } from '../hooks/useAgenteSapConectado'
 import { useAuth } from '../hooks/useAuth'
 import { useAvisoSairSemSalvar } from '../hooks/useAvisoSairSemSalvar'
+import { useFaviconAgente } from '../hooks/useFaviconAgente'
 import { useVoltar } from '../hooks/useVoltar'
 import { api } from '../lib/api'
 import { materialVazio, normalizarMaterial } from '../lib/bitinDefaults'
 import type { BitinResumo } from '../lib/bitinTypes'
 import { duplicarBitinENavegar } from '../lib/duplicarBitin'
 import { SETOR_ENGENHARIA, ehDoSetor, isAdmin } from '../lib/permissions'
+import { bitinEscolheuManual, marcarBitinManual } from '../lib/preferenciasAgente'
 import { identificarUsuarioNoAgente } from '../lib/sapAgent'
 import { useEnviarBitin } from '../lib/useEnviarBitin'
 import type { Bitin, MateriaisSchema, MaterialEditavel, OrdemClienteEditavel, Subgrupo } from '../lib/types'
@@ -74,14 +77,30 @@ export default function BitinDetail() {
   // hooks/useAvisoSairSemSalvar.ts.
   const { setSujo, mostrarModal, setMostrarModal, tentarSair } = useAvisoSairSemSalvar()
   const { conectado: agenteConectado, verificado: agenteVerificado } = useAgenteSapConectado()
+  useFaviconAgente(agenteVerificado ? (agenteConectado ? 'conectado' : 'desligado') : undefined)
   // Gate "Agente SAP não identificado, deseja realizar o BITin manualmente?" (2026-07-23,
   // pedido explícito) -- só faz sentido pra um rascunho recém-criado (ver `ehRascunhoVazio`
   // abaixo), nunca reaparece depois que o engenheiro já preencheu alguma coisa. Confirmar
-  // "Sim" libera o resto da tela normalmente pra esta visita; `mostrarInstalacao` troca a tela
-  // inteira pelas instruções (acessível tanto pelo gate quanto pelo link "Ativar agente?" no
-  // cabeçalho, quando o agente não está conectado).
-  const [manualConfirmado, setManualConfirmado] = useState(false)
+  // "Sim" libera o resto da tela normalmente; `mostrarInstalacao` troca a tela inteira pelas
+  // instruções (acessível tanto pelo gate quanto pelo link "Ativar agente?" no cabeçalho).
+  //
+  // Persistido em `localStorage` por BITin (2026-07-23, pedido explícito: "quando a pessoa
+  // escolher fazer manualmente ele sempre vai abrir manual, não vai mais apitar a
+  // notificação") -- antes era só estado de componente, então voltar pra "Meus Bitins" e abrir
+  // o MESMO BITin de novo perguntava tudo de novo (remonta, estado zera). Inicializa lazy a
+  // partir do valor já salvo pra este `mongoId` (useEffect abaixo resincroniza se `mongoId`
+  // mudar sem remontar o componente, ver comentário no `gateFoiExibidoRef`).
+  const [manualConfirmado, setManualConfirmado] = useState(() => (mongoId ? bitinEscolheuManual(mongoId) : false))
   const [mostrarInstalacao, setMostrarInstalacao] = useState(false)
+
+  useEffect(() => {
+    if (mongoId) setManualConfirmado(bitinEscolheuManual(mongoId))
+  }, [mongoId])
+
+  function confirmarManual() {
+    if (mongoId) marcarBitinManual(mongoId)
+    setManualConfirmado(true)
+  }
 
   // "Com o agente aberto ele vai validar com o sistema... pegar a conta logada" (2026-07-23,
   // pedido explícito) -- manda quem está logado assim que o agente conecta (só exibição na
@@ -175,8 +194,27 @@ export default function BitinDetail() {
     motivo === '' &&
     bitex === '' &&
     materiais.length === 0
-  const mostrarGate =
-    !carregando && editavel && agenteVerificado && !agenteConectado && ehRascunhoVazio && !manualConfirmado
+  // Gate NÃO deve sumir sozinho quando o agente conecta (2026-07-23, achado real: "quando eu
+  // ativo o agente já ta abrindo direto o bitin" -- `mostrarGate` reagia direto a
+  // `agenteConectado` ao vivo, então ativar o agente em outra janela fazia o gate desaparecer
+  // e a tela normal aparecer sem o engenheiro ter clicado em nada aqui). Uma vez que as
+  // condições pra mostrar o gate ficam verdadeiras, `gateFoiExibidoRef` trava em `true` e SÓ o
+  // clique explícito em "Acessar bitin"/"Sim, fazer manualmente" (`manualConfirmado`) fecha o
+  // gate -- "Verificar conexão" dentro do gate (AgenteGate.tsx) é o único jeito de confirmar
+  // que o agente está ativo e liberar o botão "Acessar bitin". Reseta ao trocar de BITin.
+  const gateFoiExibidoRef = useRef(false)
+  // Dispensa só PARA ESTA VISITA (2026-07-23) -- diferente de `manualConfirmado` (persistido,
+  // "sempre abre manual"), é o efeito do botão "Acessar bitin" (agente confirmado conectado
+  // via "Verificar conexão" dentro do gate): fecha a tela sem marcar o BITin como manual.
+  const [gateDispensadoTemporario, setGateDispensadoTemporario] = useState(false)
+  useEffect(() => {
+    gateFoiExibidoRef.current = false
+    setGateDispensadoTemporario(false)
+  }, [mongoId])
+  if (!carregando && editavel && agenteVerificado && !agenteConectado && ehRascunhoVazio && !manualConfirmado) {
+    gateFoiExibidoRef.current = true
+  }
+  const mostrarGate = gateFoiExibidoRef.current && !manualConfirmado && !gateDispensadoTemporario
 
   useEffect(() => {
     let cancelado = false
@@ -554,8 +592,9 @@ export default function BitinDetail() {
   if (mostrarGate) {
     return (
       <AgenteGate
-        onConfirmarManual={() => setManualConfirmado(true)}
+        onConfirmarManual={confirmarManual}
         onAbrirInstalacao={() => setMostrarInstalacao(true)}
+        onAcessarComAgente={() => setGateDispensadoTemporario(true)}
       />
     )
   }
@@ -739,6 +778,10 @@ export default function BitinDetail() {
           onEnviar={handleEnviar}
         />
       )}
+      {/* Sem toast quando o engenheiro já escolheu "fazer manualmente" pra este BITin
+          (2026-07-23, pedido explícito: "não vai mais apitar a notificação") -- decisão
+          persistida em `preferenciasAgente.ts`, não só desta visita. */}
+      {!manualConfirmado && <AgenteConexaoToast conectado={agenteConectado} verificado={agenteVerificado} />}
     </div>
   )
 }

@@ -258,6 +258,56 @@ class ValidateBusinessRulesTest(unittest.TestCase):
         errors = self.validate(bitin)
         self.assertFalse(any(e["code"].startswith("invalid_") for e in errors))
 
+    # --- de/para incompleto (2026-07-23, achado real ao revisar a tela de Preenchimento: nada
+    # barrava importar/enviar um campo de dados_basicos com só um dos dois lados preenchido). ---
+
+    def test_de_preenchido_sem_para_falha(self) -> None:
+        bitin = make_bitin()
+        bitin["materiais"][0]["alteracoes"]["dados_basicos"] = {
+            "descricao": {"de": "Silo antigo", "para": ""},
+        }
+        errors = self.validate(bitin)
+        self.assertTrue(any(
+            e["code"] == "dados_basicos_de_para_incompleto"
+            and e["field"] == "materiais[0].alteracoes.dados_basicos.descricao"
+            for e in errors
+        ))
+
+    def test_para_preenchido_sem_de_falha(self) -> None:
+        bitin = make_bitin()
+        bitin["materiais"][0]["alteracoes"]["dados_basicos"] = {
+            "descricao": {"de": "", "para": "Silo novo"},
+        }
+        errors = self.validate(bitin)
+        self.assertTrue(any(e["code"] == "dados_basicos_de_para_incompleto" for e in errors))
+
+    def test_de_e_para_preenchidos_e_diferentes_nao_falha_incompleto(self) -> None:
+        bitin = make_bitin()
+        bitin["materiais"][0]["alteracoes"]["dados_basicos"] = {
+            "descricao": {"de": "Silo antigo", "para": "Silo novo"},
+        }
+        errors = self.validate(bitin)
+        self.assertFalse(any(e["code"] == "dados_basicos_de_para_incompleto" for e in errors))
+
+    def test_de_e_para_ambos_vazios_nao_falha_incompleto(self) -> None:
+        bitin = make_bitin()
+        bitin["materiais"][0]["alteracoes"]["dados_basicos"] = {
+            "descricao": {"de": "", "para": ""},
+        }
+        errors = self.validate(bitin)
+        self.assertFalse(any(e["code"] == "dados_basicos_de_para_incompleto" for e in errors))
+
+    def test_de_e_para_iguais_falha_no_effective_change_nao_incompleto(self) -> None:
+        # de == para (ambos preenchidos) é `no_effective_change`, não `dados_basicos_de_para_
+        # incompleto` -- as duas regras são mutuamente exclusivas (ver ordem do if/elif).
+        bitin = make_bitin()
+        bitin["materiais"][0]["alteracoes"]["dados_basicos"] = {
+            "descricao": {"de": "Silo X", "para": "Silo X"},
+        }
+        errors = self.validate(bitin)
+        self.assertTrue(any(e["code"] == "no_effective_change" for e in errors))
+        self.assertFalse(any(e["code"] == "dados_basicos_de_para_incompleto" for e in errors))
+
 
 if __name__ == "__main__":
     unittest.main()

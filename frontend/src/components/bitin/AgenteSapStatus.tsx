@@ -39,7 +39,7 @@ export default function AgenteSapStatus({
       />
       <span className={`inline-flex rounded-xl bg-gradient-to-br p-[3px] ${gradienteAnel}`}>
         <span className="flex items-center justify-center rounded-lg bg-surface p-0.5">
-          <AgenteLogoIcon size={size} />
+          <AgenteLogoIcon size={size} status={conectado ? 'conectado' : 'desligado'} />
         </span>
       </span>
     </span>

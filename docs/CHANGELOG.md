@@ -2,6 +2,49 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v0.14.0] - 2026-07-23
+
+Aba "Preenchimento" (bulk-fill sem agente) + agente SAP virou um aplicativo Windows de verdade
+(Menu Iniciar, só 1 instância, desinstalar) + redesign completo da logo + correções reais de
+segurança/UX encontradas testando o `.exe` de verdade nesta rodada.
+
+### Added
+
+- Aba **Preenchimento** (`pages/PreenchimentoPage.tsx`), simétrica à aba Automação — só existe
+  sem o agente conectado. 2 sub-abas reaproveitando a lógica das antigas ZBPP009/Lista Técnica:
+  "Códigos de alteração" (`PreenchimentoCodigos.tsx`, grade De/Para + colar do SAP) e "Lista
+  Técnica" (`PreenchimentoListaTecnica.tsx`).
+- Validação **"de" preenchido exige "para" (e vice-versa)** em `dados_basicos` — tempo real no
+  frontend (`dadosBasicosValidacao.ts::erroParIncompleto`) e bloqueio real no backend
+  (`bitin_business_rules.py`, código `dados_basicos_de_para_incompleto`).
+- `sap-agent/atalho_windows.py` — atalho no Menu Iniciar (agente pesquisável no Windows Search)
+  e entrada em Programas e Recursos com desinstalação real (`AgenteSAP.exe --desinstalar`).
+- `sap-agent/instancia_unica.py` — mutex nomeado do Windows garante só 1 agente rodando por
+  vez; uma 2ª tentativa de abrir só traz a janela existente pra frente.
+- Redesign completo da logo do agente (`AgenteLogoIcon.tsx`/`logo_agente.py`): crachá com
+  gradiente, visor de vidro fosco, olhos em cápsula (pisca solo/duplo em ordem e timing
+  aleatórios por instância), 3 leituras de status (conectado/desligado/neutro).
+- Favicon dinâmico (`useFaviconAgente.ts`) e toast de conexão (`AgenteConexaoToast.tsx`)
+  refletindo o status do agente.
+- "Fazer manualmente" agora é persistido por BITin (`lib/preferenciasAgente.ts`,
+  `localStorage`) — não pergunta de novo nem manda notificação depois da escolha.
+
+### Fixed
+
+- **CORS do agente local só liberava as portas de dev do Vite** — qualquer deploy real ficaria
+  bloqueado (mesmo bug que `backend/config.py` já tinha corrigido antes). Agora aceita
+  `BITIN_AGENTE_CORS_ORIGENS` (env var), mesmo padrão do backend.
+- **`SetForegroundWindow` derrubava o agente com "Unhandled exception in script"** ao tentar
+  trazer a janela de uma instância já aberta pra frente — só reproduzível no `.exe` empacotado
+  de verdade (nunca rodando o código-fonte direto), achado testando a instalação real nesta
+  máquina. Corrigido com a técnica padrão do Win32 (`AttachThreadInput`).
+- Bug real de UX: "Acessar bitin" (agente confirmado conectado no gate) estava reaproveitando o
+  mesmo callback de "Fazer manualmente" — marcava o BITin como manual pra sempre por engano.
+  Callbacks separados agora.
+- Tela "Instalar o agente SAP" (`InstalarAgenteCard.tsx`) tinha "Já instalado?"/"Verificar
+  conexão" duplicados com o gate (a tela anterior) — removidos, ficam só no gate.
+- 3 funções órfãs em `sapAgent.ts` (nunca chamadas por nenhuma tela) removidas.
+
 ## [v0.13.0] - 2026-07-23
 
 Agente SAP local (novo, opcional) + reorganização das telas de edição de BITin: ZBPP009 e

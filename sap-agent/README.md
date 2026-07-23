@@ -32,6 +32,19 @@ Navegador (BITin)  <-- HTTP localhost:39217 -->  Agente (este diretório)  <-- C
   `ativo` (default `False`) e `abrir_com_windows` (default `True`).
 - `startup_windows.py` -- registra/remove o agente da inicialização do Windows (chave `Run`,
   HKCU, sem admin).
+- `atalho_windows.py` (2026-07-23) -- atalho no **Menu Iniciar** (o que faz o agente aparecer
+  na busca do Windows/barra de tarefas, pedido explícito: "consegue pesquisar na barra de
+  tarefas") + entrada em **Programas e Recursos** (Painel de Controle), pra desinstalar como
+  qualquer aplicativo de verdade -- `UninstallString` chama o próprio `.exe` com
+  `--desinstalar` (ver `agente_app.py::_desinstalar`), sem precisar de um 2º executável só pra
+  isso. Tudo em HKCU/pasta do usuário, sem admin, mesmo espírito do resto do instalador.
+- `instancia_unica.py` (2026-07-23) -- garante só 1 agente rodando por vez nesta máquina
+  (pedido explícito: "coloca validação de poder abrir somente 1 agente no pc"). Mutex nomeado
+  do Windows (`CreateMutex`); se já existe uma instância, a nova tentativa só traz a janela da
+  instância existente pra frente (`mostrar_instancia_existente`, via API de janela do Windows,
+  funciona mesmo com o servidor HTTP desligado) e encerra, sem criar janela/bandeja/servidor
+  duplicados -- corrige o comportamento de antes, onde cada clique em `bitinsap://abrir` (ou
+  reabrir pelo atalho) lançava um processo novo.
 - `agente_app.py` -- **o agente de verdade**: roda `servidor.py` numa thread, mostra uma
   **janela de verdade** (Tkinter, **tamanho fixo, não redimensiona**) com 3 abas e um ícone na
   bandeja do Windows. Minimizar ou fechar (botão X) só esconde a janela (nunca encerra o
@@ -48,11 +61,12 @@ Navegador (BITin)  <-- HTTP localhost:39217 -->  Agente (este diretório)  <-- C
   `servidor.py` sozinho continua funcionando (útil pra depurar no terminal, sem janela/ícone).
 - `instalador.py` / `instalador_logica.py` -- **tela de instalação**: pede a pasta de destino
   (pré-preenchida com `%LOCALAPPDATA%\AgenteSAP\`, mas o engenheiro pode trocar, "como se
-  fosse qualquer outro executável"), copia `AgenteSAP.exe` pra lá e registra `bitinsap://` --
-  **nunca inicia o agente sozinho** (garantido por teste, `test_instalar_nunca_inicia_o_processo`).
-  O agente só passa a rodar quando alguém pede de verdade: botão "Ativar agora" na tela final
-  do instalador, ou depois, clicando em "Abrir agente"/"Ativar agente?" na tela do BITin
-  (dispara `bitinsap://abrir`, que abre o `.exe` já instalado).
+  fosse qualquer outro executável"), copia `AgenteSAP.exe` pra lá, registra `bitinsap://` e
+  registra o agente como aplicativo de verdade (atalho no Menu Iniciar + Programas e Recursos,
+  ver `atalho_windows.py` acima) -- **nunca inicia o agente sozinho** (garantido por teste,
+  `test_instalar_nunca_inicia_o_processo`). O agente só passa a rodar quando alguém pede de
+  verdade: botão "Ativar agora" na tela final do instalador, procurando "Agente SAP" no menu
+  Iniciar, ou clicando em "Abrir agente" na tela do BITin (dispara `bitinsap://abrir`).
 - `AgenteSAP.exe` vem **embutido dentro do `Instalador.exe`** (via `--add-data`) -- o engenheiro
   baixa e distribui **1 arquivo só**.
 
@@ -120,14 +134,28 @@ manualmente.
 
 ## Uso
 
-Com o SAP GUI aberto e logado: botão "Abrir agente"/"Instalar o agente SAP" na tela do BITin →
-`bitinsap://abrir` → Windows inicia o `AgenteSAP.exe` (se ainda não estiver rodando) → na janela
-que abre, aba **Configurações** → marca **"Agente ativo"** → a tela do BITin detecta sozinha
-(poll a cada ~15s, ver `hooks/useAgenteSapConectado.ts`). Pra desligar, desmarca o mesmo
-checkbox (a janela continua aberta/minimizada, só o servidor HTTP para) -- a tela do BITin
-percebe na checagem seguinte e volta pro modo manual (aba Automação some). Fechar a janela
-(botão X) ou minimizar só manda pra bandeja, nunca desliga o agente nem encerra o processo; só
-**"Sair"** no menu da bandeja encerra de verdade.
+Com o SAP GUI aberto e logado: botão "Abrir agente"/"Instalar o agente SAP" na tela do BITin
+(ou procurando "Agente SAP" no menu Iniciar do Windows, ver `atalho_windows.py`) →
+`bitinsap://abrir` → Windows inicia o `AgenteSAP.exe` (se já tiver uma instância rodando, só
+traz a janela dela pra frente -- nunca abre uma segunda, ver `instancia_unica.py`) → na janela
+que abre, aba **BITin** → marca **"Agente ativo"** → a tela do BITin detecta sozinha (poll a
+cada ~4s + checagem imediata ao focar a aba do navegador, ver
+`hooks/useAgenteSapConectado.ts`). Pra desligar, desmarca o mesmo checkbox (a janela continua
+aberta/minimizada, só o servidor HTTP para) -- a tela do BITin percebe na checagem seguinte e
+volta pro modo manual (aba Automação some). Fechar a janela (botão X) ou minimizar só manda pra
+bandeja, nunca desliga o agente nem encerra o processo; só **"Sair"** no menu da bandeja encerra
+de verdade.
+
+**Desinstalar**: painel de controle → "Programas e Recursos" → "Agente SAP - BITin" →
+Desinstalar (chama `AgenteSAP.exe --desinstalar`, que remove o registro do Windows/atalho/
+protocolo; a pasta de instalação em si precisa ser apagada manualmente -- um processo não
+consegue apagar o próprio `.exe` em execução).
+
+**Deploy fora de `localhost` (CORS)**: `servidor.py::ORIGENS_PERMITIDAS` só libera as portas de
+dev do Vite por padrão -- **qualquer** deploy real do frontend (mesmo padrão de
+`backend/config.py::CORS_ORIGINS`, ver `docs/DEPLOY.md`) precisa da variável de ambiente
+`BITIN_AGENTE_CORS_ORIGENS` (string separada por vírgula) apontando pra URL de verdade do
+sistema web, senão o navegador bloqueia toda chamada do BITin pro agente local.
 
 ## Rodando os testes
 

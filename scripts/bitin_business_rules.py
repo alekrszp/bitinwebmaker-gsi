@@ -125,7 +125,10 @@ def validate_business_rules(
             ))
         codigos_centros_vistos.add(chave)
 
-        # Geral: campo listado em dados_basicos mas 'de' == 'para' (mudança sem efeito).
+        # Geral: campo listado em dados_basicos mas 'de' == 'para' (mudança sem efeito), ou só
+        # um dos dois lados preenchido (2026-07-23, achado real ao revisar Preenchimento: nada
+        # barrava importar/enviar um campo com 'de' preenchido e 'para' vazio -- ou vice-versa
+        # -- silenciosamente. Espelha frontend/src/lib/dadosBasicosValidacao.ts::erroParIncompleto).
         mudancas_reais = []
         for campo, entry in dados_basicos.items():
             de, para = entry.get("de", ""), entry.get("para", "")
@@ -135,6 +138,12 @@ def validate_business_rules(
                     campo_field, "no_effective_change",
                     f"{prefix}: campo '{campo}' listado em dados_basicos mas 'de' e 'para' são "
                     f"iguais ({de!r}) — remova se não há mudança real",
+                ))
+            elif (de != "") != (para != ""):
+                errors.append(make_error(
+                    campo_field, "dados_basicos_de_para_incompleto",
+                    f"{prefix}: campo '{campo}' tem só um lado preenchido ('de'={de!r}, "
+                    f"'para'={para!r}) — preencha os dois ou remova o campo",
                 ))
             elif para != "":
                 mudancas_reais.append(campo)

@@ -40,6 +40,22 @@ export default function EdicaoBottomBar({
       >
         BITin
       </NavLink>
+      {/* "Preenchimento" (manual) e "Automação" (agente conectado) são mutuamente exclusivos --
+          nunca aparecem juntas (2026-07-23, pedido explícito: "criar uma aba igual tem com o
+          agente automação, criar para sem o agente, preenchimento" -- preenchimento em massa
+          de códigos de alteração/lista técnica, ver PreenchimentoPage.tsx). */}
+      {!agenteConectado && (
+        <NavLink
+          to={`/bitins/${mongoId}/preenchimento`}
+          className={({ isActive }) =>
+            `rounded-lg px-4 py-2 text-sm font-medium transition-colors ${
+              isActive ? 'bg-brand-navy text-white' : 'text-ink-muted hover:bg-surface-alt hover:text-ink'
+            }`
+          }
+        >
+          Preenchimento
+        </NavLink>
+      )}
       {agenteConectado && (
         <NavLink
           to={`/bitins/${mongoId}/automacao`}

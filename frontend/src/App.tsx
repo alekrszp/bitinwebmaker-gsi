@@ -17,6 +17,7 @@ const Home = lazy(() => import('./pages/Home'))
 const MeusBitins = lazy(() => import('./pages/MeusBitins'))
 const BitinDetail = lazy(() => import('./pages/BitinDetail'))
 const AutomacaoPage = lazy(() => import('./pages/AutomacaoPage'))
+const PreenchimentoPage = lazy(() => import('./pages/PreenchimentoPage'))
 const Settings = lazy(() => import('./pages/Settings'))
 const GestaoUsuariosPage = lazy(() => import('./pages/GestaoUsuariosPage'))
 const CadastroPage = lazy(() => import('./pages/CadastroPage'))
@@ -72,16 +73,26 @@ function App() {
         {/* /bitins/novo removida (2026-07-16) -- "+ Novo BITin" agora cria o rascunho direto
             via POST /bitins/draft e navega pro /bitins/:mongoId real, sem tela intermediária
             em branco (ver lib/criarBitin.ts). */}
-        {/* ZBPP009/Lista Técnica (páginas separadas) removidas (2026-07-23) -- substituídas
-            pela aba "Automação", que só existe com o agente SAP conectado (ver
-            EdicaoBottomBar.tsx, AutomacaoPage.tsx). Os COMANDOS do agente ficam aqui, no
-            sistema web (decisão explícita: "quero algo seguro e com validações") -- a janela
-            do próprio agente (sap-agent/agente_app.py) é só status/configuração. */}
+        {/* ZBPP009/Lista Técnica (páginas separadas) removidas (2026-07-23) -- substituídas por
+            2 abas mutuamente exclusivas em EdicaoBottomBar.tsx: "Automação" (agente SAP
+            conectado, comandos ficam no sistema web -- decisão explícita: "quero algo seguro e
+            com validações", a janela do próprio agente é só status/configuração) e
+            "Preenchimento" (sem agente -- preenchimento em massa dos códigos de alteração e da
+            Lista Técnica, reúne as 2 antigas páginas como sub-abas de uma só, ver
+            PreenchimentoPage.tsx). */}
         <Route
           path="/bitins/:mongoId/automacao"
           element={
             <Suspense fallback={<CarregandoRota />}>
               <AutomacaoPage />
+            </Suspense>
+          }
+        />
+        <Route
+          path="/bitins/:mongoId/preenchimento"
+          element={
+            <Suspense fallback={<CarregandoRota />}>
+              <PreenchimentoPage />
             </Suspense>
           }
         />

@@ -6,12 +6,6 @@
 // o tempo todo) arriscaria derrubar a sessão do usuário por causa do agente, não do backend.
 const AGENTE_BASE_URL = import.meta.env.VITE_SAP_AGENT_URL || 'http://127.0.0.1:39217'
 
-export type ResultadoConsultaMaterial = {
-  encontrado: boolean
-  descricao: string | null
-  erro: string | null
-}
-
 // Timeout curto (2026-07-22) -- se o agente não estiver rodando, `fetch` a `localhost` numa
 // porta fechada geralmente falha rápido, mas um timeout explícito evita que o poll de status
 // fique pendurado caso algo (firewall, antivírus corporativo) segure a conexão.
@@ -56,75 +50,6 @@ export async function identificarUsuarioNoAgente(usuario: {
     )
   } catch {
     // best-effort, ver comentário acima
-  }
-}
-
-export async function consultarMateriaisNoSap(
-  codigos: string[],
-): Promise<{ resultados: Record<string, ResultadoConsultaMaterial> } | { erro: string }> {
-  try {
-    const resp = await fetchComTimeout(
-      `${AGENTE_BASE_URL}/consultar-materiais`,
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ codigos }),
-      },
-      // Consulta é sequencial no agente (SAP GUI Scripting não paraleliza) -- timeout maior,
-      // proporcional ao tamanho do lote, mesmo espírito de "por material" da macro original.
-      Math.max(15000, codigos.length * 5000),
-    )
-    const data = await resp.json()
-    if (!resp.ok) return { erro: data.erro ?? 'Não foi possível consultar o agente SAP.' }
-    return data
-  } catch {
-    return { erro: 'Agente SAP não respondeu. Confira se ele está aberto.' }
-  }
-}
-
-export type ResultadoCampoSap = {
-  encontrado: boolean
-  valor: string | null
-  erro: string | null
-}
-
-// Campos que o agente já sabe buscar de verdade (mapeados com ID de tela real, ver
-// sap-agent/sap_gui.py::CAMPOS_MM03) -- a tela "Código + Campos" só deve oferecer esses.
-export async function consultarCamposDisponiveis(): Promise<string[]> {
-  try {
-    const resp = await fetchComTimeout(`${AGENTE_BASE_URL}/campos-disponiveis`, {}, 3000)
-    if (!resp.ok) return []
-    const data = await resp.json()
-    return data.campos ?? []
-  } catch {
-    return []
-  }
-}
-
-// Modo "Código + Campos" (2026-07-22, pedido explícito: "ele coloca o código e coloca os
-// campos que ele quer... o agente vai lá pega os campos e informações daquele código e já
-// preenche no bitin") -- um material por vez (diferente do lote de consultarMateriaisNoSap,
-// que só confere descrição).
-export async function preencherDadosBasicosNoSap(
-  material: string,
-  centro: string,
-  campos: string[],
-): Promise<{ resultados: Record<string, ResultadoCampoSap> } | { erro: string }> {
-  try {
-    const resp = await fetchComTimeout(
-      `${AGENTE_BASE_URL}/preencher-dados-basicos`,
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ material, centro, campos }),
-      },
-      Math.max(10000, campos.length * 4000),
-    )
-    const data = await resp.json()
-    if (!resp.ok) return { erro: data.erro ?? 'Não foi possível consultar o agente SAP.' }
-    return data
-  } catch {
-    return { erro: 'Agente SAP não respondeu. Confira se ele está aberto.' }
   }
 }
 

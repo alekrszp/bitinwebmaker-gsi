@@ -3,7 +3,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 class Settings(BaseSettings):
     PROJECT_NAME: str = "BITin API"
-    VERSION: str = "0.13.0"
+    VERSION: str = "0.14.0"
     API_V1_STR: str = "/api/v1"
 
     # "production" liga checagens de segurança na subida do app (ver main.py::lifespan) --

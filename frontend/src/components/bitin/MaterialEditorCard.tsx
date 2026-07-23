@@ -1,7 +1,7 @@
 import { memo, useId, useMemo, useState } from 'react'
 import Card from '../Card'
 import ListaTecnicaInline from './ListaTecnicaInline'
-import { erroDominioCampo } from '../../lib/dadosBasicosValidacao'
+import { erroDominioCampo, erroParIncompleto } from '../../lib/dadosBasicosValidacao'
 import { normalizar } from '../../lib/texto'
 import type { ItemListaTecnica, MateriaisSchema, MaterialEditavel } from '../../lib/types'
 
@@ -307,8 +307,8 @@ const MaterialEditorCard = memo(function MaterialEditorCard({
             </thead>
             <tbody className="divide-y divide-line">
               {entradasSap.map(([campo, { de, para }]) => {
-                const erroDe = erroDominioCampo(campo, de)
-                const erroPara = erroDominioCampo(campo, para)
+                const erroDe = erroDominioCampo(campo, de) ?? erroParIncompleto(de, para, 'de')
+                const erroPara = erroDominioCampo(campo, para) ?? erroParIncompleto(de, para, 'para')
                 return (
                   <tr key={campo}>
                     <td className="px-3 py-2 text-ink">{labelDoCampo(campo)}</td>

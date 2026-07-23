@@ -1,7 +1,10 @@
 import { useEffect } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
+import AgenteConexaoToast from '../components/bitin/AgenteConexaoToast'
+import AgenteLogoIcon from '../components/bitin/AgenteLogoIcon'
 import EdicaoBottomBar from '../components/bitin/EdicaoBottomBar'
 import { useAgenteSapConectado } from '../hooks/useAgenteSapConectado'
+import { useFaviconAgente } from '../hooks/useFaviconAgente'
 import { useEnviarBitin } from '../lib/useEnviarBitin'
 
 // Aba "Automação" (2026-07-23) -- só existe com o agente SAP conectado, no lugar da antiga
@@ -16,6 +19,7 @@ export default function AutomacaoPage() {
   const navigate = useNavigate()
   const { conectado: agenteConectado, verificado } = useAgenteSapConectado()
   const { enviando, enviar } = useEnviarBitin(mongoId)
+  useFaviconAgente(verificado ? (agenteConectado ? 'conectado' : 'desligado') : undefined)
 
   // Se o agente cair enquanto o engenheiro está nesta aba, não faz sentido continuar aqui --
   // volta pro BITin manual (mesma regra de fallback do gate, ver BitinDetail.tsx). Só decide
@@ -38,11 +42,17 @@ export default function AutomacaoPage() {
         <h1 className="text-2xl font-semibold text-ink">Automação</h1>
       </div>
 
-      <p className="mt-6 text-sm text-ink-muted">Em construção.</p>
+      {/* Logo grande preenchendo o vazio (2026-07-23, pedido explícito: "aplica nos lugares que
+          você achar legal") -- em vez de só o texto "Em construção" sozinho na tela. */}
+      <div className="mt-10 flex flex-col items-center gap-3 text-center">
+        <AgenteLogoIcon size={112} status="conectado" />
+        <p className="text-sm text-ink-muted">Em construção.</p>
+      </div>
 
       {mongoId && (
         <EdicaoBottomBar mongoId={mongoId} agenteConectado={agenteConectado} enviando={enviando} onEnviar={enviar} />
       )}
+      <AgenteConexaoToast conectado={agenteConectado} verificado={verificado} />
     </div>
   )
 }

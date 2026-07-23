@@ -11,6 +11,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import pytest
 
+import atalho_windows
 import instalador_logica
 
 
@@ -88,3 +89,8 @@ def test_instalar_nunca_inicia_o_processo(monkeypatch, tmp_path):
             winreg.DeleteKey(winreg.HKEY_CURRENT_USER, r"Software\Classes\bitinsap")
         except OSError:
             pass
+        # `instalar()` também cria atalho no Menu Iniciar + entrada em Programas e Recursos
+        # (2026-07-23, ver atalho_windows.py) -- limpa os dois pra não deixar lixo real na
+        # máquina de quem roda os testes.
+        atalho_windows.remover_atalho_menu_iniciar()
+        atalho_windows.remover_de_programas_e_recursos()

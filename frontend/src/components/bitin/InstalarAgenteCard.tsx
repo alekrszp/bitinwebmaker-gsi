@@ -1,5 +1,4 @@
-import { useState } from 'react'
-import { abrirAgenteViaProtocolo, consultarStatusAgente } from '../../lib/sapAgent'
+import AgenteLogoIcon from './AgenteLogoIcon'
 
 // URL de download do instalador -- endpoint público (sem login, ver
 // backend/api/agente_sap.py) servido pelo próprio backend do BITin, então um <a> simples
@@ -8,21 +7,13 @@ import { abrirAgenteViaProtocolo, consultarStatusAgente } from '../../lib/sapAge
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:8000/api/v1'
 const URL_DOWNLOAD_INSTALADOR = `${API_BASE_URL}/agente-sap/download`
 
-// Instruções de instalação do agente SAP local (2026-07-23) -- 2 cards separados: "já
-// instalado" (reabrir) vs. "instalar do zero", pedido explícito do usuário com o texto exato
-// de cada um.
+// Instruções de instalação do agente SAP local (2026-07-23). Simplificado (achado real,
+// pedido explícito: "retira a parte de verificar conexão deixa somente na outra. retira também
+// a aba de já instalado pq tem na página antes") -- "Já instalado?"/"Abrir agente" e
+// "Verificar conexão" ficaram DUPLICADOS depois que o gate (`AgenteGate.tsx`, a tela que
+// aparece ANTES desta -- ver `BitinDetail.tsx`) ganhou os dois. Aqui fica só o fluxo de
+// instalar do zero; verificar conexão/reabrir vivem só no gate.
 export default function InstalarAgenteCard({ onVoltar }: { onVoltar: () => void }) {
-  const [verificando, setVerificando] = useState(false)
-  const [resultado, setResultado] = useState<'ok' | 'falhou' | null>(null)
-
-  async function verificarConexao() {
-    setVerificando(true)
-    setResultado(null)
-    const ok = await consultarStatusAgente()
-    setResultado(ok ? 'ok' : 'falhou')
-    setVerificando(false)
-  }
-
   return (
     <div className="mx-auto max-w-xl">
       <button
@@ -33,24 +24,12 @@ export default function InstalarAgenteCard({ onVoltar }: { onVoltar: () => void 
         ← Voltar pro BITin
       </button>
 
-      {/* Card 1: já instalado antes, só precisa reabrir -- dispara o protocolo bitinsap://
-          registrado na instalação, não baixa nem instala nada de novo. */}
-      <div className="mb-4 rounded-xl border border-line bg-surface-alt p-6">
-        <h1 className="text-base font-semibold text-ink">Já instalado?</h1>
-        <p className="mt-1 text-sm text-ink-muted">
-          Se o agente já foi instalado, abra novamente, que o sistema vai reconhecê-lo
-          automaticamente.
-        </p>
-        <button
-          type="button"
-          onClick={abrirAgenteViaProtocolo}
-          className="mt-3 rounded-lg border border-line bg-surface px-4 py-2 text-sm font-medium text-ink transition-colors hover:bg-surface-alt"
-        >
-          Abrir agente
-        </button>
+      {/* Logo no topo (2026-07-23, pedido explícito: "aplica nos lugares que você achar
+          legal") -- reforça a identidade visual do agente logo na tela onde ele é instalado. */}
+      <div className="mb-4 flex justify-center">
+        <AgenteLogoIcon size={72} />
       </div>
 
-      {/* Card 2: instalar do zero. */}
       <div className="rounded-xl border border-line bg-surface p-6">
         <h1 className="text-base font-semibold text-ink">Instalar o agente SAP</h1>
         <p className="mt-1 text-sm text-ink-muted">Não tem o agente instalado? Siga os passos abaixo.</p>
@@ -79,31 +58,13 @@ export default function InstalarAgenteCard({ onVoltar }: { onVoltar: () => void 
               agente funcionar.
             </p>
           </li>
-          <li className="py-3">
-            <p className="text-sm font-medium text-ink">4. Verifique a conexão</p>
-            <p className="mt-1 text-sm text-ink-muted">
-              Com o agente rodando, o sistema detecta sozinho. Mas confirme sua conexão agora
-              mesmo.
-            </p>
-            <button
-              type="button"
-              onClick={verificarConexao}
-              disabled={verificando}
-              className="mt-2 rounded-lg border border-line px-3 py-1.5 text-sm font-medium text-ink transition-colors hover:bg-surface-alt disabled:cursor-not-allowed disabled:opacity-60"
-            >
-              {verificando ? 'Verificando...' : 'Verificar conexão'}
-            </button>
-            {resultado === 'ok' && (
-              <p className="mt-2 text-sm text-brand-green">Agente encontrado! Pode voltar pro BITin.</p>
-            )}
-            {resultado === 'falhou' && (
-              <p className="mt-2 text-sm text-red-600">
-                Não encontrou o agente ainda. Confira se ele está rodando e tente de novo.
-              </p>
-            )}
-          </li>
         </ol>
       </div>
+
+      <p className="mt-4 text-center text-xs text-ink-muted">
+        Já instalado? Procure "Agente SAP" no menu Iniciar do Windows pra abrir -- o sistema
+        detecta a conexão sozinho, sem precisar verificar nada aqui.
+      </p>
     </div>
   )
 }

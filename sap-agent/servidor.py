@@ -10,6 +10,7 @@ localhost: um site malicioso aberto no mesmo navegador não pode ter permissão 
 consultas no SAP do engenheiro.
 """
 
+import os
 import threading
 
 from flask import Flask, jsonify, request
@@ -21,12 +22,29 @@ import sap_gui
 
 PORTA = 39217
 
-ORIGENS_PERMITIDAS = [
+_ORIGENS_DEV = [
     "http://localhost:5173",
     "http://127.0.0.1:5173",
     "http://localhost:5174",
     "http://127.0.0.1:5174",
 ]
+
+
+def _origens_permitidas() -> list[str]:
+    """Mesmo padrão de `backend/config.py::CORS_ORIGINS` (env var, string separada por vírgula)
+    -- achado real numa revisão de segurança (2026-07-23): esta lista só cobria as portas de
+    dev do Vite, exatamente o mesmo bug que `backend/config.py` já tinha corrigido antes (ver
+    docs/DEPLOY.md, "achado ao preparar o deploy de teste/produção") -- sem isso, o agente
+    ficaria inutilizável em QUALQUER deploy real (o navegador bloqueia a chamada do BITin pro
+    agente local se a origem não bater). `BITIN_AGENTE_CORS_ORIGENS` deixa quem empacota o
+    agente pra uso interno na empresa acrescentar a URL de verdade do sistema web, sem editar
+    código."""
+    extra = os.environ.get("BITIN_AGENTE_CORS_ORIGENS", "")
+    origens_extra = [origem.strip() for origem in extra.split(",") if origem.strip()]
+    return _ORIGENS_DEV + origens_extra
+
+
+ORIGENS_PERMITIDAS = _origens_permitidas()
 
 app = Flask(__name__)
 CORS(app, origins=ORIGENS_PERMITIDAS)

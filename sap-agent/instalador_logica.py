@@ -16,6 +16,8 @@ import sys
 import winreg
 from pathlib import Path
 
+import atalho_windows
+
 NOME_EXE_AGENTE = "AgenteSAP.exe"
 NOME_PASTA_INSTALACAO = "AgenteSAP"  # nome simples, mesmo em todo lugar (pasta/exe/registro)
 
@@ -63,11 +65,16 @@ def registrar_protocolo_bitinsap(caminho_exe: Path) -> None:
 
 
 def instalar(destino_dir: Path | None = None) -> Path:
-    """Copia o agente + registra o protocolo. NÃO inicia o processo -- ver docstring do
-    módulo. `destino_dir` é escolhido pelo usuário na tela do instalador (2026-07-23, pedido
-    explícito: "vai pedir um local do arquivo para deixar o aplicativo do agente, como se fosse
-    qualquer outro executável") -- default `caminho_instalacao()` se não vier nada. Devolve o
-    caminho final do `.exe` instalado (pra quem chamou oferecer "Ativar agora", se quiser)."""
+    """Copia o agente + registra o protocolo + registra como aplicativo de verdade (atalho no
+    Menu Iniciar + entrada em Programas e Recursos, 2026-07-23, pedido explícito: "CRIA
+    LITERALMENTE UM APLICATIVO desse agente, que a pessoa instala e consegue pesquisar na barra
+    de tarefas"). NÃO inicia o processo -- ver docstring do módulo. `destino_dir` é escolhido
+    pelo usuário na tela do instalador (2026-07-23, pedido explícito: "vai pedir um local do
+    arquivo para deixar o aplicativo do agente, como se fosse qualquer outro executável") --
+    default `caminho_instalacao()` se não vier nada. Devolve o caminho final do `.exe`
+    instalado (pra quem chamou oferecer "Ativar agora", se quiser)."""
     destino = copiar_agente(origem_agente_exe(), destino_dir or caminho_instalacao())
     registrar_protocolo_bitinsap(destino)
+    atalho_windows.criar_atalho_menu_iniciar(destino)
+    atalho_windows.registrar_em_programas_e_recursos(destino)
     return destino

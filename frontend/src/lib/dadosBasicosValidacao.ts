@@ -22,3 +22,16 @@ export function erroDominioCampo(campo: string, valor: string): string | null {
   }
   return null
 }
+
+// De/Para incompleto (2026-07-23, achado real: nada avisava/barrava importar ou enviar um
+// campo de dados_basicos com só um dos dois lados preenchido -- "de" sem "para" ou vice-versa
+// passava direto). Espelha scripts/bitin_business_rules.py (bloqueia de verdade no envio);
+// aqui é só aviso em tempo real, mesmo espírito de erroDominioCampo. `lado` diz qual célula
+// está sendo validada -- o erro aparece do lado que falta preencher, não do lado já
+// preenchido (ex.: "de" cheio e "para" vazio -- o aviso aparece embaixo da célula "para").
+export function erroParIncompleto(de: string, para: string, lado: 'de' | 'para'): string | null {
+  if (lado === 'de') {
+    return de === '' && para !== '' ? 'Preencha também o valor "De"' : null
+  }
+  return para === '' && de !== '' ? 'Preencha também o valor "Para"' : null
+}

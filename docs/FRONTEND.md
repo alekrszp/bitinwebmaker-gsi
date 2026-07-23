@@ -713,35 +713,82 @@ direto o "de" daquele material na tabela (cria a linha se ainda não existir). O
 Pedido explícito do usuário: reorganizar completamente o que cada modo (sem/com agente) faz,
 em vez do agente ser só um complemento opcional dentro das telas de sempre. Mudança de fundo:
 **ZBPP009 (`CodigosSapPage.tsx`) e Lista Técnica (`ListaTecnicaPage.tsx`) deixaram de existir
-como páginas** — removidas junto com `lib/zbpp009Validacao.ts` e
+como páginas próprias** — removidas junto com `lib/zbpp009Validacao.ts` e
 `components/bitin/PreencherViaSapPanel.tsx` (só usados por elas). O que cada modo oferece agora:
 
-- **Sem agente**: só existe a aba **BITin** (`BitinDetail.tsx`, sem nenhuma mudança de
-  comportamento) — material a material, cada um com seu card e a lista técnica editada inline
-  (`ListaTecnicaInline.tsx`, que continua existindo). `EdicaoBottomBar.tsx` só mostra essa aba.
+- **Sem agente**: a aba **BITin** (`BitinDetail.tsx`, sem nenhuma mudança de comportamento) —
+  material a material, cada um com seu card e a lista técnica editada inline
+  (`ListaTecnicaInline.tsx`, que continua existindo) — e uma aba extra, **Preenchimento**
+  (`pages/PreenchimentoPage.tsx`, rota `/bitins/:mongoId/preenchimento`, 2026-07-23, pedido
+  explícito: "criar para sem o agente, preenchimento... preenchimento em massa de campos, tanto
+  pra códigos de alteração de dados ou lista técnica"). Preenchimento reúne o preenchimento em
+  massa das 2 antigas páginas como 2 sub-abas de UMA aba só (troca local, sem navegar de rota):
+  "Códigos de alteração" (`components/bitin/PreenchimentoCodigos.tsx`, grade De/Para + colar do
+  SAP, herdada quase sem mudança de `CodigosSapPage.tsx`) e "Lista Técnica"
+  (`components/bitin/PreenchimentoListaTecnica.tsx`, grade plana por código pai, herdada de
+  `ListaTecnicaPage.tsx`). Cada sub-aba é dona do próprio carregamento/salvamento (`POST
+  /bitins/draft`) e remonta do zero ao trocar de sub-aba (busca o `materiais[]` mais recente do
+  servidor em vez de arriscar duas cópias locais divergentes escrevendo no mesmo array) — troca
+  de sub-aba ou saída da tela com edição pendente avisa via `window.confirm` simples, não o
+  `AvisoSairModal` (pensado pra navegação de rota, não troca de sub-aba na mesma página).
 - **Com agente conectado**: `EdicaoBottomBar.tsx` ganha uma aba extra, **Automação**
   (`pages/AutomacaoPage.tsx`, rota `/bitins/:mongoId/automacao`) — hoje é só a casca (cabeçalho
   e barra inferior, texto "Em construção"), o fluxo de verdade (colar códigos → agente busca o
   "de" → engenheiro declara o "para") fica pra uma próxima rodada, a partir do zero (decisão
   explícita do usuário: não reaproveitar a lógica antiga de `CodigosSapPage.tsx`).
 
+"Preenchimento" e "Automação" são mutuamente exclusivas em `EdicaoBottomBar.tsx` — nunca
+aparecem juntas; se o agente conecta enquanto o engenheiro está em Preenchimento (ou
+desconecta enquanto está em Automação), a página redireciona sozinha pro lado certo.
+
 **Gate ao abrir um BITin novo** (`components/bitin/AgenteGate.tsx`): um rascunho recém-criado
 (sem nada preenchido ainda — `produto`/`motivo`/`setor`/`materiais` todos vazios) e sem agente
 detectado mostra "Agente SAP não identificado, deseja realizar o BITin manualmente?" antes do
-resto da tela. "Sim" libera a tela normal pro resto da visita (não pergunta de novo depois que
-o engenheiro já preencheu algo); a outra opção leva pras instruções de instalação
-(`components/bitin/InstalarAgenteCard.tsx`), com um botão real "Baixar instalador (.exe)"
-apontando pro próprio backend (`GET /api/v1/agente-sap/download`, endpoint público sem login,
-ver `backend/api/agente_sap.py` e `sap-agent/README.md`) — o `Instalador.exe` já vem com o
-`AgenteSAP.exe` embutido dentro (1 arquivo só pra baixar/distribuir).
+resto da tela. 4 ações:
 
-Detecção de agente centralizada em **`hooks/useAgenteSapConectado.ts`** (poll ~15s, mesmo
-`consultarStatusAgente` de sempre) — devolve `{ conectado, verificado }`; `verificado` existe
+- **"Instalar o agente SAP"** → `components/bitin/InstalarAgenteCard.tsx` (instruções de
+  download, botão real "Baixar instalador (.exe)" apontando pro backend, ver abaixo).
+- **"Abrir agente"** → dispara `bitinsap://abrir` (pra quem já tem instalado).
+- **"Verificar conexão"** → checagem pontual (`consultarStatusAgente()`), feedback imediato na
+  hora — não é a fonte de verdade que faz a tela mudar sozinha (essa continua sendo o poll do
+  hook abaixo), só dá um retorno visual rápido ao clique.
+- **"Acessar bitin"** → só aparece depois de "Verificar conexão" confirmar (`resultado === 'ok'`)
+  — dispensa o gate SÓ NESTA VISITA (`onAcessarComAgente`), sem marcar nada como definitivo.
+- **"Sim, fazer manualmente"** → dispensa o gate E persiste a escolha em `localStorage`
+  (`lib/preferenciasAgente.ts`, chave por `mongoId`) — 2026-07-23, achado real: antes era só
+  estado de componente, então sair e reabrir o MESMO BITin perguntava tudo de novo. Com a
+  escolha persistida, o gate nunca mais volta pra este BITin específico, mesmo depois de
+  recarregar a página — e o toast de conexão (abaixo) também fica desligado pra ele.
+
+`onConfirmarManual` (persiste) e `onAcessarComAgente` (não persiste) são propositalmente
+callbacks SEPARADOS — os dois já foram a mesma função em algum momento e isso é um bug real:
+"Acessar bitin" marcava o BITin como manual pra sempre mesmo com o agente funcionando.
+
+O gate **não desaparece sozinho** quando o agente conecta em segundo plano (2026-07-23, achado
+real: "quando eu ativo o agente já ta abrindo direto o bitin") — uma vez exibido
+(`gateFoiExibidoRef`, trava em `true`), só fecha por ação explícita do engenheiro (um dos 4
+botões acima), nunca porque `agenteConectado` virou `true` por trás.
+
+**Card de instalação** (`InstalarAgenteCard.tsx`) foi simplificado (2026-07-23, achado real: "já
+instalado"/"verificar conexão" ficaram DUPLICADOS depois que o gate ganhou os dois) — hoje só
+tem o fluxo de instalar do zero (baixar → instalar e ativar → deixar o SAP aberto); reabrir
+("Abrir agente") e verificar conexão vivem só no gate, que é sempre a tela anterior a esta.
+
+Detecção de agente centralizada em **`hooks/useAgenteSapConectado.ts`** (poll ~4s + recheck
+imediato ao focar a aba, mesmo `consultarStatusAgente` de sempre) — devolve `{ conectado, verificado }`; `verificado` existe
 pra não piscar o gate na tela enquanto a 1ª checagem ainda não resolveu (o estado inicial de
 `conectado` é `false` até então). `AgenteSapStatus.tsx` virou puramente apresentacional (só o
 badge verde "Agente SAP conectado"), sem poll próprio — `BitinDetail.tsx`/`AutomacaoPage.tsx`
 já chamam o hook uma vez cada e decidem o resto (badge vs. link "Ativar agente?", aba
 Automação aparecer ou não) a partir do mesmo valor.
+
+**Favicon + toast de conexão** (2026-07-23) — `hooks/useFaviconAgente.ts` troca o favicon da
+aba do navegador (verde/vermelho) enquanto o engenheiro está numa tela que sabe o status do
+agente (BITin/Automação/Preenchimento); `components/bitin/AgenteConexaoToast.tsx` mostra um
+toast curto só quando o status MUDA de verdade (nunca na 1ª resolução — evita disparar sozinho
+ao abrir a tela ou ao navegar entre BITin/Automação/Preenchimento, que remonta o componente).
+Ambos desligados quando o BITin já está marcado como manual (`preferenciasAgente.ts`, ver
+acima) — "não vai mais apitar a notificação" depois de escolher fazer manualmente.
 
 **Em aberto** (perguntar antes de avançar): quando o agente conecta depois de o BITin já ter
 sido criado manualmente (fora do estado "recém-criado"), a aba Automação já aparece na hora
