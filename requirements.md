@@ -88,7 +88,7 @@ pendência já registrada como bloqueada.
   **bloqueado até o Alessandro passar a URL de acesso a um Postgres real** (hoje só existe
   SQLite local/testes). Retomar assim que o acesso existir.
 - **Uma solução real de transação distribuída Postgres↔MongoDB** (saga/outbox, ver
-  docs/RELEASE_v0.6.0.md) — depende de Postgres/MongoDB real pra validar contra. Hoje o
+  docs/releases/RELEASE_v0.6.0.md) — depende de Postgres/MongoDB real pra validar contra. Hoje o
   fluxo de `/enviar` faz best-effort (rollback manual do lado Postgres se o Mongo falhar
   depois, ver docs/BACKEND.md) em vez de uma transação de verdade — mesma pendência, avaliar
   junto quando o acesso chegar.
@@ -99,7 +99,7 @@ pendência já registrada como bloqueada.
 **Adiados por escolha (não bloqueados, só não priorizados ainda)**:
 
 - Docker/docker-compose e testes de borda do `sap_paste_parser.py` (paste parcial, unicode) —
-  registrados em docs/RELEASE_v0.6.0.md como observações de auditoria, nunca priorizados.
+  registrados em docs/releases/RELEASE_v0.6.0.md como observações de auditoria, nunca priorizados.
 - **Resolvidos (removidos daqui em 2026-07-20 — mantidos só como registro do que já foi
   concluído)**: tela de Bitins completa (cadastro/edição de rascunho, grid de materiais,
   checklist, "+ Novo BITin" — concluído nas v0.8.x); restringir quem pode criar/ver/listar

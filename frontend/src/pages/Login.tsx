@@ -78,7 +78,7 @@ export default function Login() {
           <img src="/brand/gpt-color.png" className="mb-6 h-20 w-fit" alt="Grain & Protein Technologies" />
           <div className="flex items-baseline gap-2">
             {/* Cor extraída direto do PNG da logo (rgb(5,70,96) / #054660, amostrado em
-                public/brand/gpt-color.png -- ver docs/RELEASE_v0.8.4.md) em vez do token
+                public/brand/gpt-color.png -- ver docs/releases/RELEASE_v0.8.4.md) em vez do token
                 `brand-navy` (#32464d) -- os dois têm nomes parecidos mas hex diferentes, o que
                 deixava "BITin" visivelmente destoando das letras da logo ao lado (2026-07-17,
                 pedido explícito: "pega a cor a logo das letras e coloca em BITin também").

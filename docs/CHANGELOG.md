@@ -104,7 +104,7 @@ tagueada).
 
 Admin reseta a senha de qualquer usuário direto em Gestão de usuários ("esqueci minha senha"
 sem SMTP configurado), e Painel geral ganhou paginação real no servidor (antes buscava até
-5000 BITins de uma vez e filtrava tudo no cliente). Ver `docs/RELEASE_v0.11.0.md`.
+5000 BITins de uma vez e filtrava tudo no cliente). Ver `docs/releases/RELEASE_v0.11.0.md`.
 
 ### Added
 
@@ -133,7 +133,7 @@ o desenvolvimento) foram mantidos — ainda são usados de verdade por
 
 Bloqueio de envio de BITin sem nenhuma alteração real, confirmação antes de enviar, e
 correção de um bug real de perda de dados no Salvar/Importar da Lista Técnica/Códigos SAP
-(achado e reproduzido em teste manual + Playwright). Ver `docs/RELEASE_v0.10.1.md`.
+(achado e reproduzido em teste manual + Playwright). Ver `docs/releases/RELEASE_v0.10.1.md`.
 
 ### Added
 
@@ -159,7 +159,7 @@ Etapa final "Concluído" (Windchill, reversível só por admin), 2ª revisão do
 permissões (Cadastro/Processos viram `setor` cruzado com rank, não mais níveis fixos), Painel
 geral novo, Cadastro/Processos reformulados na mesma linguagem Status x Etapa, revisão geral
 de arquitetura/performance do frontend (componentização, navegação "voltar" correta) e ajuda
-("?") em cada tela principal. Ver `docs/RELEASE_v0.10.0.md` pra notas completas.
+("?") em cada tela principal. Ver `docs/releases/RELEASE_v0.10.0.md` pra notas completas.
 
 ### Added
 
@@ -926,7 +926,7 @@ automatizada do frontend. Sem mudança de UI visível pro engenheiro — tudo aq
 ## [v0.1.0] - 2026-07-09
 ### Added
 - Public release `v0.1.0` published on GitHub.
-- Release notes sourced from `docs/RELEASE_v0.1.0.md`.
+- Release notes sourced from `docs/releases/RELEASE_v0.1.0.md`.
 - Documentation updated in `README.md` and `docs/README_HANDOFF.md` with release URL.
 
 ### Notes

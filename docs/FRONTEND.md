@@ -564,7 +564,7 @@ Diferente das seções acima (diário cronológico), esta lista é mantida como 
 ATUAL — atualizar aqui sempre que algo mudar de verdade, não só quando uma seção nova for
 adicionada. Validado por `python -m unittest discover -s tests` (358 testes, inclui
 `test_bitin_workflow_e2e.py` ponta a ponta) + `tsc`/`lint`/`build` do frontend + testes ao vivo
-com Playwright nas contas reais (ver `docs/RELEASE_v0.10.0.md`/`v0.10.1.md`).
+com Playwright nas contas reais (ver `docs/releases/RELEASE_v0.10.0.md`/`v0.10.1.md`).
 
 - Login (`POST /auth/login`) → redireciona pra `/`, com validação visual de erro (credencial
   errada), estado de carregamento, e gate de senha temporária (`/definir-senha`) no primeiro
@@ -785,7 +785,7 @@ Copie `frontend/.env.example` para `frontend/.env` se a API não estiver em
 **Se `MONGO_URL` não estiver configurado no `.env` desta máquina**: o backend sobe e
 login/registro funcionam (Postgres/SQLite), mas qualquer ação de `/bitins` (que depende do
 Mongo) devolve `500`. Produção rodou com MongoDB Atlas (cloud) da v0.8.2 até a v0.12.0 (ver
-`docs/RELEASE_v0.8.2.md`); a partir daí o sistema virou interno e o banco (Postgres + MongoDB)
+`docs/releases/RELEASE_v0.8.2.md`); a partir daí o sistema virou interno e o banco (Postgres + MongoDB)
 passou a ser auto-hospedado via `docker-compose.yml` — ver `docs/DEPLOY.md`. Pra testar o
 fluxo de BITin sem MongoDB real disponível (esta máquina de dev), é preciso rodar o backend com
 `mongomock-motor` no lugar do cliente Mongo (mesma estratégia dos testes automatizados).

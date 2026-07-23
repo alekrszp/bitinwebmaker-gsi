@@ -10,7 +10,7 @@
 ## Por quê
 
 Até a v0.12.0, produção usava **MongoDB Atlas** (cloud, cluster M0 free tier, ver
-`docs/RELEASE_v0.8.2.md`) e o Postgres nunca chegou a rodar de verdade fora de dev (só SQLite).
+`docs/releases/RELEASE_v0.8.2.md`) e o Postgres nunca chegou a rodar de verdade fora de dev (só SQLite).
 Decisão do usuário (2026-07-21): sistema é **interno**, então banco de dados E aplicação
 (backend/frontend) passam a rodar auto-hospedados, dentro da rede da empresa, sem depender de
 nenhum serviço cloud externo. O usuário também pediu **duas versões separadas do sistema**:

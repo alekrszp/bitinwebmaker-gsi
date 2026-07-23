@@ -25,6 +25,8 @@ disponível pra registro externo — nenhuma etapa depende mais de e-mail/Excel 
 - `docs/VBA_MIGRATION_GUIDE.md` — o que foi portado do VBA original módulo a módulo.
 - `docs/README_HANDOFF.md` — histórico do PoC original (`v0.1.0`), documento congelado.
 - `docs/CHANGELOG.md` — notas de todas as versões.
+- `docs/releases/RELEASE_vX.Y.Z.md` — corpo de cada release publicada no GitHub (documentos
+  congelados, um por versão).
 
 ## O sistema hoje
 
@@ -151,70 +153,70 @@ npm run dev
 
 ## Release manual
 
-Releases são criadas manualmente no GitHub, usando `docs/RELEASE_vX.Y.Z.md` como corpo de
+Releases são criadas manualmente no GitHub, usando `docs/releases/RELEASE_vX.Y.Z.md` como corpo de
 cada release. O processo não é automatizado — a publicação é feita pelo GitHub web interface.
 
 - v0.13.0 — agente SAP local opcional (`sap-agent/`, integração com SAP GUI Scripting),
   ZBPP009 e Lista Técnica deixam de ser páginas separadas (tudo na aba BITin + aba Automação
   quando o agente está conectado):
-  `docs/RELEASE_v0.13.0.md` — <https://github.com/alekrszp/bitinwebmaker-gsi/releases/tag/v0.13.0>
+  `docs/releases/RELEASE_v0.13.0.md` — <https://github.com/alekrszp/bitinwebmaker-gsi/releases/tag/v0.13.0>
 - v0.12.0 — BITex de volta ao cabeçalho (com automação de checklist), hints e pop-ups
   revisados um a um, PDF com logo/paleta oficial e layout reordenado, CSV protegido contra
   injection, Subgrupo restrito à Engenharia, busca única no Painel geral, busca de campo na
   ZBPP009, validação de domínio nos campos de alteração:
-  `docs/RELEASE_v0.12.0.md` — <https://github.com/alekrszp/bitinwebmaker-gsi/releases/tag/v0.12.0>
+  `docs/releases/RELEASE_v0.12.0.md` — <https://github.com/alekrszp/bitinwebmaker-gsi/releases/tag/v0.12.0>
 - v0.11.0 — admin reseta senha de qualquer usuário ("esqueci minha senha" sem SMTP), Painel
   geral com paginação real no servidor:
-  `docs/RELEASE_v0.11.0.md` — <https://github.com/alekrszp/bitinwebmaker-gsi/releases/tag/v0.11.0>
+  `docs/releases/RELEASE_v0.11.0.md` — <https://github.com/alekrszp/bitinwebmaker-gsi/releases/tag/v0.11.0>
 - v0.10.1 — bloqueio de envio sem alteração real, confirmação antes de enviar, correção de
   bug real de perda de dados no Salvar/Importar da Lista Técnica/Códigos SAP:
-  `docs/RELEASE_v0.10.1.md` — <https://github.com/alekrszp/bitinwebmaker-gsi/releases/tag/v0.10.1>
+  `docs/releases/RELEASE_v0.10.1.md` — <https://github.com/alekrszp/bitinwebmaker-gsi/releases/tag/v0.10.1>
 - v0.10.0 — etapa final "Concluído" (Windchill, reversível só por admin), 2ª revisão do
   modelo de permissões (Cadastro/Processos viram `setor`, não mais níveis fixos), Painel
   geral, Cadastro/Processos reformulados, componentização/performance do frontend:
-  `docs/RELEASE_v0.10.0.md` — <https://github.com/alekrszp/bitinwebmaker-gsi/releases/tag/v0.10.0>
+  `docs/releases/RELEASE_v0.10.0.md` — <https://github.com/alekrszp/bitinwebmaker-gsi/releases/tag/v0.10.0>
 - v0.9.0 — fila do setor Cadastro + setor Processos (substitui o e-mail automático do VBA
   original), decisão automática de "precisa de roteiro", auditoria completa das automações do
   VBA, suíte de testes de ponta a ponta:
-  `docs/RELEASE_v0.9.0.md` — <https://github.com/alekrszp/bitinwebmaker-gsi/releases/tag/v0.9.0>
+  `docs/releases/RELEASE_v0.9.0.md` — <https://github.com/alekrszp/bitinwebmaker-gsi/releases/tag/v0.9.0>
 - v0.8.5 — reativação de usuário vira recadastro, admin "super" oculto, auditoria de
-  permissões: `docs/RELEASE_v0.8.5.md` — <https://github.com/alekrszp/bitinwebmaker-gsi/releases/tag/v0.8.5>
+  permissões: `docs/releases/RELEASE_v0.8.5.md` — <https://github.com/alekrszp/bitinwebmaker-gsi/releases/tag/v0.8.5>
 - v0.8.4 — rename Setor→Subgrupo, tela de Gestão de usuários própria, export PDF:
-  `docs/RELEASE_v0.8.4.md` — <https://github.com/alekrszp/bitinwebmaker-gsi/releases/tag/v0.8.4>
+  `docs/releases/RELEASE_v0.8.4.md` — <https://github.com/alekrszp/bitinwebmaker-gsi/releases/tag/v0.8.4>
 - v0.8.3 — checklist automática mapeada das macros VBA reais, admin exclui BITin enviado,
   Lista Técnica direto na aba BITin, modelo de permissões reformulado (Usuário/Gestor/
   Cadastro/Admin):
-  `docs/RELEASE_v0.8.3.md` — <https://github.com/alekrszp/bitinwebmaker-gsi/releases/tag/v0.8.3>
+  `docs/releases/RELEASE_v0.8.3.md` — <https://github.com/alekrszp/bitinwebmaker-gsi/releases/tag/v0.8.3>
 - v0.8.2 — MongoDB Atlas real (conteúdo de BITin passa a persistir de verdade), limpeza de
   código (componentização de `Settings.tsx`, `ruff` no backend, avisos de lint zerados):
-  `docs/RELEASE_v0.8.2.md` — <https://github.com/alekrszp/bitinwebmaker-gsi/releases/tag/v0.8.2>
+  `docs/releases/RELEASE_v0.8.2.md` — <https://github.com/alekrszp/bitinwebmaker-gsi/releases/tag/v0.8.2>
 - v0.8.1 — setores múltiplos por usuário + escopo por setor/nível em usuários e BITins
   (gestor vê só o próprio setor, admin vê o sistema inteiro):
-  `docs/RELEASE_v0.8.1.md` — <https://github.com/alekrszp/bitinwebmaker-gsi/releases/tag/v0.8.1>
+  `docs/releases/RELEASE_v0.8.1.md` — <https://github.com/alekrszp/bitinwebmaker-gsi/releases/tag/v0.8.1>
 - v0.8.0 — autenticação real (Alembic, sessões revogáveis, rate limit persistente, senha
   forte, troca de senha self-service) + reformulação das telas de BITin/ZBPP009/Lista Técnica
   (cadastro/edição completo, checklist manual) + paleta de cores oficial da marca:
-  `docs/RELEASE_v0.8.0.md` — <https://github.com/alekrszp/bitinwebmaker-gsi/releases/tag/v0.8.0>
+  `docs/releases/RELEASE_v0.8.0.md` — <https://github.com/alekrszp/bitinwebmaker-gsi/releases/tag/v0.8.0>
 - v0.7.2 — tela "Meus Bitins": listagem escopada por usuário + visualização só-leitura:
-  `docs/RELEASE_v0.7.2.md` — <https://github.com/alekrszp/bitinwebmaker-gsi/releases/tag/v0.7.2>
+  `docs/releases/RELEASE_v0.7.2.md` — <https://github.com/alekrszp/bitinwebmaker-gsi/releases/tag/v0.7.2>
 - v0.7.1 — shell autenticado: sidebar de navegação + topbar + Home de boas-vindas, seguindo o
   padrão visual do login; primeira mudança de UI desde a v0.5.0:
-  `docs/RELEASE_v0.7.1.md` — <https://github.com/alekrszp/bitinwebmaker-gsi/releases/tag/v0.7.1>
+  `docs/releases/RELEASE_v0.7.1.md` — <https://github.com/alekrszp/bitinwebmaker-gsi/releases/tag/v0.7.1>
 - v0.7.0 — CI (GitHub Actions), TypeScript no frontend inteiro, `pode_editar` no `BitinResponse`
   (RBAC/modo leitura, pronto pro backend, ainda sem UI); sem mudança de UI visível:
-  `docs/RELEASE_v0.7.0.md` — <https://github.com/alekrszp/bitinwebmaker-gsi/releases/tag/v0.7.0>
+  `docs/releases/RELEASE_v0.7.0.md` — <https://github.com/alekrszp/bitinwebmaker-gsi/releases/tag/v0.7.0>
 - v0.6.0 — auditoria de segurança/robustez do backend (SECRET_KEY, rate limiting, corrida de
   double-submit, inconsistência Postgres/Mongo) + primeira suíte de testes de frontend
-  (Vitest); sem mudança de UI: `docs/RELEASE_v0.6.0.md` — <https://github.com/alekrszp/bitinwebmaker-gsi/releases/tag/v0.6.0>
+  (Vitest); sem mudança de UI: `docs/releases/RELEASE_v0.6.0.md` — <https://github.com/alekrszp/bitinwebmaker-gsi/releases/tag/v0.6.0>
 - v0.5.0 — autenticação consolidada + tela de login redesenhada + identidade visual/tema
   claro-escuro; a tela de cadastro/listagem de Bitins foi apagada após 8 rodadas sem chegar
   num resultado bom e foi reconstruída do zero, incrementalmente (concluído nas versões
   seguintes):
-  `docs/RELEASE_v0.5.0.md` — <https://github.com/alekrszp/bitinwebmaker-gsi/releases/tag/v0.5.0>
-- v0.4.0 — primeira fatia do frontend web: `docs/RELEASE_v0.4.0.md` — <https://github.com/alekrszp/bitinwebmaker-gsi/releases/tag/v0.4.0>
-- v0.3.0 — autenticação, reforço de dono, validação de `ordem_cliente[]`: `docs/RELEASE_v0.3.0.md` — <https://github.com/alekrszp/bitinwebmaker-gsi/releases/tag/v0.3.0>
-- v0.2.0 — modelo de BITin, regras de negócio, ciclo de vida, backend: `docs/RELEASE_v0.2.0.md` — <https://github.com/alekrszp/bitinwebmaker-gsi/releases/tag/v0.2.0>
-- v0.1.0 — PoC inicial: `docs/RELEASE_v0.1.0.md` — <https://github.com/alekrszp/bitinwebmaker-gsi/releases/tag/v0.1.0>
+  `docs/releases/RELEASE_v0.5.0.md` — <https://github.com/alekrszp/bitinwebmaker-gsi/releases/tag/v0.5.0>
+- v0.4.0 — primeira fatia do frontend web: `docs/releases/RELEASE_v0.4.0.md` — <https://github.com/alekrszp/bitinwebmaker-gsi/releases/tag/v0.4.0>
+- v0.3.0 — autenticação, reforço de dono, validação de `ordem_cliente[]`: `docs/releases/RELEASE_v0.3.0.md` — <https://github.com/alekrszp/bitinwebmaker-gsi/releases/tag/v0.3.0>
+- v0.2.0 — modelo de BITin, regras de negócio, ciclo de vida, backend: `docs/releases/RELEASE_v0.2.0.md` — <https://github.com/alekrszp/bitinwebmaker-gsi/releases/tag/v0.2.0>
+- v0.1.0 — PoC inicial: `docs/releases/RELEASE_v0.1.0.md` — <https://github.com/alekrszp/bitinwebmaker-gsi/releases/tag/v0.1.0>
 
 Veja também `docs/CHANGELOG.md` para as notas de release completas (inclui v0.7.2 → v0.8.0 →
 v0.9.0 → v0.10.0 → v0.10.1 → v0.11.0 → v0.12.0 sem pular nenhuma).

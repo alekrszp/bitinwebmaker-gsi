@@ -125,7 +125,7 @@ C:/Python314/python.exe scripts/verify_poc.py
 
 ## Nota de release
 
-A release `v0.1.0` foi criada manualmente no GitHub usando o conteúdo de `docs/RELEASE_v0.1.0.md`.
+A release `v0.1.0` foi criada manualmente no GitHub usando o conteúdo de `docs/releases/RELEASE_v0.1.0.md`.
 
 Release URL:
 
