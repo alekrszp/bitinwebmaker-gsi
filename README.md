@@ -18,6 +18,8 @@ disponível pra registro externo — nenhuma etapa depende mais de e-mail/Excel 
   backend + frontend auto-hospedados, substituindo o MongoDB Atlas usado até a v0.12.0),
   stacks separadas de teste e produção.
 - `docs/FRONTEND.md` — arquitetura do frontend web (`frontend/`), telas e decisões de UI.
+- `sap-agent/README.md` — agente SAP local opcional (Windows), arquitetura, empacotamento e
+  mapeamento de campos.
 - `docs/VBA_EXPORT_MAPPING.md` — mapeamento de colunas do fluxo real `Módulo1`/`Módulo2`
   (referência histórica do motor de export, ainda válida).
 - `docs/VBA_MIGRATION_GUIDE.md` — o que foi portado do VBA original módulo a módulo.
@@ -33,9 +35,15 @@ Subgrupos, geração de PDF, persistência em Postgres (usuários/sequência de 
 
 **Frontend** (`frontend/`, React + TypeScript + Vite): login, shell autenticado (sidebar +
 topbar + Home), "Meus Bitins" (listagem escopada por permissão), edição completa de um BITin
-(aba BITin, ZBPP009/Códigos SAP, Lista Técnica — as três operam sobre os mesmos dados),
-Gestão de usuários (admin), e a fila do setor Cadastro (`/cadastro`) que substitui o e-mail
-manual que existia no processo original.
+numa única tela (aba BITin — cadastro de material, ZBPP009 e Lista Técnica deixaram de ser
+páginas separadas em 2026-07-23), Gestão de usuários (admin), e a fila do setor Cadastro
+(`/cadastro`) que substitui o e-mail manual que existia no processo original.
+
+**Agente SAP local** (`sap-agent/`, opcional): aplicativo Windows que roda no PC do engenheiro
+e fala com o SAP GUI via SAP GUI Scripting (COM). Com o agente instalado e ativo, uma aba
+"Automação" aparece na edição do BITin para buscar/validar dados direto no SAP; sem o agente,
+o engenheiro preenche tudo manualmente na mesma tela — nunca é uma tela paralela. Ver
+`sap-agent/README.md`.
 
 **Modelo de permissões** (2ª revisão, 2026-07-20): `Usuario.permission_level` é só o RANK — 77
 Individual, 88 Gestor, 99 Admin — cruzado com `Usuario.setor` (`"cadastro"`/`"processos"`/
@@ -111,13 +119,27 @@ TypeScript + Vite + Tailwind + react-router-dom, sem lib de estado global. Ver
 `docs/FRONTEND.md` para arquitetura completa e o histórico de decisões de cada tela.
 
 Telas hoje: Login, Home (resumo pessoal ou da fila do setor + recentes), Meus Bitins
-(listagem escopada por permissão), edição completa de BITin (aba BITin / Códigos SAP (ZBPP009)
-/ Lista Técnica — cadastro de material do zero, colar do SAP, checklist com sugestão
-automática, validação de regras de negócio no envio), Configurações (conta própria + aba
-"Bitins Concluídos" pra admin), Gestão de usuários (super-admin), Painel geral (Gestor/Admin —
-todo BITin visível, Status x Etapa, sem ações), fila do setor Cadastro (`/cadastro` — decide
-se precisa de revisão de roteiro, conclui e manda pro Windchill) e fila do setor Processos
-(`/processos` — revisa roteiro).
+(listagem escopada por permissão), edição completa de BITin numa única tela (aba BITin —
+cadastro de material do zero, colar do SAP, checklist com sugestão automática, validação de
+regras de negócio no envio; aba "Automação" some/aparece conforme o Agente SAP local está
+conectado ou não), Configurações (conta própria + aba "Bitins Concluídos" pra admin), Gestão
+de usuários (super-admin), Painel geral (Gestor/Admin — todo BITin visível, Status x Etapa,
+sem ações), fila do setor Cadastro (`/cadastro` — decide se precisa de revisão de roteiro,
+conclui e manda pro Windchill) e fila do setor Processos (`/processos` — revisa roteiro).
+
+### Agente SAP local (`sap-agent/`)
+
+Aplicativo Windows opcional, instalado pelo próprio engenheiro (botão de download dentro da
+tela de edição de BITin quando o agente não está detectado). Roda em segundo plano (bandeja
+do Windows), com uma janela própria de 3 abas — Leia-me, BITin (ativar/desativar, usuário
+identificado) e Configurações (abrir com o Windows, local de instalação) — que serve **só**
+para status/configuração, nunca para comandos. Os comandos (buscar material, validar código
+no SAP) ficam no sistema web, na aba "Automação", que só aparece com o agente conectado — o
+sistema web já tem toda a validação/auth que a janela do agente não tem. O agente expõe uma
+API HTTP local (`127.0.0.1`) que fala com o SAP GUI via SAP GUI Scripting (COM); o frontend
+detecta a conexão por polling (`useAgenteSapConectado`, ~4s + recheck ao focar a aba) e mostra
+um badge verde/vermelho na barra inferior da edição de BITin. Ver `sap-agent/README.md` para
+arquitetura completa, empacotamento (PyInstaller) e mapeamento de campos.
 
 ```powershell
 cd frontend
@@ -132,6 +154,10 @@ npm run dev
 Releases são criadas manualmente no GitHub, usando `docs/RELEASE_vX.Y.Z.md` como corpo de
 cada release. O processo não é automatizado — a publicação é feita pelo GitHub web interface.
 
+- v0.13.0 — agente SAP local opcional (`sap-agent/`, integração com SAP GUI Scripting),
+  ZBPP009 e Lista Técnica deixam de ser páginas separadas (tudo na aba BITin + aba Automação
+  quando o agente está conectado):
+  `docs/RELEASE_v0.13.0.md` — <https://github.com/alekrszp/bitinwebmaker-gsi/releases/tag/v0.13.0>
 - v0.12.0 — BITex de volta ao cabeçalho (com automação de checklist), hints e pop-ups
   revisados um a um, PDF com logo/paleta oficial e layout reordenado, CSV protegido contra
   injection, Subgrupo restrito à Engenharia, busca única no Painel geral, busca de campo na
@@ -217,6 +243,9 @@ v0.9.0 → v0.10.0 → v0.10.1 → v0.11.0 → v0.12.0 sem pular nenhuma).
   registro/login)
 
 **Frontend (`frontend/`)**: interface web (ver seção acima e `docs/FRONTEND.md`)
+
+**Agente SAP local (`sap-agent/`)**: aplicativo Windows opcional (ver seção acima e
+`sap-agent/README.md`)
 
 **Documentação (`docs/`)**: `BITIN_MODEL.md`, `VBA_EXPORT_MAPPING.md`, `VBA_MIGRATION_GUIDE.md`, `BACKEND.md`, `FRONTEND.md`, `CHANGELOG.md`
 

@@ -2,6 +2,46 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v0.13.0] - 2026-07-23
+
+Agente SAP local (novo, opcional) + reorganização das telas de edição de BITin: ZBPP009 e
+Lista Técnica deixaram de ser páginas separadas — tudo acontece numa única tela ("aba BITin"),
+com uma aba "Automação" adicional quando o agente está conectado.
+
+### Added
+
+- `sap-agent/`: aplicativo Windows opcional (Tkinter + Flask + `pywin32`) que roda no PC do
+  engenheiro e fala com o SAP GUI via SAP GUI Scripting (COM). Janela própria de 3 abas
+  (Leia-me / BITin / Configurações) só para status/configuração — ativar/desativar, abrir com
+  o Windows, local de instalação; nunca para comandos. Empacotado com PyInstaller
+  (`Instalador.exe` gera `AgenteSAP.exe`), com protocolo customizado `bitinsap://abrir` para
+  reabrir a janela depois de instalado.
+- `GET /api/v1/agente-sap/download`: endpoint público que serve o instalador direto do
+  sistema web (`backend/api/agente_sap.py`).
+- Frontend: `AgenteGate`/`InstalarAgenteCard` (tela de instalação/gate quando o agente não é
+  detectado num rascunho vazio), `AgenteSapStatus` (badge verde/vermelho na barra inferior da
+  edição), `useAgenteSapConectado` (polling ~4s + recheck ao focar a aba), `AutomacaoPage`
+  (stub, só acessível com o agente conectado), `AgenteLogoIcon` (logo SVG animada, própria da
+  marca, sem emoji).
+- `logo_agente.py`: mesma logo gerada em código (PIL) para o ícone estático do `.exe`/instalador.
+
+### Changed
+
+- ZBPP009 (`CodigosSapPage.tsx`) e Lista Técnica (`ListaTecnicaPage.tsx`) removidas como
+  páginas próprias — cadastro de material acontece só na aba BITin, num único fluxo tanto no
+  modo manual quanto com o agente conectado.
+
+### Removed
+
+- `frontend/src/components/bitin/DadosBasicosTable.tsx` — componente sem nenhuma referência
+  no código, superado por `AlteracaoTable.tsx`/`DadosGeraisCard.tsx`.
+- Rotas `/bitins/:mongoId/codigos-sap` e `/bitins/:mongoId/lista-tecnica`.
+
+### Notes
+
+- `*.xlsm`/`Script*.vbs` soltos na raiz (material de análise real da empresa) protegidos no
+  `.gitignore` — nunca estiveram versionados, mas também nunca tinham entrada própria.
+
 ## [v0.12.0] - 2026-07-21
 
 Revisão item a item de uma lista de pedidos: campo BITex de volta ao cabeçalho (com

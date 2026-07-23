@@ -70,6 +70,7 @@ def root():
     return {"message": "BITin API"}
 
 
+from backend.api.agente_sap import router as agente_sap_router  # noqa: E402
 from backend.api.bitins import router as bitins_router  # noqa: E402
 from backend.api.subgrupos import router as subgrupos_router  # noqa: E402
 from backend.api.users import router as users_router  # noqa: E402
@@ -79,3 +80,4 @@ app.include_router(bitins_router, prefix=f"{settings.API_V1_STR}/bitins", tags=[
 app.include_router(auth_router, prefix=f"{settings.API_V1_STR}/auth", tags=["auth"])
 app.include_router(users_router, prefix=f"{settings.API_V1_STR}/users", tags=["users"])
 app.include_router(subgrupos_router, prefix=f"{settings.API_V1_STR}/subgrupos", tags=["subgrupos"])
+app.include_router(agente_sap_router, prefix=f"{settings.API_V1_STR}/agente-sap", tags=["agente-sap"])

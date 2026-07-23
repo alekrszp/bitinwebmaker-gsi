@@ -647,6 +647,126 @@ com Playwright nas contas reais (ver `docs/RELEASE_v0.10.0.md`/`v0.10.1.md`).
   um botão real que apareça e sempre falhe com 403 ao clicar. Se aparecer um caso concreto,
   registrar aqui.
 
+## Integração SAP via agente local (2026-07-22)
+
+Botão "Validar materiais no SAP" na ZBPP009 (`pages/CodigosSapPage.tsx`) consulta um **agente
+Python separado**, rodando localmente no PC do próprio engenheiro (`sap-agent/`, na raiz do
+repo — não faz parte deste `frontend/` nem do `backend/`), que fala com o SAP GUI já aberto/
+logado nessa máquina via SAP GUI Scripting (automação COM, não API REST/RFC do SAP). O agente
+NÃO fala com o backend do BITin — é uma ponte só entre o navegador e o SAP GUI local. Decisão
+do usuário: não queria "um programa à parte" visível — um protocolo customizado
+(`bitinsap://`, registrado sem precisar de admin, ver `sap-agent/registrar_protocolo.ps1`)
+abre/foca o agente com 1 clique direto do botão na tela.
+
+- **`lib/sapAgent.ts`** — client HTTP **separado** do `lib/api.ts` compartilhado (achado
+  crítico: o interceptor de response de `api.ts` limpa a sessão do BITin em QUALQUER `401` que
+  passe por ele, de qualquer origem — reusar o mesmo client pro agente local, que pode estar
+  offline o tempo todo, arriscaria derrubar a sessão do engenheiro por causa do agente).
+  `fetch()` puro contra `http://127.0.0.1:39217` (porta fixa do agente,
+  configurável via `VITE_SAP_AGENT_URL`).
+- **`components/bitin/AgenteSapStatus.tsx`** — badge no cabeçalho da ZBPP009, poll de
+  `/status` a cada ~15s (mesmo padrão do badge de fila em `Sidebar.tsx`). "Conectado" (verde)
+  ou botão "desconectado — clique para abrir" (dispara `bitinsap://abrir`).
+- **`pages/CodigosSapPage.tsx`** — botão em lote (decisão do usuário: "só em lote", não por
+  linha) consulta todo `codigo_material` preenchido de uma vez via `POST /consultar-materiais`
+  do agente. Por resultado: encontrado sobrescreve `descricao_material` (decisão do usuário:
+  "sempre sobrescreve com o valor do SAP" — nunca pergunta, o SAP é a fonte de verdade) e marca
+  a linha com ✓; não encontrado marca com ✗ (aviso visual, nunca bloqueia — filosofia "só
+  avisa" confirmada pelo usuário, diferente do bloqueio de Salvar/Importar da seção acima, que
+  é sobre completude de dado, não sobre existência real no SAP). Indicador (`resultadosSap`)
+  vive só no estado da página — não é persistido no BITin; reabrir a tela perde o ✓/✗ mas não o
+  dado já salvo.
+- **Instalação/uso do agente**: `sap-agent/README.md` (não é instalado por padrão — recurso
+  opcional; quem não instalar só não usa o botão, o resto da tela funciona igual).
+- **Fora de escopo desta rodada** (documentado, não implementado): persistir o resultado da
+  validação no BITin; consulta por linha individual (o botão em lote continua só pra
+  Descrição).
+
+### Modo "Código + Campos" (2026-07-22)
+
+Pedido explícito do usuário: em vez de só validar Descrição em lote, o engenheiro digita **um
+código de material + Centro**, escolhe quais campos de `dados_basicos` quer, e o agente busca
+os valores reais no SAP (via `MM03`, navegando pra aba certa de cada campo) — preenchendo
+direto o "de" daquele material na tabela (cria a linha se ainda não existir). O "para" continua
+100% por conta do engenheiro (o agente nunca decide o que muda, só o que já está hoje no SAP).
+
+- **`components/bitin/PreencherViaSapPanel.tsx`** — painel colapsável, só renderizado quando
+  `AgenteSapStatus` reporta conectado (`onStatusChange`, ver `CodigosSapPage.tsx`) — decisão do
+  usuário: "modo adicional", nunca substitui a grade de colar/editar manual. Busca
+  `GET /campos-disponiveis` do agente pra só oferecer campos com ID de tela **confirmado**
+  (nunca um campo ainda não mapeado, ver seção do agente abaixo).
+- **`lib/sapAgent.ts::preencherDadosBasicosNoSap`** — `POST /preencher-dados-basicos`
+  (`{material, centro, campos}`) → `{resultados: {campo: {encontrado, valor, erro}}}`.
+- **Campos mapeados** (ID de tela real, confirmado por 4 gravações reais do próprio SAP GUI
+  Scripting do usuário — `Script1.vbs` a `Script4.vbs`, 2026-07-22, NUNCA inferido a partir do
+  nome tabela/campo ABAP): 26 dos 30 campos de `DADOS_BASICOS_LABELS` — só falta
+  `texto_pedidos_compras`. Inclui `marcacao_eliminar_nivel_mandante`/`_centro` (ambos via
+  `MM06`, não `MM03` — a diferença é só se o Centro é preenchido antes de ler o checkbox, ver
+  `sap_gui.py::_consultar_flag_mm06`). Ver `sap-agent/sap_gui.py::CAMPOS_MM03` pra lista
+  completa e `sap-agent/README.md` pra como mapear o que falta — achado real do processo de
+  gravação: o SAP GUI Scripting Recorder só mantém 1 campo por abertura de transação; capturar
+  mais de 1 campo na mesma aba exige reabrir a MM03 do zero entre cada um, não basta trocar de
+  aba dentro da mesma sessão.
+
+## Reformulação: sem agente = manual puro, com agente = automação (2026-07-23)
+
+Pedido explícito do usuário: reorganizar completamente o que cada modo (sem/com agente) faz,
+em vez do agente ser só um complemento opcional dentro das telas de sempre. Mudança de fundo:
+**ZBPP009 (`CodigosSapPage.tsx`) e Lista Técnica (`ListaTecnicaPage.tsx`) deixaram de existir
+como páginas** — removidas junto com `lib/zbpp009Validacao.ts` e
+`components/bitin/PreencherViaSapPanel.tsx` (só usados por elas). O que cada modo oferece agora:
+
+- **Sem agente**: só existe a aba **BITin** (`BitinDetail.tsx`, sem nenhuma mudança de
+  comportamento) — material a material, cada um com seu card e a lista técnica editada inline
+  (`ListaTecnicaInline.tsx`, que continua existindo). `EdicaoBottomBar.tsx` só mostra essa aba.
+- **Com agente conectado**: `EdicaoBottomBar.tsx` ganha uma aba extra, **Automação**
+  (`pages/AutomacaoPage.tsx`, rota `/bitins/:mongoId/automacao`) — hoje é só a casca (cabeçalho
+  e barra inferior, texto "Em construção"), o fluxo de verdade (colar códigos → agente busca o
+  "de" → engenheiro declara o "para") fica pra uma próxima rodada, a partir do zero (decisão
+  explícita do usuário: não reaproveitar a lógica antiga de `CodigosSapPage.tsx`).
+
+**Gate ao abrir um BITin novo** (`components/bitin/AgenteGate.tsx`): um rascunho recém-criado
+(sem nada preenchido ainda — `produto`/`motivo`/`setor`/`materiais` todos vazios) e sem agente
+detectado mostra "Agente SAP não identificado, deseja realizar o BITin manualmente?" antes do
+resto da tela. "Sim" libera a tela normal pro resto da visita (não pergunta de novo depois que
+o engenheiro já preencheu algo); a outra opção leva pras instruções de instalação
+(`components/bitin/InstalarAgenteCard.tsx`), com um botão real "Baixar instalador (.exe)"
+apontando pro próprio backend (`GET /api/v1/agente-sap/download`, endpoint público sem login,
+ver `backend/api/agente_sap.py` e `sap-agent/README.md`) — o `Instalador.exe` já vem com o
+`AgenteSAP.exe` embutido dentro (1 arquivo só pra baixar/distribuir).
+
+Detecção de agente centralizada em **`hooks/useAgenteSapConectado.ts`** (poll ~15s, mesmo
+`consultarStatusAgente` de sempre) — devolve `{ conectado, verificado }`; `verificado` existe
+pra não piscar o gate na tela enquanto a 1ª checagem ainda não resolveu (o estado inicial de
+`conectado` é `false` até então). `AgenteSapStatus.tsx` virou puramente apresentacional (só o
+badge verde "Agente SAP conectado"), sem poll próprio — `BitinDetail.tsx`/`AutomacaoPage.tsx`
+já chamam o hook uma vez cada e decidem o resto (badge vs. link "Ativar agente?", aba
+Automação aparecer ou não) a partir do mesmo valor.
+
+**Em aberto** (perguntar antes de avançar): quando o agente conecta depois de o BITin já ter
+sido criado manualmente (fora do estado "recém-criado"), a aba Automação já aparece na hora
+(a lógica atual não distingue esse caso — qualquer bitin com agente conectado ganha a aba,
+só o GATE inicial é restrito a rascunho vazio) — confirmar se é esse o comportamento desejado.
+
+### Janela própria do agente + identificação do usuário (2026-07-23)
+
+Decisão explícita do usuário sobre a divisão de responsabilidades: os COMANDOS do agente
+(buscar material, preencher campos) continuam 100% na aba Automação do sistema web ("quero
+algo seguro e com validações" — o sistema web já tem autenticação/validação de negócio que o
+agente local não tem). A janela do próprio agente (`sap-agent/agente_app.py`, Tkinter,
+**tamanho fixo**) é só **status e configuração**, em 3 abas: "Leia-me" (explica o que o agente
+faz/não faz), "BITin" (checkbox "Agente ativo" — liga/desliga o servidor HTTP de verdade — e
+"Conectado como: ..."), e "Configurações" (checkbox "Abrir automaticamente com o Windows",
+pré-marcado, + caminho de onde o `.exe` está instalado). Minimizar/fechar a janela só esconde
+pra bandeja, nunca desliga o agente nem encerra o processo — só "Sair" no menu da bandeja faz
+isso.
+
+`lib/sapAgent.ts::identificarUsuarioNoAgente` — assim que `useAgenteSapConectado` detecta o
+agente (`BitinDetail.tsx`, `useEffect` com dependência em `agenteConectado`/`user`), manda
+`POST /identificar-usuario` (nome/email/setor do usuário logado) pro agente, só pra exibir
+"Conectado como: ..." na janela dele (aba Configurações) — não é autenticação nenhuma, é
+best-effort (falha silenciosa se o agente cair no meio do caminho).
+
 ## Rodando localmente
 
 ```powershell

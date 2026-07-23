@@ -1,22 +1,34 @@
 import { NavLink } from 'react-router-dom'
+import AgenteSapStatus from './AgenteSapStatus'
 
 // Barra fixa no canto inferior direito (decisão do usuário, 2026-07-14): "não deve atrapalhar
-// pra ver informações do bitin". Códigos SAP e Lista Técnica são páginas de verdade (rotas
-// próprias, não um bloco que abre dentro da mesma tela) -- assim o engenheiro pode abrir uma
-// delas numa aba nova do navegador e editar dados gerais numa aba e lista técnica na outra ao
-// mesmo tempo, os dois olhando pro mesmo BITin. A barra aparece nas 3 páginas (dados gerais,
-// Códigos SAP, Lista Técnica), sempre com "Enviar" na ponta direita.
+// pra ver informações do bitin". A aba "BITin" sempre aparece; "Automação" só aparece com o
+// agente SAP conectado (2026-07-23) -- os COMANDOS do agente (buscar material, preencher
+// campos etc.) ficam no sistema web, não na janela do agente (decisão explícita do usuário:
+// "quero algo seguro e com validações" -- o sistema web já tem toda a validação/auth que a
+// janela do agente não tem). A janela do próprio agente (sap-agent/agente_app.py) é só
+// status/configuração, nunca comando. "Enviar" continua sempre na ponta direita.
+//
+// Badge do agente mora aqui, não no cabeçalho do BITin (2026-07-23, pedido explícito: "ali tem
+// muitas informações juntas, coloca ele lá em baixo junto da automação e do bitin") -- fica
+// junto das próprias abas que ele afeta.
 export default function EdicaoBottomBar({
   mongoId,
+  agenteConectado,
+  onAgenteDesconectadoClick,
   enviando,
   onEnviar,
 }: {
   mongoId: string
+  agenteConectado: boolean
+  onAgenteDesconectadoClick?: () => void
   enviando: boolean
   onEnviar: () => void
 }) {
   return (
     <div className="fixed bottom-4 right-4 z-20 flex items-center gap-1 rounded-xl border border-line bg-surface p-1.5 shadow-lg">
+      <AgenteSapStatus conectado={agenteConectado} onClickDesconectado={onAgenteDesconectadoClick} />
+      <div className="mx-0.5 h-6 w-px bg-line" />
       <NavLink
         to={`/bitins/${mongoId}`}
         end
@@ -28,35 +40,25 @@ export default function EdicaoBottomBar({
       >
         BITin
       </NavLink>
-      <NavLink
-        to={`/bitins/${mongoId}/codigos-sap`}
-        className={({ isActive }) =>
-          `rounded-lg px-4 py-2 text-sm font-medium transition-colors ${
-            isActive ? 'bg-brand-navy text-white' : 'text-ink-muted hover:bg-surface-alt hover:text-ink'
-          }`
-        }
-      >
-        ZBPP009
-      </NavLink>
-      <NavLink
-        to={`/bitins/${mongoId}/lista-tecnica`}
-        className={({ isActive }) =>
-          `rounded-lg px-4 py-2 text-sm font-medium transition-colors ${
-            isActive ? 'bg-brand-navy text-white' : 'text-ink-muted hover:bg-surface-alt hover:text-ink'
-          }`
-        }
-      >
-        Lista Técnica
-      </NavLink>
+      {agenteConectado && (
+        <NavLink
+          to={`/bitins/${mongoId}/automacao`}
+          className={({ isActive }) =>
+            `rounded-lg px-4 py-2 text-sm font-medium transition-colors ${
+              isActive ? 'bg-brand-navy text-white' : 'text-ink-muted hover:bg-surface-alt hover:text-ink'
+            }`
+          }
+        >
+          Automação
+        </NavLink>
+      )}
       <div className="mx-1 h-6 w-px bg-line" />
       <button
         type="button"
         onClick={() => {
           // Confirmação antes de enviar (2026-07-21, pedido explícito) -- depois de
           // "Enviar" o BITin fica travado pra sempre (só volta a mudar de mãos pelos fluxos
-          // de Cadastro/Processos), então vale um clique a mais de segurança. Um botão só na
-          // barra (não em cada página) -- as 3 páginas (BITin/ZBPP009/Lista Técnica) chamam a
-          // mesma `EdicaoBottomBar`.
+          // de Cadastro/Processos), então vale um clique a mais de segurança.
           if (window.confirm('Enviar BITin? Não vai mais conseguir alterá-lo.')) {
             onEnviar()
           }

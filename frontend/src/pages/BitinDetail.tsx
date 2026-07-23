@@ -1,15 +1,18 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
+import AgenteGate from '../components/bitin/AgenteGate'
 import AjudaPopover from '../components/bitin/AjudaPopover'
 import AvisoSairModal from '../components/bitin/AvisoSairModal'
 import DadosGeraisCard from '../components/bitin/DadosGeraisCard'
 import EdicaoBottomBar from '../components/bitin/EdicaoBottomBar'
 import ErrosEnvioBanner from '../components/bitin/ErrosEnvioBanner'
 import HistoricoCard from '../components/bitin/HistoricoCard'
+import InstalarAgenteCard from '../components/bitin/InstalarAgenteCard'
 import MateriaisSection from '../components/bitin/MateriaisSection'
 import OrdemClienteEditor from '../components/bitin/OrdemClienteEditor'
 import OrdemClienteSection from '../components/bitin/OrdemClienteSection'
 import StatusBadge from '../components/bitin/StatusBadge'
+import { useAgenteSapConectado } from '../hooks/useAgenteSapConectado'
 import { useAuth } from '../hooks/useAuth'
 import { useAvisoSairSemSalvar } from '../hooks/useAvisoSairSemSalvar'
 import { useVoltar } from '../hooks/useVoltar'
@@ -18,6 +21,7 @@ import { materialVazio, normalizarMaterial } from '../lib/bitinDefaults'
 import type { BitinResumo } from '../lib/bitinTypes'
 import { duplicarBitinENavegar } from '../lib/duplicarBitin'
 import { SETOR_ENGENHARIA, ehDoSetor, isAdmin } from '../lib/permissions'
+import { identificarUsuarioNoAgente } from '../lib/sapAgent'
 import { useEnviarBitin } from '../lib/useEnviarBitin'
 import type { Bitin, MateriaisSchema, MaterialEditavel, OrdemClienteEditavel, Subgrupo } from '../lib/types'
 
@@ -69,6 +73,24 @@ export default function BitinDetail() {
   // Aviso de alterações não salvas (2026-07-17, pedido explícito) -- ver
   // hooks/useAvisoSairSemSalvar.ts.
   const { setSujo, mostrarModal, setMostrarModal, tentarSair } = useAvisoSairSemSalvar()
+  const { conectado: agenteConectado, verificado: agenteVerificado } = useAgenteSapConectado()
+  // Gate "Agente SAP não identificado, deseja realizar o BITin manualmente?" (2026-07-23,
+  // pedido explícito) -- só faz sentido pra um rascunho recém-criado (ver `ehRascunhoVazio`
+  // abaixo), nunca reaparece depois que o engenheiro já preencheu alguma coisa. Confirmar
+  // "Sim" libera o resto da tela normalmente pra esta visita; `mostrarInstalacao` troca a tela
+  // inteira pelas instruções (acessível tanto pelo gate quanto pelo link "Ativar agente?" no
+  // cabeçalho, quando o agente não está conectado).
+  const [manualConfirmado, setManualConfirmado] = useState(false)
+  const [mostrarInstalacao, setMostrarInstalacao] = useState(false)
+
+  // "Com o agente aberto ele vai validar com o sistema... pegar a conta logada" (2026-07-23,
+  // pedido explícito) -- manda quem está logado assim que o agente conecta (só exibição na
+  // janela do agente, ver sap-agent/estado_agente.py; nunca autenticação de verdade).
+  useEffect(() => {
+    if (agenteConectado && user) {
+      identificarUsuarioNoAgente({ nome: user.nome, email: user.email, setor: user.setor })
+    }
+  }, [agenteConectado, user])
 
   // Campos editáveis (dados gerais + materiais).
   const [produto, setProdutoBase] = useState('')
@@ -141,6 +163,20 @@ export default function BitinDetail() {
   // engenheiro voltar o OC pra "-" depois).
   const precisaOrdemCliente =
     materiais.some((m) => m.alteracoes.impactos_operacionais.oc === 'X') || ordemCliente.length > 0
+
+  // Rascunho "recém-criado", sem nada preenchido ainda -- só nesse estado o gate de agente faz
+  // sentido (2026-07-23): reabrir um BITin em andamento não deveria voltar a perguntar isso.
+  // NÃO checa `setor` (achado real: o efeito abaixo auto-preenche o setor sozinho pra quem só
+  // tem 1 subgrupo vinculado, quase na hora de abrir a tela -- isso não é o engenheiro tendo
+  // preenchido nada, mas fazia o gate nunca aparecer pra esse grupo de usuários).
+  const ehRascunhoVazio =
+    status === 'rascunho' &&
+    produto === '' &&
+    motivo === '' &&
+    bitex === '' &&
+    materiais.length === 0
+  const mostrarGate =
+    !carregando && editavel && agenteVerificado && !agenteConectado && ehRascunhoVazio && !manualConfirmado
 
   useEffect(() => {
     let cancelado = false
@@ -507,6 +543,23 @@ export default function BitinDetail() {
     return <p className="text-sm text-ink-muted">Carregando...</p>
   }
 
+  if (mostrarInstalacao) {
+    return (
+      <div className="mx-auto max-w-[1600px] pb-24 pt-3">
+        <InstalarAgenteCard onVoltar={() => setMostrarInstalacao(false)} />
+      </div>
+    )
+  }
+
+  if (mostrarGate) {
+    return (
+      <AgenteGate
+        onConfirmarManual={() => setManualConfirmado(true)}
+        onAbrirInstalacao={() => setMostrarInstalacao(true)}
+      />
+    )
+  }
+
   if (bloqueado) {
     return (
       <div className="mx-auto max-w-2xl">
@@ -561,8 +614,8 @@ export default function BitinDetail() {
               aplicam. Clicar num item sempre vale, mesmo que já venha marcado.
             </p>
             <p>
-              Um material pode ser cadastrado inteiramente aqui ("+ Novo material") ou importado
-              da tela ZBPP009.
+              Um material pode ser cadastrado inteiramente aqui ("+ Novo material"), incluindo a
+              lista técnica de componentes, direto no card do material.
             </p>
             <p>Se algum item da checklist exigir descrição, preencha-a antes de enviar.</p>
           </AjudaPopover>
@@ -673,13 +726,18 @@ export default function BitinDetail() {
         onAddMaterial={adicionarMaterial}
         onRemoveMaterial={removerMaterial}
         materiaisResumo={resumo?.materiais ?? null}
-        mongoId={mongoId}
       />
 
       {resumo && <HistoricoCard eventos={resumo.historico} />}
 
       {editavel && status === 'rascunho' && mongoId && (
-        <EdicaoBottomBar mongoId={mongoId} enviando={enviando || salvando} onEnviar={handleEnviar} />
+        <EdicaoBottomBar
+          mongoId={mongoId}
+          agenteConectado={agenteConectado}
+          onAgenteDesconectadoClick={() => setMostrarInstalacao(true)}
+          enviando={enviando || salvando}
+          onEnviar={handleEnviar}
+        />
       )}
     </div>
   )

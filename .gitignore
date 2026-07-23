@@ -9,3 +9,19 @@ tmp_*
 # de auth em 2026-07-15), decisão do usuário de não versionar.
 Fluxo.md
 Diagrama do sistema de engenharia.excalidraw.*
+
+# Artefatos de build do agente SAP local (2026-07-23) -- binários grandes gerados pelo
+# PyInstaller (dist/*.exe pode passar de 40MB com o agente embutido), não fazem sentido no
+# git. O `.exe` de produção fica no servidor via backend/config.py::AGENTE_SAP_INSTALADOR_PATH
+# (gerado localmente, ver sap-agent/README.md), não versionado.
+sap-agent/build/
+sap-agent/dist/
+sap-agent/*.spec
+sap-agent/icone.ico
+
+# Excel/VBA reais fornecidos pelo usuário como material de análise (dados de material/preço da
+# empresa, scripts gravados do SAP GUI Scripting) -- nunca commitar (achado real, 2026-07-23:
+# estavam soltos na raiz sem entrada nenhuma no .gitignore, risco de ir junto num `git add -A`
+# descuidado). Ficam na máquina local só como referência de trabalho.
+*.xlsm
+Script*.vbs

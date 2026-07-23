@@ -369,9 +369,31 @@ Campo vazio nunca é erro (ainda não foi preenchido). Os outros ~26 campos (`de
 tentar inferir tipo numérico/data por esses campos sem confirmação de negócio real.
 
 **Centro na ZBPP009**: continua editável como texto livre (decisão de 2026-07-17, réplica da
-grade real do SAP), mas agora mostra um aviso visual (sem bloquear) se o valor final não for
-`2001`/`2005` — mesmo domínio já validado como obrigatório na aba BITin e no envio
-(`validate_bitin`).
+grade real do SAP), mas agora mostra um aviso visual se o valor final não for `2001`/`2005` —
+mesmo domínio já validado como obrigatório na aba BITin e no envio (`validate_bitin`).
+
+### Bloqueio de Salvar/Importar/Enviar na ZBPP009
+
+Pedido explícito do usuário (2026-07-22): "VALIDAR TUDO QUE PUDER... não deixar importar se
+não tiver [os obrigatórios], campos errados". Diferente do resto do sistema (que só avisa, nunca bloqueia edição — filosofia registrada em
+`bitin_business_rules.py`), a tela ZBPP009 (`frontend/src/pages/CodigosSapPage.tsx`, regras em
+`frontend/src/lib/zbpp009Validacao.ts`) passou a **bloquear** os botões **Salvar**, **Importar
+pra BITin** e **Enviar** — decisão explícita do usuário — enquanto qualquer linha com algum
+dado preenchido tiver:
+
+- `codigo_material`, `centro` ou `tipo_material` vazio (linhas totalmente em branco, a "linha
+  pra continuar colando" no final, não contam);
+- `centro` fora de `2001`/`2005`;
+- combinação `(codigo_material, centro)` repetida entre linhas da própria tabela;
+- qualquer campo de `dados_basicos` (De ou Novo) fora do domínio válido (mesma tabela da seção
+  acima).
+
+Isso é a MESMA checagem que o backend já faz no envio (`bitin_model.py::validate_bitin`,
+`bitin_business_rules.py::validate_business_rules`) — aqui só roda mais cedo, direto na tela
+onde o engenheiro cola/digita, pra não precisar ir e voltar da aba BITin pra descobrir o erro.
+Cada célula problemática ganha borda vermelha + mensagem; um banner acima da tabela lista todas
+as pendências de uma vez. Isso não muda a aba BITin (que continua só avisando, nunca
+bloqueando) nem o backend (que continua sendo a fonte de verdade final no envio).
 
 ## Ciclo de vida do BITin (rascunho → enviado)
 

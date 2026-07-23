@@ -3,7 +3,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 class Settings(BaseSettings):
     PROJECT_NAME: str = "BITin API"
-    VERSION: str = "0.8.5"
+    VERSION: str = "0.13.0"
     API_V1_STR: str = "/api/v1"
 
     # "production" liga checagens de segurança na subida do app (ver main.py::lifespan) --
@@ -36,6 +36,14 @@ class Settings(BaseSettings):
     @property
     def cors_origins_list(self) -> list[str]:
         return [origin.strip() for origin in self.CORS_ORIGINS.split(",") if origin.strip()]
+
+    # Instalador do agente SAP local (2026-07-23, pedido explícito: "quero que coloque o
+    # executável para instalar direto no sistema... para o engenheiro dentro do sistema
+    # baixar") -- caminho pro `Instalador.exe` gerado via PyInstaller (ver sap-agent/README.md,
+    # já com o AgenteSAP.exe embutido dentro via `--add-data`). Relativo à raiz do repo por
+    # padrão; produção pode apontar pra um caminho absoluto via .env se o binário morar em
+    # outro lugar no servidor.
+    AGENTE_SAP_INSTALADOR_PATH: str = "sap-agent/dist/Instalador.exe"
 
     model_config = SettingsConfigDict(env_file=".env", env_ignore_empty=True, extra="ignore")
 
