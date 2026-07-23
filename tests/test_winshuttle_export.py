@@ -6,8 +6,8 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = ROOT / 'scripts' / 'legacy_poc' / 'winshuttle_export.py'
-WORKBOOK = ROOT / 'examples' / 'Novo_template_BITin_V2 TESTE.xlsm'
-REFERENCE = ROOT / 'examples' / 'exported_winshuttle.csv'
+WORKBOOK = ROOT / 'examples' / 'vba_original' / 'Novo_template_BITin_V2 TESTE.xlsm'
+REFERENCE = ROOT / 'examples' / 'vba_original' / 'exported_winshuttle.csv'
 
 sys.path.insert(0, str(ROOT / 'scripts' / 'legacy_poc'))
 from winshuttle_export import build_plan3_rows

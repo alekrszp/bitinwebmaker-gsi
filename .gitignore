@@ -5,6 +5,10 @@ tmp_*
 *.db.bak*
 .env
 
+# Pasta de material solto local -- rascunhos de design, planilhas/scripts reais da empresa
+# (ver abaixo), nunca versionados. Organizado aqui em vez de espalhado na raiz (2026-07-23).
+local/
+
 # Rascunhos de design (ER diagram/notas de fluxo) -- cumpriram o papel (viraram o schema real
 # de auth em 2026-07-15), decisão do usuário de não versionar.
 Fluxo.md

@@ -260,10 +260,10 @@ Uso:
 
 ```powershell
 # sync: atualiza as colunas de valor atual de Plan2 a partir de Plan1/ZBPP009
-.venv/Scripts/python.exe scripts/vba_port_export.py sync "examples/Novo_template_BITin_V2 TESTE.xlsm" --out-xlsx plan2_sync.xlsx
+.venv/Scripts/python.exe scripts/vba_port_export.py sync "examples/vba_original/Novo_template_BITin_V2 TESTE.xlsm" --out-xlsx plan2_sync.xlsx
 
 # export: lê Plan2 (com as colunas "... Novo" já preenchidas) e gera o export Winshuttle
-.venv/Scripts/python.exe scripts/vba_port_export.py export "examples/Novo_template_BITin_V2 TESTE.xlsm" --out plan3_export.csv --audit-report reports/vba_port_audit.txt
+.venv/Scripts/python.exe scripts/vba_port_export.py export "examples/vba_original/Novo_template_BITin_V2 TESTE.xlsm" --out plan3_export.csv --audit-report reports/vba_port_audit.txt
 ```
 
 ---

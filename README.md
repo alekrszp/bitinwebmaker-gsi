@@ -62,10 +62,10 @@ Engenharia. Detalhes completos em `docs/BACKEND.md`.
 
    ```powershell
    # sync: atualiza os valores atuais de Plan2 a partir de Plan1/ZBPP009
-   .venv/Scripts/python.exe scripts/vba_port_export.py sync "examples/Novo_template_BITin_V2 TESTE.xlsm" --out-xlsx plan2_sync.xlsx
+   .venv/Scripts/python.exe scripts/vba_port_export.py sync "examples/vba_original/Novo_template_BITin_V2 TESTE.xlsm" --out-xlsx plan2_sync.xlsx
 
    # export: lê Plan2 (com as colunas "Novo" já preenchidas pelo engenheiro) e gera o export Winshuttle
-   .venv/Scripts/python.exe scripts/vba_port_export.py export "examples/Novo_template_BITin_V2 TESTE.xlsm" --out plan3_export.csv --audit-report reports/vba_port_audit.txt
+   .venv/Scripts/python.exe scripts/vba_port_export.py export "examples/vba_original/Novo_template_BITin_V2 TESTE.xlsm" --out plan3_export.csv --audit-report reports/vba_port_audit.txt
    ```
 
    Veja `docs/VBA_EXPORT_MAPPING.md` para o mapeamento completo de colunas e o padrão "atual
@@ -251,7 +251,12 @@ v0.9.0 → v0.10.0 → v0.10.1 → v0.11.0 → v0.12.0 sem pular nenhuma).
 
 **Documentação (`docs/`)**: `BITIN_MODEL.md`, `VBA_EXPORT_MAPPING.md`, `VBA_MIGRATION_GUIDE.md`, `BACKEND.md`, `FRONTEND.md`, `CHANGELOG.md`
 
-**Arquivos de exemplo/dados reais (`examples/`, `bitinsparaexemplo/`)**: `Novo_template_BITin_V2 TESTE.xlsm` (template original), `exported_winshuttle.csv` (referência), `bitin teste.xlsm`, `bitin teste 2.xlsm`, `bitinsparaexemplo/*.xlsm` (4 BITins reais usados pra auditar as automações do VBA), `POP_ENG_7 3 7_002.pdf`. Usados de verdade por `tests/test_vba_port_export.py`/`test_winshuttle_export.py` — não remover.
+**Arquivos de exemplo/dados reais (`examples/`)**: `examples/vba_original/` guarda o material
+do fluxo VBA original — `Novo_template_BITin_V2 TESTE.xlsm` (template), `exported_winshuttle.csv`
+(referência), `bitin teste.xlsm`, `bitin teste 2.xlsm`, `POP_ENG_7 3 7_002.pdf`; usados de
+verdade por `tests/test_vba_port_export.py`/`test_winshuttle_export.py` — não remover.
+`examples/bitins_reais_auditoria/` guarda 4 BITins reais (`*.xlsm`) usados só como referência
+pra auditar as automações do VBA (não usados por nenhum teste automatizado).
 
 **PoC legado (`scripts/legacy_poc/`)**: scripts e saídas do PoC leve original (v0.1.0), superados pelo motor atual — mantidos como histórico documentado, não usar para trabalho novo.
 
